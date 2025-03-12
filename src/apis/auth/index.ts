@@ -1,3 +1,11 @@
+/*
+ * @Author: liuzhi 1306086303@qq.com
+ * @Date: 2025-03-12 11:00:21
+ * @LastEditors: liuzhi 1306086303@qq.com
+ * @LastEditTime: 2025-03-12 11:56:52
+ * @FilePath: \continew-admin-ui\src\apis\auth\index.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import type * as T from './type'
 import http from '@/utils/http'
 
@@ -43,4 +51,9 @@ export const getUserInfo = () => {
 /** @desc 获取路由信息 */
 export const getUserRoute = () => {
   return http.get<T.RouteItem[]>(`${BASE_URL}/user/route`)
+}
+
+/** @desc 获取手机区号 */
+export const getPhoneCountryCode = () => {
+  return http.get(`https://restcountries.com/v3.1/all`)
 }

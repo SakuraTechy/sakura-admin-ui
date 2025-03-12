@@ -57,12 +57,36 @@ export interface AuthReq {
   authType?: AuthType
 }
 
+/** 账号注册请求参数 */
+export interface AccountSignupReq extends AuthReq {
+  username: string
+  nickname: string
+  password: string
+  gender: number
+  deptId: number
+  roleIds: string[]
+  status: number
+}
+
 /** 账号登录请求参数 */
 export interface AccountLoginReq extends AuthReq {
   username: string
   password: string
   captcha: string
   uuid: string
+}
+
+/** 手机号注册请求参数 */
+export interface PhoneSignupReq extends AuthReq {
+  phone: string
+  captcha: string
+  username: string
+  nickname: string
+  password: string
+  gender: number
+  deptId: number
+  roleIds: string[]
+  status: number
 }
 
 /** 手机号登录请求参数 */
