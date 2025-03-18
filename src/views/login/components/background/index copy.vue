@@ -1,46 +1,16 @@
-<!--
- * @Author: liuzhi 1306086303@qq.com
- * @Date: 2025-03-12 11:00:24
- * @LastEditors: liuzhi 1306086303@qq.com
- * @LastEditTime: 2025-03-14 11:34:27
- * @FilePath: \continew-admin-ui\src\views\login\components\background\index.vue
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
--->
 <template>
-  <div :class="appStore.theme === 'light' ? 'login-bg' : 'login-bg1'">
-    <!-- <div class="fly bg-fly-circle1"></div>
+  <div class="login-bg">
+    <div class="fly bg-fly-circle1"></div>
     <div class="fly bg-fly-circle2"></div>
     <div class="fly bg-fly-circle3"></div>
-    <div class="fly bg-fly-circle4"></div> -->
+    <div class="fly bg-fly-circle4"></div>
   </div>
 </template>
 
-<script lang="ts" setup>
-import { useAppStore } from '@/stores'
+<script setup lang="ts"></script>
 
-defineOptions({ name: 'Background' })
-
-const appStore = useAppStore()
-</script>
-
-<script lang="ts">
-export default {}
-</script>
-
-<style lang="scss" scoped>
+<style scoped lang="scss">
 .login-bg {
-  width: 100%;
-  min-height: 100%;
-  background: #e2effc url(@/assets/background.jpg);
-  background-size: 100%;
-  vertical-align: middle;
-  display: flex;
-  position: fixed;
-  overflow: hidden;
-  z-index: 1;
-}
-
-.login-bg1 {
   width: 100%;
   height: 100%;
   position: fixed;
@@ -53,7 +23,6 @@ export default {}
   position: fixed;
   z-index: 9999;
 }
-
 .bg-fly-circle1 {
   left: 40px;
   top: 100px;

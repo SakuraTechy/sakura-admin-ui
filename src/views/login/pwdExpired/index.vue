@@ -68,8 +68,6 @@ import ModifyPassword from '../components/modifyPassword/index.vue'
 import { useAppStore } from '@/stores'
 import { useDevice } from '@/hooks'
 
-defineOptions({ name: 'PwdExpired' })
-
 const { isDesktop } = useDevice()
 const appStore = useAppStore()
 const title = computed(() => appStore.getTitle())

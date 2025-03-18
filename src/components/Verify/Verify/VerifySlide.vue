@@ -10,6 +10,7 @@
         :style="{ width: setSize.imgWidth, height: setSize.imgHeight }"
       >
         <img
+          v-if="backImgBase"
           :src="`data:image/png;base64,${backImgBase}`"
           alt=""
           style="width: 100%; height: 100%; display: block"
@@ -74,6 +75,7 @@
             }"
           >
             <img
+              v-if="blockBackImgBase"
               :src="`data:image/png;base64,${blockBackImgBase}`"
               alt=""
               style="
@@ -345,7 +347,7 @@ export default {
 
     function init() {
       text.value = explain.value
-      // getPicture()
+      getPicture()
       nextTick(() => {
         const { imgHeight, imgWidth, barHeight, barWidth } = resetSize(proxy)
         setSize.imgHeight = imgHeight

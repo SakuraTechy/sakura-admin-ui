@@ -1,11 +1,22 @@
+/*
+ * @Author: liuzhi 1306086303@qq.com
+ * @Date: 2025-03-12 11:00:23
+ * @LastEditors: liuzhi 1306086303@qq.com
+ * @LastEditTime: 2025-03-12 17:26:01
+ * @FilePath: \continew-admin-ui\src\stores\modules\user.ts
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
+import { useAuthStore } from './auth'
 import { resetRouter } from '@/router'
 import {
   type AccountLoginReq,
+  type AccountSignupReq,
   AuthTypeConstants,
   type EmailLoginReq,
   type PhoneLoginReq,
+  type PhoneSignupReq,
   type UserInfo,
   accountLogin as accountLoginApi,
   emailLogin as emailLoginApi,
@@ -16,6 +27,7 @@ import {
 } from '@/apis'
 import { clearToken, getToken, setToken } from '@/utils/auth'
 import { resetHasRouteFlag } from '@/router/guard'
+import { signup as accountSignupApi } from '@/apis/system'
 
 const storeSetup = () => {
   const userInfo = reactive<UserInfo>({
@@ -49,7 +61,12 @@ const storeSetup = () => {
     resetHasRouteFlag()
   }
 
-  // 登录
+  // 账号注册
+  const accountSignup = async (req: AccountSignupReq) => {
+    await accountSignupApi({ ...req, clientId: import.meta.env.VITE_CLIENT_ID, authType: AuthTypeConstants.ACCOUNT })
+  }
+
+  // 账号登录
   const accountLogin = async (req: AccountLoginReq) => {
     const res = await accountLoginApi({ ...req, clientId: import.meta.env.VITE_CLIENT_ID, authType: AuthTypeConstants.ACCOUNT })
     setToken(res.data.token)
@@ -61,6 +78,11 @@ const storeSetup = () => {
     const res = await emailLoginApi({ ...req, clientId: import.meta.env.VITE_CLIENT_ID, authType: AuthTypeConstants.EMAIL })
     setToken(res.data.token)
     token.value = res.data.token
+  }
+
+  // 手机号注册
+  const phoneSignup = async (req: PhoneSignupReq) => {
+    await accountSignupApi({ ...req, clientId: import.meta.env.VITE_CLIENT_ID, authType: AuthTypeConstants.PHONE })
   }
 
   // 手机号登录
@@ -84,6 +106,11 @@ const storeSetup = () => {
     pwdExpiredShow.value = true
     resetToken()
     resetRouter()
+    // useRouter().push('/login')
+    useAuthStore().activeKey = '3'
+    useAuthStore().isRegister = true
+    useAuthStore().isEmailLogin = true
+    useAuthStore().toggleRegisterMode()
   }
 
   // 退出登录
@@ -117,8 +144,10 @@ const storeSetup = () => {
     roles,
     permissions,
     pwdExpiredShow,
+    accountSignup,
     accountLogin,
     emailLogin,
+    phoneSignup,
     phoneLogin,
     socialLogin,
     logout,

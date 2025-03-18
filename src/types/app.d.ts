@@ -15,6 +15,7 @@ declare namespace App {
     watermark?: string
     enableColorWeaknessMode?: boolean
     enableMourningMode?: boolean
+    fontFamily?: 'Microsoft YaHei' | 'PingFang SC' | 'DINPro-Bold' | 'DINPro-Medium' | 'DINPro-Regular' | string
   }
 
   /** 导航页签的样式类型 */
@@ -28,6 +29,13 @@ declare namespace App {
   interface AnimateItem {
     label: string
     value: AnimateType
+  }
+
+  /** 字体类型 */
+  type FontFamilyType = 'Microsoft YaHei' | 'PingFang SC' | 'DINPro-Bold' | 'DINPro-Medium' | 'DINPro-Regular' | string
+  interface FontFamilyItem {
+    label: string
+    value: FontFamilyType
   }
 
   /** 字典项 */

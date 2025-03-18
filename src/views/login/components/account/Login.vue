@@ -9,28 +9,13 @@
     @submit="handleLogin"
   >
     <a-form-item field="username" hide-label>
-      <!-- <a-input v-model="form.username" placeholder="请输入用户名" allow-clear /> -->
-      <a-input ref="inputRef" v-model="form.username" :placeholder="getPlaceholder()" allow-clear>
-        <template #prefix>
-          <icon-user />
-        </template>
-      </a-input>
+      <a-input v-model="form.username" placeholder="请输入用户名" allow-clear />
     </a-form-item>
     <a-form-item field="password" hide-label>
-      <!-- <a-input-password v-model="form.password" placeholder="请输入密码" /> -->
-      <a-input-password v-model="form.password" :placeholder=" !isRegister ? '请输入登录密码' : '请设置登录密码'">
-        <template #prefix>
-          <icon-lock />
-        </template>
-      </a-input-password>
+      <a-input-password v-model="form.password" placeholder="请输入密码" />
     </a-form-item>
     <a-form-item v-if="isCaptchaEnabled" field="captcha" hide-label>
-      <!-- <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="4" allow-clear style="flex: 1 1" /> -->
-      <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="4" allow-clear style="flex: 1 1">
-        <template #prefix>
-          <icon-safe />
-        </template>
-      </a-input>
+      <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="4" allow-clear style="flex: 1 1" />
       <div class="captcha-container" @click="getCaptcha">
         <img :src="captchaImgBase64" alt="验证码" class="captcha" />
         <div v-if="form.expired" class="overlay">
@@ -41,14 +26,12 @@
     <a-form-item>
       <a-row justify="space-between" align="center" class="w-full">
         <a-checkbox v-model="loginConfig.rememberMe">记住我</a-checkbox>
-        <!-- <a-link>忘记密码</a-link> -->
-        <a-link v-if="!isRegister" @click="authStore.toggleMode">忘记密码</a-link>
+        <a-link>忘记密码</a-link>
       </a-row>
     </a-form-item>
     <a-form-item>
       <a-space direction="vertical" fill class="w-full">
-        <!-- <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button> -->
-        <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>{{ !isRegister ? '立 即 登 录' : '开 始 体 验' }}</a-button>
+        <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button>
       </a-space>
     </a-form-item>
   </a-form>
@@ -60,25 +43,13 @@ import { useStorage } from '@vueuse/core'
 import { getImageCaptcha } from '@/apis/common'
 import { useTabsStore, useUserStore } from '@/stores'
 import { encryptByRsa } from '@/utils/encrypt'
-import { timeFix } from '@/utils'
-import { useAuthStore } from '@/stores/modules/auth'
-
-// 定义组件的 props
-const props = defineProps({
-  isRegister: {
-    type: Boolean,
-  },
-})
-
-const inputRef = ref<HTMLInputElement | null>(null)
 
 const loginConfig = useStorage('login-config', {
-  // rememberMe: true,
-  // username: debug ? 'admin' : '',
-  // password: debug ? 'admin123' : ''
-  rememberMe: props.isRegister,
-  username: '',
-  password: '',
+  rememberMe: true,
+  username: 'admin', // 演示默认值
+  password: 'admin123', // 演示默认值
+  // username: debug ? 'admin' : '', // 演示默认值
+  // password: debug ? 'admin123' : '', // 演示默认值
 })
 // 是否启用验证码
 const isCaptchaEnabled = ref(true)
@@ -87,22 +58,15 @@ const captchaImgBase64 = ref()
 
 const formRef = ref<FormInstance>()
 const form = reactive({
-  // username: loginConfig.value.username,
-  // password: loginConfig.value.password,
-  username: !props.isRegister ? loginConfig.value.username : '',
-  nickname: '',
-  password: !props.isRegister ? loginConfig.value.password : '',
-  gender: 0,
-  deptId: 1,
-  roleIds: ['547888897925840928'],
-  status: 1,
+  username: loginConfig.value.username,
+  password: loginConfig.value.password,
   captcha: '',
   uuid: '',
   expired: false,
 })
 const rules: FormInstance['rules'] = {
-  username: [{ required: true, message: '请设置用户名，4-64个字符' }],
-  password: [{ required: true, message: '请设置登录密码' }],
+  username: [{ required: true, message: '请输入用户名' }],
+  password: [{ required: true, message: '请输入密码' }],
   captcha: [{ required: isCaptchaEnabled.value, message: '请输入验证码' }],
 }
 
@@ -136,7 +100,6 @@ const getCaptcha = () => {
     captchaImgBase64.value = img
     form.uuid = uuid
     form.expired = false
-    form.captcha = ''
     startTimer(expireTime, Number(res.timestamp))
   })
 }
@@ -145,33 +108,12 @@ const userStore = useUserStore()
 const tabsStore = useTabsStore()
 const router = useRouter()
 const loading = ref(false)
-
-const getPlaceholder = () => {
-  return !props.isRegister ? '请输入用户名' : '请设置用户名，4-64个字符'
-}
-
-const authStore = useAuthStore()
-// const toggleForgotPasswordMode = inject<() => void>('toggleForgotPasswordMode')
-
-// 登录或注册
+// 登录
 const handleLogin = async () => {
   try {
     const isInvalid = await formRef.value?.validate()
     if (isInvalid) return
     loading.value = true
-    if (props.isRegister) {
-      await userStore.accountSignup({
-        username: form.username,
-        nickname: form.username,
-        password: encryptByRsa(form.password) || '',
-        captcha: form.captcha,
-        uuid: form.uuid,
-        gender: 0,
-        deptId: 1,
-        roleIds: ['547888897925840928'],
-        status: 1,
-      })
-    }
     await userStore.accountLogin({
       username: form.username,
       password: encryptByRsa(form.password) || '',
@@ -180,19 +122,19 @@ const handleLogin = async () => {
     })
     tabsStore.reset()
     const { redirect, ...othersQuery } = router.currentRoute.value.query
+    const { rememberMe } = loginConfig.value
+    loginConfig.value.username = rememberMe ? form.username : ''
     await router.push({
       path: (redirect as string) || '/',
       query: {
         ...othersQuery,
       },
     })
-    const { rememberMe } = loginConfig.value
-    loginConfig.value.username = rememberMe ? form.username : ''
-    loginConfig.value.password = rememberMe ? form.password : ''
-    Message.success(`${props.isRegister ? '注册' : '登录'}成功，${form.username} ${timeFix()}，欢迎使用`)
+    Message.success('欢迎使用')
   } catch (error) {
-    // Message.error(String(error))
+    console.error(error)
     getCaptcha()
+    form.captcha = ''
   } finally {
     loading.value = false
   }
@@ -200,12 +142,7 @@ const handleLogin = async () => {
 
 onMounted(() => {
   getCaptcha()
-  inputRef.value?.focus()
 })
-</script>
-
-<script lang="ts">
-export default {}
 </script>
 
 <style scoped lang="scss">
@@ -235,11 +172,6 @@ export default {}
   border-color: rgb(var(--arcoblue-6));
 }
 
-.arco-checkbox-checked :deep(.arco-checkbox-icon-check) {
-  transform: scale(1.2);
-  transition: transform 0.3s cubic-bezier(0.3, 1.3, 0.3, 1);
-}
-
 .captcha {
   width: 111px;
   height: 36px;
@@ -248,7 +180,6 @@ export default {}
 
 .btn {
   height: 40px;
-  // margin-top: 20px;
 }
 
 .captcha-container {

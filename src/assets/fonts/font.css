@@ -18,3 +18,10 @@
   font-weight: normal;
   font-style: normal;
 }
+
+@font-face {
+  font-family: 'PingFang SC';
+  src: url('@/assets/fonts/PingFang/PingFang SC.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}

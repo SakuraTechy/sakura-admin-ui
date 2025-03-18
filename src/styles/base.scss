@@ -1,4 +1,5 @@
 @use './var.scss' as *;
+@use "../assets/fonts/font.css";
 
 body {
   --margin: 14px; // 通用外边距
@@ -16,6 +17,9 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
+  font-family: var(--current-font-family), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html {
@@ -26,8 +30,6 @@ body {
   overflow: hidden;
   color: var(--color-text-2);
   background-color: #f5f7fd; // body背景颜色
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   // font-family: Avenir, Helvetica, Arial, sans-serif;
   // font-family: Helvetica Neue, Helvetica, PingFang SC, Hiragino Sans GB, Microsoft YaHei, \5fae\8f6f\96c5\9ed1, Arial,
@@ -56,4 +58,8 @@ a:hover {
   cursor: pointer;
   color: inherit;
   text-decoration: none;
+}
+
+:root {
+  --current-font-family: 'PingFang SC';
 }

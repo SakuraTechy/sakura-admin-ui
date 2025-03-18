@@ -62,6 +62,8 @@ export interface AccountSignupReq extends AuthReq {
   username: string
   nickname: string
   password: string
+  captcha: string
+  uuid: string
   gender: number
   deptId: number
   roleIds: string[]

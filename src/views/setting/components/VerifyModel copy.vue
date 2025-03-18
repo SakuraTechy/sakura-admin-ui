@@ -6,7 +6,10 @@
     <GiForm ref="formRef" v-model="form" :columns="columns">
       <template #captcha>
         <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1" />
-        <a-button class="captcha-btn" :loading="captchaLoading" :disabled="captchaDisable" size="large" @click="onCaptcha">
+        <a-button
+          class="captcha-btn" :loading="captchaLoading" :disabled="captchaDisable" size="large"
+          @click="onCaptcha"
+        >
           {{ captchaBtnName }}
         </a-button>
       </template>
@@ -48,47 +51,36 @@ const [form, resetForm] = useResetReactive({
   oldPassword: '',
   newPassword: '',
   rePassword: '',
-  captchaDisable: false,
 })
 
 const columns: ColumnItem[] = reactive([
   {
-    label: '新手机号',
+    label: '手机号',
     field: 'phone',
     type: 'input',
     span: 24,
+    props: {
+      showWordLimit: false,
+    },
     rules: [
-      { required: true, message: '请输入新手机号' },
-      { match: Regexp.Phone, message: '请输入正确的新手机号' },
+      { required: true, message: '请输入手机号' },
+      { match: Regexp.Phone, message: '请输入正确的手机号' },
     ],
     hide: () => {
       return verifyType.value !== 'phone'
     },
-    props: {
-      allowClear: true,
-      maxLength: 11,
-      onInput: () => {
-        form.captchaDisable = Regexp.Phone.test(form.phone)
-      },
-    },
   },
   {
-    label: '新邮箱',
+    label: '邮箱',
     field: 'email',
     type: 'input',
     span: 24,
     rules: [
-      { required: true, message: '请输入新邮箱' },
-      { match: Regexp.Email, message: '请输入正确的新邮箱' },
+      { required: true, message: '请输入邮箱' },
+      { match: Regexp.Email, message: '请输入正确的邮箱' },
     ],
     hide: () => {
       return verifyType.value !== 'email'
-    },
-    props: {
-      allowClear: true,
-      onInput: () => {
-        form.captchaDisable = Regexp.Email.test(form.email)
-      },
     },
   },
   {
@@ -173,13 +165,20 @@ const onCaptcha = async () => {
 const captchaTimer = ref()
 const captchaTime = ref(60)
 const captchaBtnName = ref('获取验证码')
-
+const captchaDisable = ref(false)
 // 重置验证码
 const resetCaptcha = () => {
   window.clearInterval(captchaTimer.value)
   captchaTime.value = 60
   captchaBtnName.value = '获取验证码'
-  form.captchaDisable = true
+  captchaDisable.value = false
+}
+
+// 重置
+const reset = () => {
+  formRef.value?.formRef?.resetFields()
+  resetForm()
+  resetCaptcha()
 }
 
 // 获取验证码
@@ -190,16 +189,14 @@ const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
     captchaBtnName.value = '发送中...'
     if (verifyType.value === 'phone') {
       // await getSmsCaptcha(form.phone, captchaReq)
-      Message.success('短信发送成功，演示默认【111111】')
-      form.captcha = '111111'
     } else if (verifyType.value === 'email') {
       await getEmailCaptcha(form.email, captchaReq)
-      Message.success('邮件发送成功，请前往邮箱查看验证码')
     }
     captchaLoading.value = false
-    form.captchaDisable = false
+    captchaDisable.value = true
     captchaBtnName.value = `获取验证码(${(captchaTime.value -= 1)}s)`
-    // Message.success('仅提供效果演示，实际使用请查看代码取消相关注释')
+    // Message.success('发送成功')
+    Message.success('仅提供效果演示，实际使用请查看代码取消相关注释')
     captchaTimer.value = window.setInterval(() => {
       captchaTime.value -= 1
       captchaBtnName.value = `获取验证码(${captchaTime.value}s)`
@@ -212,13 +209,6 @@ const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
   } finally {
     captchaLoading.value = false
   }
-}
-
-// 取消
-const reset = () => {
-  formRef.value?.formRef?.resetFields()
-  resetForm()
-  resetCaptcha()
 }
 
 // 保存

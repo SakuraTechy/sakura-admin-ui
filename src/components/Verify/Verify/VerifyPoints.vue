@@ -19,6 +19,7 @@
           <i class="iconfont icon-refresh"></i>
         </div>
         <img
+          v-if="pointBackImgBase"
           ref="canvas"
           :src="`data:image/png;base64,${pointBackImgBase}`"
           alt=""

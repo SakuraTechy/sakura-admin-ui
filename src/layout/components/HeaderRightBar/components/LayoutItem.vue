@@ -3,13 +3,19 @@
 </template>
 
 <script setup lang="ts">
-interface Props {
-  mode: 'left' | 'top' | 'mix'
-}
+defineOptions({ name: 'LayoutItem' })
 
 withDefaults(defineProps<Props>(), {})
 
 const emit = defineEmits(['click'])
+
+interface Props {
+  mode: 'left' | 'top' | 'mix'
+}
+</script>
+
+<script lang="ts">
+export default {}
 </script>
 
 <style scoped lang="scss">

@@ -90,6 +90,10 @@ const onModify = async () => {
 }
 </script>
 
+<script lang="ts">
+export default {}
+</script>
+
 <style scoped lang="scss">
 .arco-input-wrapper,
 :deep(.arco-select-view-single) {

@@ -9,24 +9,14 @@
     @submit="handleLogin"
   >
     <a-form-item field="email" hide-label>
-      <!-- <a-input v-model="form.email" placeholder="请输入邮箱" allow-clear /> -->
-      <a-input ref="inputRefd" v-model="form.email" placeholder="请输入邮箱" allow-clear @input="validatePhone">
-        <template #prefix>
-          <icon-email />
-        </template>
-      </a-input>
+      <a-input v-model="form.email" placeholder="请输入邮箱" allow-clear />
     </a-form-item>
     <a-form-item field="captcha" hide-label>
-      <!-- <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1" /> -->
-      <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1">
-        <template #prefix>
-          <icon-safe />
-        </template>
-      </a-input>
+      <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1" />
       <a-button
         class="captcha-btn"
         :loading="captchaLoading"
-        :disabled="!captchaDisable"
+        :disabled="captchaDisable"
         size="large"
         @click="onCaptcha"
       >
@@ -35,8 +25,7 @@
     </a-form-item>
     <a-form-item>
       <a-space direction="vertical" fill class="w-full">
-        <!-- <a-button disabled class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button> -->
-        <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立 即 登 录</a-button>
+        <a-button disabled class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button>
       </a-space>
     </a-form-item>
     <Verify
@@ -51,13 +40,11 @@
 
 <script setup lang="ts">
 import { type FormInstance, Message } from '@arco-design/web-vue'
-import { type BehaviorCaptchaReq, getEmailCaptcha } from '@/apis'
+import type { BehaviorCaptchaReq } from '@/apis'
 // import { type BehaviorCaptchaReq, getEmailCaptcha } from '@/apis'
 import { useTabsStore, useUserStore } from '@/stores'
 import * as Regexp from '@/utils/regexp'
-import { timeFix } from '@/utils'
 
-const inputRefd = ref<HTMLInputElement | null>(null)
 const formRef = ref<FormInstance>()
 const form = reactive({
   email: '',
@@ -70,67 +57,6 @@ const rules: FormInstance['rules'] = {
     { match: Regexp.Email, message: '请输入正确的邮箱' },
   ],
   captcha: [{ required: true, message: '请输入验证码' }],
-}
-
-const VerifyRef = ref<InstanceType<any>>()
-const captchaType = ref('blockPuzzle')
-const captchaMode = ref('pop')
-const captchaLoading = ref(false)
-
-const captchaTimer = ref()
-const captchaTime = ref(60)
-const captchaBtnName = ref('获取验证码')
-const captchaDisable = ref(false)
-
-const validatePhone = () => {
-  const email = form.email
-  const isValid = Regexp.Email.test(email)
-  captchaDisable.value = isValid
-}
-
-// 重置验证码
-const resetCaptcha = () => {
-  window.clearInterval(captchaTimer.value)
-  captchaTime.value = 60
-  captchaBtnName.value = '获取验证码'
-  captchaDisable.value = true
-}
-
-// 弹出行为验证码
-const onCaptcha = async () => {
-  if (captchaLoading.value) return
-  const isInvalid = await formRef.value?.validateField('email')
-  if (isInvalid) return
-  VerifyRef.value.show()
-}
-// 获取验证码
-const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
-  if (captchaLoading.value) return
-  const isInvalid = await formRef.value?.validateField('email')
-  if (isInvalid) return
-  try {
-    captchaLoading.value = true
-    captchaBtnName.value = '发送中...'
-    // await getEmailCaptcha(form.email, captchaReq)
-    // const captchaReq: BehaviorCaptchaReq = { /* 根据需要填充属性 */ }
-    await getEmailCaptcha(form.email, captchaReq)
-    captchaLoading.value = false
-    captchaDisable.value = false
-    captchaBtnName.value = `获取验证码(${(captchaTime.value -= 1)}s)`
-    Message.success('邮件发送成功，请前往邮箱查看验证码')
-    // Message.success('仅提供效果演示，实际使用请查看代码取消相关注释')
-    captchaTimer.value = window.setInterval(() => {
-      captchaTime.value -= 1
-      captchaBtnName.value = `获取验证码(${captchaTime.value}s)`
-      if (captchaTime.value <= 0) {
-        resetCaptcha()
-      }
-    }, 1000)
-  } catch (error) {
-    resetCaptcha()
-  } finally {
-    captchaLoading.value = false
-  }
 }
 
 const userStore = useUserStore()
@@ -146,26 +72,70 @@ const handleLogin = async () => {
     await userStore.emailLogin(form)
     tabsStore.reset()
     const { redirect, ...othersQuery } = router.currentRoute.value.query
-    router.push({
+    await router.push({
       path: (redirect as string) || '/',
       query: {
         ...othersQuery,
       },
     })
-    Message.success(`登录成功，${form.email} ${timeFix()}，欢迎使用`)
+    Message.success('欢迎使用')
   } catch (error) {
     form.captcha = ''
   } finally {
     loading.value = false
   }
 }
-onMounted(() => {
-  inputRefd.value?.focus()
-})
-</script>
 
-<script lang="ts">
-export default {}
+const VerifyRef = ref<InstanceType<any>>()
+const captchaType = ref('blockPuzzle')
+const captchaMode = ref('pop')
+const captchaLoading = ref(false)
+
+// 弹出行为验证码
+const onCaptcha = async () => {
+  if (captchaLoading.value) return
+  const isInvalid = await formRef.value?.validateField('email')
+  if (isInvalid) return
+  VerifyRef.value.show()
+}
+
+const captchaTimer = ref()
+const captchaTime = ref(60)
+const captchaBtnName = ref('获取验证码')
+const captchaDisable = ref(false)
+// 重置验证码
+const resetCaptcha = () => {
+  window.clearInterval(captchaTimer.value)
+  captchaTime.value = 60
+  captchaBtnName.value = '获取验证码'
+  captchaDisable.value = false
+}
+
+// 获取验证码
+// eslint-disable-next-line unused-imports/no-unused-vars
+const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
+  try {
+    captchaLoading.value = true
+    captchaBtnName.value = '发送中...'
+    // await getEmailCaptcha(form.email, captchaReq)
+    captchaLoading.value = false
+    captchaDisable.value = true
+    captchaBtnName.value = `获取验证码(${(captchaTime.value -= 1)}s)`
+    // Message.success('邮件发送成功')
+    Message.success('仅提供效果演示，实际使用请查看代码取消相关注释')
+    captchaTimer.value = window.setInterval(() => {
+      captchaTime.value -= 1
+      captchaBtnName.value = `获取验证码(${captchaTime.value}s)`
+      if (captchaTime.value <= 0) {
+        resetCaptcha()
+      }
+    }, 1000)
+  } catch (error) {
+    resetCaptcha()
+  } finally {
+    captchaLoading.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">

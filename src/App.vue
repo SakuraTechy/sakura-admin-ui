@@ -1,3 +1,11 @@
+<!--
+ * @Author: liuzhi 1306086303@qq.com
+ * @Date: 2025-03-12 11:00:21
+ * @LastEditors: liuzhi 1306086303@qq.com
+ * @LastEditTime: 2025-03-17 16:35:19
+ * @FilePath: \continew-admin-ui\src\App.vue
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+-->
 <template>
   <a-config-provider update-at-scroll>
     <template #loading>
@@ -16,13 +24,18 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { useAppStore, useUserStore } from '@/stores'
 
 defineOptions({ name: 'App' })
 const userStore = useUserStore()
 const appStore = useAppStore()
-appStore.initTheme()
-appStore.initSiteConfig()
+
+onMounted(() => {
+  appStore.initTheme()
+  appStore.initSiteConfig()
+  appStore.initFontFamily() // 初始化字体配置
+})
 </script>
 
 <style scoped lang="scss">

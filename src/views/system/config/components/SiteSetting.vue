@@ -73,7 +73,7 @@
         </template>
       </a-form-item>
       <a-form-item class="input-item" field="SITE_TITLE" :label="siteConfig.SITE_TITLE.name" :help="siteConfig.SITE_TITLE.description">
-        <a-input v-model.trim="form.SITE_TITLE" placeholder="请输入系统名称" :max-length="18" show-word-limit />
+        <a-input v-model.trim="form.SITE_TITLE" placeholder="请输入系统名称" :max-length="30" show-word-limit />
       </a-form-item>
       <a-form-item class="input-item" field="SITE_DESCRIPTION" :label="siteConfig.SITE_DESCRIPTION.name" :help="siteConfig.SITE_DESCRIPTION.description">
         <a-textarea

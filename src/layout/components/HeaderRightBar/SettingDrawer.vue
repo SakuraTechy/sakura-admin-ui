@@ -41,13 +41,20 @@
       <a-divider v-if="settingOpen" orientation="center">界面显示</a-divider>
 
       <a-descriptions v-if="settingOpen" :column="1" :align="{ value: 'right' }" :value-style="{ paddingRight: 0 }">
+        <a-descriptions-item label="系统字体">
+          <a-select
+            v-model="appStore.fontFamily" placeholder="请选择" :options="fontFamilyList" :disabled="!appStore.tab"
+            :trigger-props="{ autoFitPopupMinWidth: true }" :style="{ width: '150px' }"
+          >
+          </a-select>
+        </a-descriptions-item>
         <a-descriptions-item label="页签显示">
           <a-switch v-model="appStore.tab" />
         </a-descriptions-item>
         <a-descriptions-item label="页签风格">
           <a-select
             v-model="appStore.tabMode" placeholder="请选择" :options="tabModeList" :disabled="!appStore.tab"
-            :trigger-props="{ autoFitPopupMinWidth: true }" :style="{ width: '120px' }"
+            :trigger-props="{ autoFitPopupMinWidth: true }" :style="{ width: '150px' }"
           >
           </a-select>
         </a-descriptions-item>
@@ -57,7 +64,7 @@
         <a-descriptions-item label="动画显示">
           <a-select
             v-model="appStore.animateMode" placeholder="请选择" :options="animateModeList"
-            :disabled="!appStore.animate" :style="{ width: '120px' }"
+            :disabled="!appStore.animate" :style="{ width: '150px' }"
           >
           </a-select>
         </a-descriptions-item>
@@ -116,7 +123,13 @@ const tabModeList: App.TabItem[] = [
   { label: '间隔卡片', value: 'card-gutter' },
   { label: '圆角', value: 'rounded' },
 ]
-
+const fontFamilyList: App.FontFamilyItem[] = [
+  { label: '微软雅黑', value: 'Microsoft YaHei' },
+  { label: '苹方黑体', value: 'PingFang SC' },
+  { label: 'DINPro-Bold', value: 'DINPro-Bold' },
+  { label: 'DINPro-Medium', value: 'DINPro-Medium' },
+  { label: 'DINPro-Regular', value: 'DINPro-Regular' },
+]
 const animateModeList: App.AnimateItem[] = [
   { label: '默认', value: 'zoom-fade' },
   { label: '滑动', value: 'fade-slide' },
@@ -167,6 +180,7 @@ const copySettings = () => {
     theme: 'light',
     themeColor: appStore.themeColor,
     tab: appStore.tab,
+    fontFamily: appStore.fontFamily,
     tabMode: appStore.tabMode,
     animate: appStore.animate,
     animateMode: appStore.animateMode,

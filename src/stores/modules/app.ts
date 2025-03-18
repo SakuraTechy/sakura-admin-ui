@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, reactive, toRefs } from 'vue'
+import { computed, reactive, toRefs, watch } from 'vue'
 import { generate, getRgbStr } from '@arco-design/color'
 import { type BasicConfig, listSiteOptionDict } from '@/apis'
 import { getSettings } from '@/config/setting'
@@ -19,6 +19,18 @@ const storeSetup = () => {
     })
     return obj
   })
+
+  // 设置字体
+  const setFontFamily = (font: string) => {
+    if (!font) return
+    document.documentElement.style.setProperty('--current-font-family', font)
+  }
+
+  // 初始化字体
+  const initFontFamily = () => {
+    if (!settingConfig.fontFamily) return
+    setFontFamily(settingConfig.fontFamily)
+  }
 
   // 设置主题色
   const setThemeColor = (color: string) => {
@@ -103,6 +115,17 @@ const storeSetup = () => {
     immediate: true,
   })
 
+  // 监听字体变化
+  watch(
+    () => settingConfig.fontFamily,
+    (newFont) => {
+      if (newFont) {
+        setFontFamily(newFont)
+      }
+    },
+    { immediate: true },
+  )
+
   const getFavicon = () => {
     return siteConfig.SITE_FAVICON
   }
@@ -138,6 +161,8 @@ const storeSetup = () => {
     getTitle,
     getCopyright,
     getForRecord,
+    setFontFamily,
+    initFontFamily,
   }
 }
 
