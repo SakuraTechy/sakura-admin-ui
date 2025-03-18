@@ -9,7 +9,6 @@
     @submit="handleLogin"
   >
     <a-form-item field="email" hide-label>
-      <!-- <a-input v-model="form.email" placeholder="请输入邮箱" allow-clear /> -->
       <a-input ref="inputRefd" v-model="form.email" placeholder="请输入邮箱" allow-clear @input="validatePhone">
         <template #prefix>
           <icon-email />
@@ -17,7 +16,6 @@
       </a-input>
     </a-form-item>
     <a-form-item field="captcha" hide-label>
-      <!-- <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1" /> -->
       <a-input v-model="form.captcha" placeholder="请输入验证码" :max-length="6" allow-clear style="flex: 1 1">
         <template #prefix>
           <icon-safe />
@@ -35,7 +33,6 @@
     </a-form-item>
     <a-form-item>
       <a-space direction="vertical" fill class="w-full">
-        <!-- <a-button disabled class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立即登录</a-button> -->
         <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立 即 登 录</a-button>
       </a-space>
     </a-form-item>
@@ -52,7 +49,6 @@
 <script setup lang="ts">
 import { type FormInstance, Message } from '@arco-design/web-vue'
 import { type BehaviorCaptchaReq, getEmailCaptcha } from '@/apis'
-// import { type BehaviorCaptchaReq, getEmailCaptcha } from '@/apis'
 import { useTabsStore, useUserStore } from '@/stores'
 import * as Regexp from '@/utils/regexp'
 import { timeFix } from '@/utils'
@@ -103,6 +99,7 @@ const onCaptcha = async () => {
   if (isInvalid) return
   VerifyRef.value.show()
 }
+
 // 获取验证码
 const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
   if (captchaLoading.value) return

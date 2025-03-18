@@ -9,11 +9,6 @@
     @submit="handleLogin"
   >
     <a-form-item field="phone" hide-label>
-      <!-- <a-input v-model="form.phone" placeholder="请输入手机号" :max-length="11" allow-clear>
-        <template #prefix>
-          <icon-phone />
-        </template>
-      </a-input> -->
       <a-space direction="vertical" size="mini">
         <a-input-group>
           <a-select
@@ -71,7 +66,6 @@ import { type FormInstance, Message } from '@arco-design/web-vue'
 import axios from 'axios'
 import { countryNameMap } from './code'
 import type { BehaviorCaptchaReq } from '@/apis'
-// import { type BehaviorCaptchaReq, getSmsCaptcha } from '@/apis'
 import { useTabsStore, useUserStore } from '@/stores'
 import * as Regexp from '@/utils/regexp'
 import { getSmsCaptcha } from '@/apis'
@@ -143,15 +137,6 @@ const VerifyRef = ref<InstanceType<any>>()
 const captchaType = ref('blockPuzzle')
 const captchaMode = ref('pop')
 const captchaLoading = ref(false)
-// 弹出行为验证码
-const onCaptcha = async () => {
-  if (captchaLoading.value) return
-  const isInvalid = await formRef.value?.validateField('phone')
-  if (isInvalid) return
-  // 重置行为参数
-  VerifyRef.value.instance.refresh()
-  VerifyRef.value.show()
-}
 
 const captchaTimer = ref()
 const captchaTime = ref(60)
@@ -172,8 +157,17 @@ const resetCaptcha = () => {
   captchaDisable.value = true
 }
 
-// 获取验证码
+// 弹出行为验证码
+const onCaptcha = async () => {
+  if (captchaLoading.value) return
+  const isInvalid = await formRef.value?.validateField('phone')
+  if (isInvalid) return
+  // 重置行为参数
+  VerifyRef.value.instance.refresh()
+  VerifyRef.value.show()
+}
 
+// 获取验证码
 const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
   try {
     captchaLoading.value = true

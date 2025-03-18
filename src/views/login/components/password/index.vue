@@ -32,7 +32,7 @@
       </a-input>
       <a-button
         class="captcha-btn" :loading="captchaLoading" :disabled="!captchaDisable" size="large"
-        @click="onCaptcha({})"
+        @click="onCaptcha"
       >
         {{ captchaBtnName }}
       </a-button>
@@ -42,6 +42,13 @@
         <a-button class="btn" type="primary" :loading="loading" html-type="submit" size="large" long>立 即 修 改</a-button>
       </a-space>
     </a-form-item>
+    <Verify
+      ref="VerifyRef"
+      :captcha-type="captchaType"
+      :mode="captchaMode"
+      :img-size="{ width: '330px', height: '155px' }"
+      @success="getCaptcha"
+    />
   </a-form>
 </template>
 
@@ -75,6 +82,11 @@ const rules: FormInstance['rules'] = {
   captcha: [{ required: true, message: '请输入验证码' }],
 }
 
+const VerifyRef = ref<InstanceType<any>>()
+const captchaType = ref('blockPuzzle')
+const captchaMode = ref('pop')
+const captchaLoading = ref(false)
+
 const captchaTimer = ref()
 const captchaTime = ref(60)
 const captchaBtnName = ref('获取验证码')
@@ -94,9 +106,16 @@ const resetCaptcha = () => {
   captchaDisable.value = true
 }
 
-const captchaLoading = ref(false)
+// 弹出行为验证码
+const onCaptcha = async () => {
+  if (captchaLoading.value) return
+  const isInvalid = await formRef.value?.validateField('email')
+  if (isInvalid) return
+  VerifyRef.value.show()
+}
+
 // 获取验证码
-const onCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
+const getCaptcha = async (captchaReq: BehaviorCaptchaReq) => {
   if (captchaLoading.value) return
   const isInvalid = await formRef.value?.validateField('email')
   if (isInvalid) return
