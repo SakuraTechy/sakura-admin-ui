@@ -57,9 +57,9 @@
 
 <script setup lang="ts">
 import dayjs from 'dayjs'
-import type { TableInstance } from '@arco-design/web-vue'
 import OperationLogDetailDrawer from './OperationLogDetailDrawer.vue'
 import { type LogQuery, type LogResp, exportOperationLog, listLog } from '@/apis/monitor'
+import type { TableInstanceColumns } from '@/components/GiTable/type'
 import DateRangePicker from '@/components/DateRangePicker/index.vue'
 import { useDownload, useTable } from '@/hooks'
 import has from '@/utils/has'
@@ -80,7 +80,7 @@ const {
   pagination,
   search,
 } = useTable((page) => listLog({ ...queryForm, ...page }), { immediate: true })
-const columns: TableInstance['columns'] = [
+const columns: TableInstanceColumns[] = [
   {
     title: '序号',
     width: 66,

@@ -6,13 +6,13 @@
       size="medium"
       :type="appStore.tabMode"
       :active-key="route.path"
-      @tab-click="handleTabClick($event as string)"
-      @delete="tabsStore.closeCurrent($event as string)"
+      @tab-click="handleTabClick($event)"
+      @delete="(path) => tabsStore.closeCurrent(String(path))"
     >
       <a-tab-pane
         v-for="item of tabsStore.tabList"
         :key="item.path"
-        :title="(item.meta?.title as string)"
+        :title="item.meta?.title"
         :closable="Boolean(!item.meta?.affix)"
       >
         <template #title>
@@ -29,7 +29,7 @@
               </a-doption>
               <a-doption @click="tabsStore.closeCurrent(currentContextPath)">
                 <template #icon>
-                  <icon-close />
+                  <icon-to-bottom />
                 </template>
                 <template #default>关闭当前</template>
               </a-doption>
@@ -56,17 +56,18 @@
         </template>
       </a-tab-pane>
       <template #extra>
-        <ReloadIcon></ReloadIcon>
+        <component :is="ReloadIcon" class="gi_pr"></component>
         <a-dropdown trigger="hover">
-          <a-button type="text">
+          <!-- <a-button type="text">
             <template #icon>
               <icon-more-vertical />
             </template>
-          </a-button>
+          </a-button> -->
+          <component :is="MagicIcon" class="gi_mr"></component>
           <template #content>
             <a-doption @click="tabsStore.closeCurrent(route.path)">
               <template #icon>
-                <icon-close />
+                <icon-to-bottom />
               </template>
               <template #default>关闭当前</template>
             </a-doption>
@@ -104,6 +105,7 @@
 <script setup lang="ts">
 import type { RouteLocationNormalized } from 'vue-router'
 import ReloadIcon from './ReloadIcon.vue'
+import MagicIcon from './MagicIcon.vue'
 import { useAppStore, useTabsStore } from '@/stores'
 
 defineOptions({ name: 'Tabs' })
@@ -119,6 +121,7 @@ const currentContextPath = ref('')
 // Initialize tabs
 tabsStore.init()
 
+// 路由发生改变触发
 const handleRouteChange = () => {
   const item = { ...route } as unknown as RouteLocationNormalized
   tabsStore.addTabItem(toRaw(item))
@@ -127,6 +130,7 @@ const handleRouteChange = () => {
 
 handleRouteChange()
 
+// 监听路由变化
 watch(
   () => route.fullPath,
   () => {
@@ -134,8 +138,9 @@ watch(
   },
 )
 
+// 点击页签
 const handleTabClick = (key: string | number) => {
-  const obj = tabsStore.tabList.find((i) => i.path === key)
+  const obj = tabsStore.tabList.find((i) => i.path === String(key))
   obj ? router.push(obj.fullPath || obj.path) : router.push(String(key))
 }
 

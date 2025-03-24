@@ -65,11 +65,11 @@
 </template>
 
 <script setup lang="ts">
-import type { TableInstance } from '@arco-design/web-vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import DictTree from './tree/index.vue'
 import DictItemAddModal from './DictItemAddModal.vue'
 import { type DictItemQuery, type DictItemResp, clearDictCache, deleteDictItem, listDictItem } from '@/apis/system/dict'
+import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { useTable } from '@/hooks'
 import { isMobile } from '@/utils'
 import has from '@/utils/has'
@@ -88,7 +88,7 @@ const {
   search,
   handleDelete,
 } = useTable((page) => listDictItem({ ...queryForm, ...page }), { immediate: false })
-const columns: TableInstance['columns'] = [
+const columns: TableInstanceColumns[] = [
   {
     title: '序号',
     width: 66,

@@ -1,14 +1,18 @@
 <template>
   <div v-if="isDesktop" class="login pc">
-    <h3 class="login-logo">
-      <img v-if="logo" :src="logo" alt="logo" />
-      <img v-else src="/logo.svg" alt="logo" />
+    <h3 v-if="title !== 'SakurA Platform'" class="login-logo">
+      <!-- <img v-if="logo" :src="logo" alt="logo" />
+      <img v-else src="/logo.svg" alt="logo" /> -->
+      <img :class="title === 'SakurA Platform' ? 'login-logo-img1' : 'login-logo-img'" :src="logo" alt="logo" />
       <span>{{ title }}</span>
     </h3>
     <a-row align="stretch" class="login-box">
       <a-col :xs="0" :sm="10" :md="11">
-        <div class="login-left">
-          <img class="login-left__img" src="@/assets/images/banner.png" alt="banner" />
+        <div class="login-left" :class="title === 'SakurA Platform' ? 'sakura-bg' : 'background'">
+          <img v-if="title !== 'SakurA Platform'" class="login-left__img" src="@/assets/images/banner.png" alt="banner" />
+          <img :class="title === 'SakurA Platform' ? 'login-left__log1' : 'login-left__log'" :src="logo" alt="logo" />
+          <div v-if="title === 'SakurA Platform'" class="login-left__title">{{ title === 'SakurA Platform' ? 'SakurA 自动化平台' : title }}</div>
+          <div v-if="title === 'SakurA Platform'" class="login-left__version">{{ version }}</div>
         </div>
       </a-col>
       <a-col :xs="24" :sm="10" :md="13">
@@ -29,7 +33,7 @@
           </a-tabs>
           <h3 v-if="authStore.isEmailLogin" class="login-right__title">邮箱登录</h3>
           <EmailLogin v-if="authStore.isEmailLogin" />
-          <h3 v-if="authStore.isForgotPassword" class="login-right__title">忘记密码</h3>
+          <h3 v-if="authStore.isForgotPassword" class="login-right__title">修改密码</h3>
           <PasswordLogin v-if="authStore.isForgotPassword" />
           <div class="login-right__oauth">
             <div v-show="!authStore.isRegister">
@@ -65,8 +69,9 @@
     <Background />
   </div>
   <div v-else class="login h5">
-    <div class="login-logo">
-      <img v-if="logo" :src="logo" alt="logo" />
+    <div class="login-logo" :class="{ 'sakura-pd': title === 'SakurA Platform' }">
+      <!-- <img v-if="logo" :src="logo" alt="logo" /> -->
+      <img v-if="logo" :class="title === 'SakurA Platform' ? 'login-logo-img1' : 'login-logo-img'" :src="logo" alt="logo" />
       <img v-else src="/logo.svg" alt="logo" />
       <span>{{ title }}</span>
     </div>
@@ -221,17 +226,27 @@ onMounted(() => {
       font-size: 20px;
       line-height: 32px;
       display: flex;
-      padding: 0 20px;
+      &.sakura-pd {
+        padding: 0 10px;
+      }
+      &:not(.sakura-pd) {
+        padding: 0 20px;
+      }
       align-items: center;
       justify-content: start;
       background-image: url('/src/assets/images/login_h5.jpg');
       background-size: 100% 100%;
       box-sizing: border-box;
 
-      img {
+      &-img {
         width: 34px;
         height: 34px;
         margin-right: 8px;
+      }
+
+      &-img1 {
+        width: 50px;
+        height: 50px;
       }
     }
 
@@ -426,10 +441,18 @@ onMounted(() => {
       justify-content: center;
       align-items: center;
 
-      img {
+      &-img {
         width: 34px;
         height: 34px;
         margin-right: 8px;
+        // width: 60px;
+        // height: 60px;
+        // margin-right: -5px;
+      }
+
+      &-img1 {
+        width: 50px;
+        height: 50px;
       }
     }
 
@@ -457,7 +480,15 @@ onMounted(() => {
     /* 子项之间的垂直间距 */
     position: relative;
     overflow: hidden;
-    background: linear-gradient(60deg, rgb(var(--primary-6)), rgb(var(--primary-3)));
+    // background: linear-gradient(60deg, rgb(var(--primary-6)), rgb(var(--primary-3)));
+    &.background {
+      background: linear-gradient(60deg, rgb(var(--primary-6)), rgb(var(--primary-3)));
+      background-size: 110%;
+    }
+    &.sakura-bg {
+      background: url(@/assets/images/left-bg.png) no-repeat center top;
+      background-size: 110%;
+    }
 
     &__img {
       width: 100%;
@@ -469,6 +500,17 @@ onMounted(() => {
       transform: translateX(-50%) translateY(-50%);
       transition: all 0.3s;
       object-fit: cover;
+    }
+
+    &__log {
+      width: 50px !important;
+      height: 50px !important;
+      margin-bottom: 20px;
+    }
+
+    &__log1 {
+      width: 100px !important;
+      height: 100px !important;
     }
 
     &__title {

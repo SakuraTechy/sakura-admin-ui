@@ -1,6 +1,7 @@
 <template>
   <div class="gi_table_page">
     <GiTable
+      title=""
       row-key="id"
       :data="dataList"
       :columns="columns"
@@ -85,7 +86,6 @@
 </template>
 
 <script setup lang="ts">
-import type { TableInstance } from '@arco-design/web-vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import AppAddModal from './AppAddModal.vue'
 import AppDetailDrawer from './AppDetailDrawer.vue'
@@ -98,6 +98,7 @@ import {
   listApp,
   resetAppSecret,
 } from '@/apis/open/app'
+import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { useDownload, useTable } from '@/hooks'
 import { isMobile } from '@/utils'
 import has from '@/utils/has'
@@ -115,7 +116,7 @@ const {
   search,
   handleDelete,
 } = useTable((page) => listApp({ ...queryForm, ...page }), { immediate: true })
-const columns: TableInstance['columns'] = [
+const columns: TableInstanceColumns[] = [
   {
     title: '序号',
     width: 66,

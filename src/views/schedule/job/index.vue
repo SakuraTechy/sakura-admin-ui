@@ -1,6 +1,7 @@
 <template>
   <div class="gi_table_page">
     <GiTable
+      title=""
       row-key="id"
       :data="dataList"
       :columns="columns"
@@ -78,12 +79,12 @@
 </template>
 
 <script setup lang="ts">
-import type { TableInstance } from '@arco-design/web-vue'
 import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
 import JobAddModal from './JobAddModal.vue'
 import JobDetailDrawer from './JobDetailDrawer.vue'
 import { type JobQuery, type JobResp, deleteJob, listGroup, listJob, triggerJob, updateJobStatus } from '@/apis/schedule'
+import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { useTable } from '@/hooks'
 import { useDict } from '@/hooks/app'
 import { isMobile, parseCron } from '@/utils'
@@ -104,7 +105,7 @@ const {
   search,
   handleDelete,
 } = useTable((page) => listJob({ ...queryForm, ...page }), { immediate: false })
-const columns: TableInstance['columns'] = [
+const columns: TableInstanceColumns[] = [
   {
     title: '序号',
     width: 66,

@@ -30,7 +30,7 @@ const activeTab = ref('1')
 const roleId = ref('')
 // 根据选中角色查询
 const handleSelectRole = (keys: Array<any>) => {
-  roleId.value = keys.length === 1 ? keys[0] : undefined
+  roleId.value = keys.length === 1 ? String(keys[0]) : ''
 }
 </script>
 

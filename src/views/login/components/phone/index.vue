@@ -9,6 +9,11 @@
     @submit="handleLogin"
   >
     <a-form-item field="phone" hide-label>
+      <!-- <a-input v-model="form.phone" placeholder="请输入手机号" :max-length="11" allow-clear>
+        <template #prefix>
+          <icon-phone />
+        </template>
+      </a-input> -->
       <a-space direction="vertical" size="mini">
         <a-input-group>
           <a-select
@@ -66,6 +71,7 @@ import { type FormInstance, Message } from '@arco-design/web-vue'
 import axios from 'axios'
 import { countryNameMap } from './code'
 import type { BehaviorCaptchaReq } from '@/apis'
+// import { type BehaviorCaptchaReq, getSmsCaptcha } from '@/apis'
 import { useTabsStore, useUserStore } from '@/stores'
 import * as Regexp from '@/utils/regexp'
 import { getSmsCaptcha } from '@/apis'
@@ -88,7 +94,7 @@ const form = reactive({
   password: 'qq111111',
   gender: 0,
   deptId: 1,
-  roleIds: ['547888897925840928'],
+  roleIds: ['2'],
   status: 1,
   uuid: '',
   captcha: '',
@@ -213,7 +219,7 @@ const handleLogin = async () => {
         password: encryptByRsa(form.password) || '',
         gender: 0,
         deptId: 1,
-        roleIds: ['547888897925840928'],
+        roleIds: ['2'],
         status: 1,
       })
     }

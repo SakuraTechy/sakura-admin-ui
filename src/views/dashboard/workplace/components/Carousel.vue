@@ -24,10 +24,15 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import qs from 'query-string'
 import { isHttp } from '@/utils/validate'
 
-export interface DataItem {
+interface DataItem {
   name: string
   img: string
   url: string
+}
+
+interface ApiResponse {
+  data: DataItem[]
+  timestamp: number
 }
 
 const images = ref<DataItem[]>([
@@ -43,7 +48,7 @@ const images = ref<DataItem[]>([
   },
 ])
 
-const get = <T = unknown>(url: string, params?: object, config?: AxiosRequestConfig): Promise<ApiRes<T>> => {
+const get = <T = unknown>(url: string, params?: object, config?: AxiosRequestConfig): Promise<ApiResponse> => {
   return new Promise((resolve, reject) => {
     axios
       .request<T>({
@@ -87,6 +92,7 @@ const getDataList = async () => {
 }
 
 onMounted(async () => {
+  dataList.value = images.value
   await getDataList()
 })
 </script>

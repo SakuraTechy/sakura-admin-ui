@@ -39,7 +39,7 @@
       <IconRight v-else />
     </template>
     <template #title="{ record }">
-      <GiSvgIcon :name="record.icon" :size="15" />
+      <GiSvgIcon :name="record.icon || ''" :size="15" />
       <span style="margin-left: 5px; vertical-align: middle">{{ record.title }}</span>
     </template>
     <template #permissions="{ record }">
@@ -58,6 +58,7 @@
 import { nextTick, ref } from 'vue'
 import { Message, type TableInstance } from '@arco-design/web-vue'
 import { type MenuResp, listMenu } from '@/apis/system/menu'
+import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { isMobile } from '@/utils'
 import type GiTable from '@/components/GiTable/index.vue'
 import { useTable } from '@/hooks'
@@ -165,7 +166,7 @@ const {
   },
 })
 
-const columns: TableInstance['columns'] = [
+const columns: TableInstanceColumns[] = [
   { title: '菜单', dataIndex: 'title', slotName: 'title', width: 170, fixed: !isMobile() ? 'left' : undefined },
   { title: '权限', dataIndex: 'permissions', slotName: 'permissions' },
 ]

@@ -1,18 +1,4 @@
-<template>
-  <a-drawer
-    v-model:visible="visible"
-    :title="title"
-    :mask-closable="false"
-    :esc-to-close="false"
-    :width="width >= 600 ? 600 : '100%'"
-    @before-ok="save"
-    @close="reset"
-  >
-    <GiForm ref="formRef" v-model="form" :columns="columns" layout="vertical" />
-  </a-drawer>
-</template>
-
-<script setup lang="tsx">
+<script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
 import { addSmsConfig, getSmsConfig, updateSmsConfig } from '@/apis/system/smsConfig'
@@ -29,12 +15,12 @@ const { width } = useWindowSize()
 const dataId = ref('')
 const visible = ref(false)
 const isUpdate = computed(() => !!dataId.value)
-const title = computed(() => (isUpdate.value ? '修改短信配置' : '新增短信配置'))
+const title = computed(() => (isUpdate.value ? '修改短信服务配置' : '新增短信服务配置'))
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { dis_enable_status_enum, sms_supplier_enum } = useDict('dis_enable_status_enum', 'sms_supplier_enum')
 
 const [form, resetForm] = useResetReactive({
-  status: 1,
+  // todo 待补充
 })
 
 const columns: ColumnItem[] = reactive([
@@ -42,32 +28,29 @@ const columns: ColumnItem[] = reactive([
     label: '名称',
     field: 'name',
     type: 'input',
-    span: 12,
+    span: 24,
     required: true,
-    props: {
-      maxLength: 100,
-    },
   },
   {
-    label: '厂商',
+    label: '厂商名称标识',
     field: 'supplier',
     type: 'select',
-    span: 12,
+    span: 24,
     required: true,
     props: {
       options: sms_supplier_enum,
     },
   },
   {
-    label: 'Access Key',
-    field: 'accessKey',
+    label: 'Access Key 或 API Key',
+    field: 'accessKeyId',
     type: 'input',
     span: 24,
     required: true,
   },
   {
-    label: 'Secret Key',
-    field: 'secretKey',
+    label: 'Access Secret 或 API Secret',
+    field: 'accessKeySecret',
     type: 'input',
     span: 24,
     required: true,
@@ -76,77 +59,53 @@ const columns: ColumnItem[] = reactive([
     label: '短信签名',
     field: 'signature',
     type: 'input',
-    span: 12,
-    props: {
-      maxLength: 100,
-    },
+    span: 24,
+    required: true,
   },
   {
     label: '模板 ID',
     field: 'templateId',
     type: 'input',
-    span: 12,
+    span: 24,
     required: true,
-    props: {
-      maxLength: 50,
-    },
   },
   {
     label: '负载均衡权重',
     field: 'weight',
     type: 'input-number',
-    span: 12,
-    props: {
-      min: 1,
-      max: 100,
-    },
+    span: 24,
   },
   {
-    label: '重试间隔',
+    label: '短信自动重试间隔时间（秒）',
     field: 'retryInterval',
     type: 'input-number',
-    span: 12,
-    slots: {
-      append: () => (
-        <span style={{ width: '30px', textAlign: 'center' }}>秒</span>
-      ),
-    },
-    props: {
-      min: 1,
-    },
+    span: 24,
   },
   {
-    label: '重试次数',
+    label: '短信重试次数',
     field: 'maxRetries',
     type: 'input-number',
-    span: 12,
-    props: {
-      min: 0,
-    },
+    span: 24,
   },
   {
-    label: '发送上限',
+    label: '当前厂商的发送数量上限',
     field: 'maximum',
     type: 'input-number',
-    span: 12,
-    props: {
-      min: 1,
-    },
+    span: 24,
   },
   {
-    label: '厂商配置',
+    label: '各个厂商独立配置',
     field: 'supplierConfig',
     type: 'input',
     span: 24,
   },
   {
-    label: '状态',
-    field: 'status',
-    type: 'radio-group',
-    required: true,
+    label: '是否启用',
+    field: 'isEnable',
+    type: 'switch',
     span: 24,
+    required: true,
     props: {
-      type: 'button',
       options: dis_enable_status_enum,
     },
   },
@@ -195,5 +154,20 @@ const onUpdate = async (id: string) => {
 
 defineExpose({ onAdd, onUpdate })
 </script>
+
+<template>
+  <a-modal
+    v-model:visible="visible"
+    :title="title"
+    :mask-closable="false"
+    :esc-to-close="false"
+    :width="width >= 600 ? 600 : '100%'"
+    draggable
+    @before-ok="save"
+    @close="reset"
+  >
+    <GiForm ref="formRef" v-model="form" :columns="columns" />
+  </a-modal>
+</template>
 
 <style scoped lang="scss"></style>

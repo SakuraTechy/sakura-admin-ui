@@ -1,11 +1,3 @@
-/*
- * @Author: liuzhi 1306086303@qq.com
- * @Date: 2025-03-12 11:00:22
- * @LastEditors: liuzhi 1306086303@qq.com
- * @LastEditTime: 2025-03-12 17:13:59
- * @FilePath: \continew-admin-ui\src\apis\system\user-center.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 import type * as System from './type'
 import http from '@/utils/http'
 

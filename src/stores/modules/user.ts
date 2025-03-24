@@ -1,11 +1,3 @@
-/*
- * @Author: liuzhi 1306086303@qq.com
- * @Date: 2025-03-12 11:00:23
- * @LastEditors: liuzhi 1306086303@qq.com
- * @LastEditTime: 2025-03-12 17:26:01
- * @FilePath: \continew-admin-ui\src\stores\modules\user.ts
- * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
- */
 import { defineStore } from 'pinia'
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from './auth'

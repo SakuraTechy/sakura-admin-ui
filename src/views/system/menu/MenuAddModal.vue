@@ -78,11 +78,6 @@
             </template>
           </a-form-item>
         </a-col>
-        <a-col v-bind="colProps">
-          <a-form-item v-if="form.type === 2" label="权限标识" field="permission">
-            <a-input v-model.trim="form.permission" placeholder="system:user:add" allow-clear />
-          </a-form-item>
-        </a-col>
       </a-row>
       <a-row v-if="[1, 2].includes(form.type)" :gutter="16">
         <a-col :xs="12" :sm="12" :md="8" :lg="8" :xl="8" :xxl="8">

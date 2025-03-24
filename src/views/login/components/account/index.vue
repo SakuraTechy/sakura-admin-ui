@@ -10,7 +10,7 @@
   >
     <a-form-item field="username" hide-label>
       <!-- <a-input v-model="form.username" placeholder="请输入用户名" allow-clear /> -->
-      <a-input ref="inputRef" v-model="form.username" :placeholder="getPlaceholder()" allow-clear>
+      <a-input ref="inputRef" v-model="form.username" :placeholder="getPlaceholder()" allow-clear :max-length="30">
         <template #prefix>
           <icon-user />
         </template>
@@ -94,7 +94,7 @@ const form = reactive({
   password: !props.isRegister ? loginConfig.value.password : '',
   gender: 0,
   deptId: 1,
-  roleIds: ['547888897925840928'],
+  roleIds: ['2'],
   status: 1,
   captcha: '',
   uuid: '',
@@ -168,7 +168,7 @@ const handleLogin = async () => {
         uuid: form.uuid,
         gender: 0,
         deptId: 1,
-        roleIds: ['547888897925840928'],
+        roleIds: ['2'],
         status: 1,
       })
     }

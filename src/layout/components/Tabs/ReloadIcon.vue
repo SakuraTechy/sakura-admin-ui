@@ -19,6 +19,10 @@ const reload = () => {
 }
 </script>
 
+<script lang="ts">
+export default {}
+</script>
+
 <style lang="scss" scoped>
 .reload-icon {
   cursor: pointer;

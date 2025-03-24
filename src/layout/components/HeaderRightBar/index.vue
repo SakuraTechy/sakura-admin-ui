@@ -2,7 +2,7 @@
   <a-row justify="end" align="center">
     <a-space size="medium">
       <!-- 搜索 -->
-      <Search v-if="isDesktop" />
+      <Search />
       <!-- 项目配置 -->
       <a-tooltip content="项目配置" position="bl">
         <a-button size="mini" class="gi_hover_btn" @click="SettingDrawerRef?.open">
@@ -43,7 +43,7 @@
 
       <!-- 暗黑模式切换 -->
       <a-tooltip content="主题切换" position="bottom">
-        <GiThemeBtn></GiThemeBtn>
+        <ToggleDark />
       </a-tooltip>
 
       <!-- 管理员账户 -->
@@ -80,11 +80,10 @@ import Search from './Search.vue'
 import { getUnreadMessageCount } from '@/apis'
 import { useUserStore } from '@/stores'
 import { getToken } from '@/utils/auth'
-import { useBreakpoint, useDevice } from '@/hooks'
+import { useBreakpoint } from '@/hooks'
 
 defineOptions({ name: 'HeaderRight' })
 
-const { isDesktop } = useDevice()
 const { breakpoint } = useBreakpoint()
 let socket: WebSocket
 onBeforeUnmount(() => {
