@@ -1,5 +1,7 @@
 /** 接口返回数据格式 */
 interface ApiRes<T> {
+  access_token: any
+  forEach: any
   code: number
   data: T
   msg: string

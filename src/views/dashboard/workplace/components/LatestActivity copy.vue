@@ -127,7 +127,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import qs from 'query-string'
 import { Message } from '@arco-design/web-vue'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
@@ -240,7 +240,7 @@ const getGiteeList = async () => {
       baseURL: 'https://gitee.com',
     }).then(async (res) => {
       // 获取组织的公开动态：https://gitee.com/api/v5/swagger#/getV5OrgsOrgEvents
-      const eventsRes = await get(`https://gitee.com/api/v5/orgs/SakuraTechy/events?access_token=${res.access_token}&page=1&limit=1000`)
+      const eventsRes = await get(`https://gitee.com/api/v5/orgs/SakuraTechy/events?access_token=${res.access_token}&limit=${pageSize.value}`)
       const events = Array.isArray(eventsRes) ? eventsRes : (eventsRes as any).data || []
       events.forEach((item: any) => {
         if (item.repo && item.repo.url) {
@@ -289,6 +289,16 @@ const getDataList = async () => {
 }
 
 onMounted(() => {
+  getGiteeList()
+})
+
+// 监听页面大小变化，重新获取数据
+watch(pageSize, (newSize) => {
+  // 清空当前列表
+  giteeList.value = []
+  // 重置页码
+  currentPage.value = 1
+  // 重新获取对应数量的数据
   getGiteeList()
 })
 </script>
