@@ -10,6 +10,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { bindSocialAccount } from '@/apis/system'
 import { useTabsStore, useUserStore } from '@/stores'
 import { isLogin } from '@/utils/auth'
+import { timeFix } from '@/utils'
+import { getUserInfo } from '@/apis/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,7 +27,7 @@ const handleSocialLogin = () => {
   const { redirect, ...othersQuery } = router.currentRoute.value.query
   userStore
     .socialLogin(source, othersQuery)
-    .then(() => {
+    .then(async () => {
       tabsStore.reset()
       router.push({
         path: (redirect as string) || '/',
@@ -33,7 +35,8 @@ const handleSocialLogin = () => {
           ...othersQuery,
         },
       })
-      Message.success('欢迎使用')
+      const res = await getUserInfo()
+      Message.success(`登录成功，${res.data.nickname} ${timeFix()}，欢迎使用`)
     })
     .catch(() => {
       router.push({
