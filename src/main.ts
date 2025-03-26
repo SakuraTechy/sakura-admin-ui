@@ -30,14 +30,46 @@ import pinia from '@/stores'
 // 对特定组件进行默认配置
 Card.props.bordered = false
 
-const app = createApp(App)
-Modal._context = app._context
-Drawer._context = app._context
+// 确保config.js已加载
+const loadConfig = async () => {
+  if (window.config) {
+    return Promise.resolve(window.config)
+  }
 
-app.use(router)
-app.use(pinia)
-app.use(ArcoVue)
-app.use(ArcoVueIcon)
-app.use(directives)
+  return new Promise((resolve) => {
+    const script = document.createElement('script')
+    script.src = '/config.js'
+    script.onload = () => {
+      resolve(window.config || {})
+    }
+    script.onerror = () => {
+      console.warn('无法加载配置文件，使用空配置')
+      window.config = {}
+      resolve(window.config)
+    }
+    document.head.appendChild(script)
+  })
+}
 
-app.mount('#app')
+// 初始化应用
+async function bootstrap() {
+  // 加载配置
+  await loadConfig()
+
+  const app = createApp(App)
+  Modal._context = app._context
+  Drawer._context = app._context
+
+  // 添加全局配置
+  app.config.globalProperties.$config = window.config
+
+  app.use(router)
+  app.use(pinia)
+  app.use(ArcoVue)
+  app.use(ArcoVueIcon)
+  app.use(directives)
+
+  app.mount('#app')
+}
+
+bootstrap()

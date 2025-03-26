@@ -8,6 +8,7 @@
     "dev": "vite --host",
     "build": "vue-tsc --noEmit && vite build",
     "build:test": "vue-tsc --noEmit && vite build --mode test",
+    "build:prod": "vue-tsc --noEmit && vite build --mode production",
     "preview": "vite preview --port 5050",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint .",
@@ -83,8 +84,10 @@
     "unplugin-vue-components": "^0.25.1",
     "vite": "^5.1.5",
     "vite-plugin-mock": "^2.9.8",
+    "vite-plugin-static-copy": "^2.3.0",
     "vite-plugin-style-import": "^2.0.0",
     "vite-plugin-svg-icons": "^2.0.1",
+    "vite-plugin-zip-pack": "^1.2.4",
     "vue-tsc": "2.0.19"
   },
   "simple-git-hooks": {

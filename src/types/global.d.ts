@@ -16,6 +16,10 @@ export interface LabelValueState {
 
 declare global{
   type Recordable<T = any> = Record<string, T>
+
+  interface Window {
+    config: Record<string, any>
+  }
 }
 
 /** 状态（1：启用；2：禁用） */
@@ -23,3 +27,10 @@ type Status = 1 | 2
 
 /** 性别（1：男；2：女；0：未知） */
 type Gender = 1 | 2 | 0
+
+// 为Vue组件添加全局属性类型
+declare module 'vue' {
+  interface ComponentCustomProperties {
+    $config: Record<string, any>
+  }
+}
