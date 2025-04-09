@@ -25,7 +25,7 @@
         v-for="(item, index) in paginatedGiteeList"
         v-else
         :key="index"
-        :author="item.actor.login"
+        :author="item.author.username"
         :class="`animated-fade-up-${index}`"
       >
         <template #avatar>
@@ -34,9 +34,9 @@
               <GiSvgIcon v-if="item.platform === 'GitHub'" name="github" :size="15" />
               <GiSvgIcon v-else-if="item.platform === 'Gitee'" name="gitee" :size="15" />
             </template>
-            <a :href="item.actor.url" target="_blank" rel="noopener">
+            <a :href="`${giteeConfig.baseURL + item.author.path}`" target="_blank" rel="noopener">
               <a-avatar :size="30">
-                <img :src="item.actor.avatar_url" alt="avatar" />
+                <img :src="item.author.avatar_url && !item.author.avatar_url.includes('no_portrait.png') ? item.author.avatar_url : '/src/assets/images/avatar/unknown.png'" alt="avatar" />
               </a-avatar>
             </a>
           </a-badge>
@@ -46,61 +46,108 @@
         </template>
         <template #content>
           <div class="content">
-            <p v-if="item.type === 'PushEvent'">
-              推送到了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              {{ `的 ${item.payload.ref} 分支 ${item.payload.commits.length} 个提交` }}
+            <p v-if="item.type === 'push' && item.action === 'push'">
+              {{ item.action_human_name }} <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              {{ `的 ${item.ref_name} 分支 ${item.commit_count} 个提交` }}
               <a-comment
-                v-for="(commit, idx) in item.payload.commits"
+                v-for="(commit, idx) in item.commits"
                 :key="idx"
                 class="commit"
               >
                 <template #content>
-                  <a-link :href="commit.url" target="_blank" rel="noopener" style="font-size: 12px" :title="commit.message">{{ commit.sha.substring(0, 7) }}</a-link>
-                  <a :href="commit.url" target="_blank" rel="noopener" :title="commit.message">{{ commit.message }}</a>
+                  <a :href="`${giteeConfig.baseURL + commit.author.path}`" target="_blank" rel="noopener">
+                    <a-avatar :size="20">
+                      <img :src="commit.author.avatar_url" alt="avatar" />
+                    </a-avatar>
+                  </a>
+                  <a-link :href="`${giteeConfig.baseURL + commit.project_commit_path}`" target="_blank" rel="noopener" style="font-size: 12px" :title="commit.message">{{ commit.id }}</a-link>
+                  <a :href="`${giteeConfig.baseURL + commit.project_commit_path}`" target="_blank" rel="noopener" :title="commit.message">{{ commit.message }}</a>
                 </template>
               </a-comment>
             </p>
-            <p v-else-if="item.type === 'IssueEvent' && item.payload.action === 'open'">
-              在 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              创建了 Issue <a-link :href="item.payload.html_url" target="_blank" rel="noopener">#{{ item.payload.number }}  {{ item.payload.title }}</a-link>
+            <p v-if="item.type === 'push' && item.action === 'force_push'">
+              {{ item.action_human_name }} <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              {{ `的 ${item.ref_name} 分支 ${item.commit_count} 个提交` }}
+              <a-comment
+                v-for="(commit, idx) in item.commits"
+                :key="idx"
+                class="commit"
+              >
+                <template #content>
+                  <a :href="`${giteeConfig.baseURL + commit.author.path}`" target="_blank" rel="noopener">
+                    <a-avatar :size="20">
+                      <img :src="commit.author.avatar_url" alt="avatar" />
+                    </a-avatar>
+                  </a>
+                  <a-link :href="commit.project_commit_path" target="_blank" rel="noopener" style="font-size: 12px" :title="commit.message">{{ commit.id }}</a-link>
+                  <a :href="commit.project_commit_path" target="_blank" rel="noopener" :title="commit.message">{{ commit.message }}</a>
+                </template>
+              </a-comment>
             </p>
-            <p v-else-if="item.type === 'IssueEvent' && item.payload.action === 'rejected'">
-              更改了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 Issue <a-link :href="item.payload.html_url" target="_blank" rel="noopener">#{{ item.payload.number }}  {{ item.payload.title }}</a-link>
+            <div v-if="item.type === 'push' && item.action === 'force_push'" class="compare">
+              <p>... 以及 {{ item.commit_count - item.commits.length }} 个提交 </p>
+              <a-link :href="`${giteeConfig.baseURL + item.project_compare_path}`" target="_blank" rel="noopener" :title="`${giteeConfig.baseURL + item.project_compare_path}`">比较 → {{ item.commit_from }}...{{ item.commit_to }}</a-link>
+            </div>
+            <p v-else-if="item.type === 'issue' && item.action === 'created'">
+              在 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              创建了 Issue <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">#{{ item.target.pre_iid }}  {{ item.target.title }}</a-link>
+            </p>
+            <p v-else-if="item.type === 'issue' && item.action === 'changed_state'">
+              更改了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 Issue <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">#{{ item.target.pre_iid }}  {{ item.target.title }}</a-link>
               状态为 {{ item.payload.issue_state ? '已关闭' : '已取消' }}
             </p>
-            <p v-else-if="item.type === 'IssueCommentEvent'">
-              评论了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 Issue <a-link :href="item.payload.comment.html_url" target="_blank" rel="noopener">#{{ item.payload.issue.number }}  {{ item.payload.issue.title }}</a-link>
+            <p v-else-if="item.type === 'note' && item.action === 'commented'">
+              评论了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 Issue <a-link :href="`${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">#{{ item.target.pre_iid }}  {{ item.target.title }}</a-link>
             </p>
-            <p v-else-if="item.type === 'PullRequestEvent' && item.payload.action === 'opened'">
-              在 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              创建了 Pull Request <a-link :href="item.payload.html_url" target="_blank" rel="noopener">{{ item.payload.title }}</a-link>
+            <p v-else-if="item.type === 'pull_request' && item.action === 'created'">
+              在 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              创建了 Pull Request <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">{{ item.target.title }}</a-link>
             </p>
-            <p v-else-if="item.type === 'PullRequestEvent' && item.payload.action === 'merged'">
-              接受了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 Pull Request <a-link :href="item.payload.html_url" target="_blank" rel="noopener">{{ item.payload.title }}</a-link>
+            <p v-else-if="item.type === 'pull_request' && item.action === 'merged'">
+              接受了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 Pull Request <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">{{ item.target.title }}</a-link>
             </p>
-            <p v-else-if="item.type === 'PullRequestEvent' && item.payload.action === 'closed'">
-              更改了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 Pull Request <a-link :href="item.payload.html_url" target="_blank" rel="noopener">{{ item.payload.title }}</a-link>
-              状态为 {{ item.payload.action ? '已关闭' : 'closed' }}
+            <p v-else-if="item.type === 'pull_request' && item.action === 'closed'">
+              更改了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 Pull Request <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">{{ item.target.title }}</a-link>
+              状态为 {{ item.action ? '已关闭' : 'closed' }}
             </p>
-            <p v-else-if="item.type === 'PullRequestEvent' && item.payload.action === 'reopened'">
-              更改了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 Pull Request <a-link :href="item.payload.html_url" target="_blank" rel="noopener">{{ item.payload.title }}</a-link>
-              状态为 {{ item.payload.action ? '重新打开' : 'reopened' }}
+            <p v-else-if="item.type === 'pull_request' && item.action === 'reopened'">
+              更改了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 Pull Request <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">{{ item.target.title }}</a-link>
+              状态为 {{ item.action ? '重新打开' : 'reopened' }}
             </p>
-            <p v-else-if="item.type === 'CreateEvent'">
-              推送了新的 {{ item.payload.ref_type }}
-              <a-link :href="`${item.repo.url}/tree/${item.payload.ref}`" target="_blank" rel="noopener">{{ item.payload.ref }}</a-link>
-              到 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
+            <p v-else-if="item.type === 'push' && item.action === 'new_ref'">
+              推送了新的 {{ item.event_ref_type }}
+              <a-link :href="`${`${giteeConfig.baseURL + item.project.path}`}/tree/${item.ref_name}`" target="_blank" rel="noopener">{{ item.ref_name }}</a-link>
+              到 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
             </p>
-            <p v-else-if="item.type === 'DeleteEvent'">
-              删除了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
-              的 {{ item.payload.ref }} {{ item.payload.refType }}
+            <p v-else-if="item.type === 'push' && item.action === 'rm_ref'">
+              删除了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              的 {{ item.ref_name }} {{ item.event_ref_type }}
             </p>
-            <p v-else>暂无</p>
+            <div v-else-if="item.type === 'project' && item.action === 'synced'" class="fork">
+              <GiSvgIcon name="sync" :size="18" />
+              <p>
+                {{ item.action_human_name }} <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              </p>
+            </div>
+            <div v-else-if="item.type === 'project' && item.action === 'starred'" class="fork">
+              <GiSvgIcon name="star" :size="18" />
+              <p>
+                {{ item.action_human_name }} <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+              </p>
+            </div>
+            <div v-else-if="item.type === 'project' && item.action === 'forked'" class="fork">
+              <GiSvgIcon name="fork" :size="15" />
+              <p>
+                {{ item.action_human_name }} <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
+                到 <a-link :href="`${giteeConfig.baseURL + item.forked_project.path}`" target="_blank" rel="noopener">{{ item.forked_project.name_with_namespace }}</a-link>
+              </p>
+            </div>
+            <p v-else-if="item.type !== 'push'">暂无</p>
           </div>
         </template>
       </a-comment>
@@ -137,34 +184,29 @@ dayjs.locale('zh-cn')
 export interface GiteeItem {
   platform: string
   type: string
-  actor: {
-    login: string
+  author: {
+    username: string
     name: string
     avatar_url: string
-    url: string
+    path: string
   }
-  repo: {
-    full_name: string
-    human_name: string
-    url: string
+  project: {
+    name_with_namespace: string
+    path: string
   }
-  payload: {
-    ref?: string
-    ref_type?: string
-    refType?: string
-    commits?: Array<any>
-    action?: string
-    html_url?: string
-    number?: number
+  ref_name?: string
+  event_ref_type?: string
+  refType?: string
+  commits?: Array<any>
+  action?: string
+  target: {
+    path: string
+    pre_iid: string
     title?: string
-    issue_state?: boolean
-    comment?: {
-      html_url?: string
-    }
-    issue?: {
-      number?: number
-      title?: string
-    }
+    content: string
+  }
+  status: {
+    name: string
   }
   created_at: string
   createTimeString: string
@@ -226,50 +268,22 @@ const paginatedGiteeList = computed(() => {
   return giteeList.value.slice(start, end)
 })
 
+const giteeConfig = getGiteeConfig()
+
 // Gitee OAuth2 获取 AccessToken
 const getGiteeList = async () => {
   try {
     loading.value = true
     const giteeConfig = getGiteeConfig() // 获取配置时不要缓存，确保每次获取最新值
-
-    await post('/oauth/token', {
-      grant_type: 'password',
-      username: giteeConfig.username || '',
-      password: giteeConfig.password || '',
-      client_id: giteeConfig.client_id || '',
-      client_secret: giteeConfig.client_secret || '',
-      scope: giteeConfig.scope || 'user_info pull_requests issues notes',
-    }, {
-      baseURL: giteeConfig.baseURL,
-    }).then(async (res) => {
-      if (!res.access_token) {
-        Message.error('获取Gitee访问令牌失败')
-        return
-      }
-      const accessToken = res.access_token
-      const eventsUrl = `${giteeConfig.baseURL}/api/v5/orgs/SakuraTechy/events?access_token=${accessToken}&page=1&limit=${giteeConfig.limit}`
-      const eventsRes = await get(eventsUrl)
-      const events = Array.isArray(eventsRes) ? eventsRes : (eventsRes as any).data || []
-      // 处理事件数据
-      events.forEach((item: any) => {
-        if (item.repo && item.repo.url) {
-          item.repo.url = item.repo.url.replace('/api/v5/repos', '')
-        }
-        if (item.payload && item.payload.ref) {
-          item.payload.ref = item.payload.ref.replace('refs/heads/', '')
-        }
-        if (item.payload && item.payload.commits) {
-          item.payload.commits.forEach((commit: any) => {
-            if (commit.url) {
-              commit.url = commit.url.replace('/api/v5/repos', '').replace('commits', 'commit')
-            }
-          })
-        }
-        giteeList.value.push({
-          ...item,
-          platform: 'Gitee',
-          createTimeString: dayjs(item.created_at).fromNow(),
-        })
+    const eventsUrl = `${giteeConfig.events_list}`
+    const eventsRes = await get(eventsUrl)
+    const events = Array.isArray(eventsRes) ? eventsRes : (eventsRes as any).data || []
+    // 处理事件数据
+    events.forEach((item: any) => {
+      giteeList.value.push({
+        ...item,
+        platform: 'Gitee',
+        createTimeString: dayjs(item.created_at).fromNow(),
       })
     })
   } catch (err) {
@@ -295,6 +309,8 @@ onMounted(() => {
 }
 
 :deep(.arco-comment-content) {
+  display: flex;
+  align-items: center;
   color: var(--color-text-2);
 }
 
@@ -307,6 +323,19 @@ onMounted(() => {
   font-size: 12px;
   border-bottom: none;
   padding-bottom: 0;
+}
+
+.fork {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.compare {
+  display: flex;
+  align-items: center;
+  margin-top: 5px;
+  font-size: 14px;
 }
 
 .gi-table__body-pagination-br {

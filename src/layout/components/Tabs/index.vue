@@ -56,7 +56,7 @@
         </template>
       </a-tab-pane>
       <template #extra>
-        <component :is="ReloadIcon" class="gi_pr"></component>
+        <component :is="ReloadIcon" class="gi_mr"></component>
         <a-dropdown trigger="hover">
           <!-- <a-button type="text">
             <template #icon>

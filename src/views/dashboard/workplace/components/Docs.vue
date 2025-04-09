@@ -7,7 +7,7 @@
     style="height: 166px"
   >
     <template #extra>
-      <a-link href="https://continew.top" target="_blank" rel="noopener">更多</a-link>
+      <a-link href="https://sakura.hk.cn" target="_blank" rel="noopener">更多</a-link>
     </template>
     <a-row>
       <a-col v-for="link in links" :key="link.text" :span="12">
@@ -25,12 +25,12 @@
 
 <script setup lang="ts">
 const links = [
-  { text: '项目简介', url: 'https://continew.top/admin/intro/what-is.html' },
-  { text: '快速开始', url: 'https://continew.top/admin/intro/quick-start.html' },
-  { text: '常见问题', url: 'https://continew.top/faq.html' },
-  { text: '更新日志', url: 'https://continew.top/admin/other/changelog.html' },
-  { text: '贡献指南', url: 'https://continew.top/admin/other/contributing.html' },
-  { text: '赞助支持 💖', url: 'https://continew.top/sponsor.html' },
+  { text: '产品简介', url: 'https://sakura.hk.cn/src/zh/1.使用指南/1.产品简介' },
+  { text: '快速开始', url: 'https://sakura.hk.cn/src/zh/1.使用指南/2.快速开始' },
+  { text: '本地开发', url: 'https://sakura.hk.cn/src/zh/1.使用指南/3.本地开发' },
+  { text: '常见问题', url: 'https://sakura.hk.cn/src/zh/3.其它/1.常见问题' },
+  { text: '问卷调查', url: 'https://sakura.hk.cn/src/zh/3.其它/2.问卷调查' },
+  { text: '赞助支持 💖', url: 'https://sakura.hk.cn/src/zh/3.其它/3.赞助支持' },
 ]
 </script>
 

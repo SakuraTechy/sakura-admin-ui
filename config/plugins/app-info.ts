@@ -11,7 +11,7 @@ export default function appInfo(): Plugin {
       // eslint-disable-next-line no-console
       console.log(
         boxen(
-          `${bold(green(`${bgGreen('ContiNew Admin v3.6.0-SNAPSHOT')}`))}\n${cyan('在线文档：')}${underline('https://continew.top')}\n${cyan('常见问题：')}${underline('https://continew.top/faq.html')}\n${cyan('持续迭代优化的前后端分离中后台管理系统框架。')}`,
+          `${bold(green(`${bgGreen('Sakura Admin v1.0.0-SNAPSHOT')}`))}\n${cyan('在线文档：')}${underline('https://sakura.hk.cn')}\n${cyan('常见问题：')}${underline('https://sakura.hk.cn/src/zh/3.其它/1.常见问题')}\n${cyan('持续迭代优化的一站式开放自动化平台')}`,
           {
             padding: 1,
             margin: 1,

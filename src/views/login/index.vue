@@ -486,6 +486,7 @@ onMounted(() => {
       background-size: 110%;
     }
     &.sakura-bg {
+      // background: linear-gradient(60deg, rgb(var(--primary-6)), rgb(var(--primary-3)));
       background: url(@/assets/images/left-bg.png) no-repeat center top;
       background-size: 110%;
     }

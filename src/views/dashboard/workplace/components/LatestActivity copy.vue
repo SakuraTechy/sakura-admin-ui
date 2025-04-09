@@ -5,13 +5,13 @@
         <a-link>更多</a-link>
         <template #content>
           <a-doption>
-            <a-link href="https://gitee.com/organizations/continew/events" target="_blank" rel="noopener">Gitee</a-link>
+            <a-link href="https://gitee.com/organizations/SakuraTechy/events" target="_blank" rel="noopener">Gitee</a-link>
           </a-doption>
           <a-doption>
-            <a-link href="https://gitcode.com/org/continew/discussion" target="_blank" rel="noopener">GitCode</a-link>
+            <a-link href="https://gitcode.com/org/SakuraTechy/discussions" target="_blank" rel="noopener">GitHub</a-link>
           </a-doption>
           <a-doption>
-            <a-link href="https://github.com/orgs/continew-org/discussions" target="_blank" rel="noopener">GitHub</a-link>
+            <a-link href="https://gitcode.com/org/SakuraTechy/discussion" target="_blank" rel="noopener">GitCode</a-link>
           </a-doption>
         </template>
       </a-dropdown>
@@ -100,6 +100,11 @@
               删除了 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
               的 {{ item.payload.ref }} {{ item.payload.refType }}
             </p>
+            <p v-else-if="item.type === 'starred'">
+              推送了新的 {{ item.payload.ref_type }}
+              <a-link :href="`${item.repo.url}/tree/${item.payload.ref}`" target="_blank" rel="noopener">{{ item.payload.ref }}</a-link>
+              到 <a-link :href="item.repo.url" target="_blank" rel="noopener">{{ item.repo.human_name }}</a-link>
+            </p>
             <p v-else>暂无</p>
           </div>
         </template>
@@ -127,28 +132,13 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import axios, { type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import qs from 'query-string'
 import { Message } from '@arco-design/web-vue'
-import { computed, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { getGiteeConfig } from '@/utils/config'
 
 dayjs.extend(relativeTime)
 dayjs.locale('zh-cn')
-export interface DataItem {
-  type: string
-  actor: {
-    username: string
-    nickname: string
-    avatar: string
-    url: string
-  }
-  repo: {
-    name: string
-    alias: string
-    url: string
-  }
-  payload: object
-  createTime: string
-  createTimeString: string
-}
 
+// 定义类型，使用可选属性
 export interface GiteeItem {
   platform: string
   type: string
@@ -163,7 +153,24 @@ export interface GiteeItem {
     human_name: string
     url: string
   }
-  payload: object
+  payload: {
+    ref?: string
+    ref_type?: string
+    refType?: string
+    commits?: Array<any>
+    action?: string
+    html_url?: string
+    number?: number
+    title?: string
+    issue_state?: boolean
+    comment?: {
+      html_url?: string
+    }
+    issue?: {
+      number?: number
+      title?: string
+    }
+  }
   created_at: string
   createTimeString: string
 }
@@ -211,7 +218,6 @@ const post = <T = unknown>(
   })
 }
 
-const dataList = ref<DataItem[]>([])
 const giteeList = ref<GiteeItem[]>([])
 const loading = ref(false)
 const currentPage = ref(1)
@@ -225,23 +231,31 @@ const paginatedGiteeList = computed(() => {
   return giteeList.value.slice(start, end)
 })
 
-// Gitee OAuth2 获取 AccessToken：https://gitee.com/api/v5/oauth_doc#/list-item-2
+// Gitee OAuth2 获取 AccessToken
 const getGiteeList = async () => {
   try {
     loading.value = true
+    const giteeConfig = getGiteeConfig() // 获取配置时不要缓存，确保每次获取最新值
+
     await post('/oauth/token', {
       grant_type: 'password',
-      username: 'hagyao520',
-      password: 'lz612425',
-      client_id: 'e3f673e62d8f6c4c9af73d4e9d002a82e860180a904c14f476eb0aba4e612d7d',
-      client_secret: '148d283945c3c634030ffebfe85c32037b6ceab1a732272027ef7fc4a2e2c6fa',
-      scope: 'user_info pull_requests issues notes',
+      username: giteeConfig.username || '',
+      password: giteeConfig.password || '',
+      client_id: giteeConfig.client_id || '',
+      client_secret: giteeConfig.client_secret || '',
+      scope: giteeConfig.scope || 'user_info pull_requests issues notes',
     }, {
-      baseURL: 'https://gitee.com',
+      baseURL: giteeConfig.baseURL,
     }).then(async (res) => {
-      // 获取组织的公开动态：https://gitee.com/api/v5/swagger#/getV5OrgsOrgEvents
-      const eventsRes = await get(`https://gitee.com/api/v5/orgs/SakuraTechy/events?access_token=${res.access_token}&limit=${pageSize.value}`)
+      if (!res.access_token) {
+        Message.error('获取Gitee访问令牌失败')
+        return
+      }
+      const accessToken = res.access_token
+      const eventsUrl = `${giteeConfig.baseURL}/api/v5/orgs/SakuraTechy/events?access_token=${accessToken}&page=1&limit=${giteeConfig.limit}`
+      const eventsRes = await get(eventsUrl)
       const events = Array.isArray(eventsRes) ? eventsRes : (eventsRes as any).data || []
+      // 处理事件数据
       events.forEach((item: any) => {
         if (item.repo && item.repo.url) {
           item.repo.url = item.repo.url.replace('/api/v5/repos', '')
@@ -270,35 +284,7 @@ const getGiteeList = async () => {
   }
 }
 
-// 查询列表数据
-const getDataList = async () => {
-  try {
-    loading.value = true
-    const { data } = await get('https://api.charles7c.top/git/orgs/events/continew')
-    data.forEach((item) => {
-      dataList.value.push({
-        ...item,
-        createTimeString: dayjs(new Date(item.createTime)).fromNow(),
-      })
-    })
-  } catch (err) {
-    // console.log(err)
-  } finally {
-    loading.value = false
-  }
-}
-
 onMounted(() => {
-  getGiteeList()
-})
-
-// 监听页面大小变化，重新获取数据
-watch(pageSize, (newSize) => {
-  // 清空当前列表
-  giteeList.value = []
-  // 重置页码
-  currentPage.value = 1
-  // 重新获取对应数量的数据
   getGiteeList()
 })
 </script>

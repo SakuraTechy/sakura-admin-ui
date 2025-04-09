@@ -38,13 +38,15 @@ interface ApiResponse {
 const images = ref<DataItem[]>([
   {
     name: '公众号',
-    img: `https://continew.top/qrcode-text.jpg?${new Date().getTime()}`,
-    url: 'https://continew.top/about/intro.html',
+    // img: `https://sakura.hk.cn/assets/sakura.ClP_pXva.png`,
+    img: '/src/assets/images/poster/gzh.png',
+    url: 'https://mp.weixin.qq.com/s/IAHmA8bE7AJuCgmkjRuX1Q',
   },
   {
     name: '赞助',
-    img: `https://continew.top/sponsor.jpg?${new Date().getTime()}`,
-    url: 'https://continew.top/sponsor.html',
+    // img: `https://continew.top/sponsor.jpg?${new Date().getTime()}`,
+    img: '/src/assets/images/poster/sponsor.png',
+    url: 'https://sakura.hk.cn/src/zh/3.其它/3.赞助支持',
   },
 ])
 
@@ -93,6 +95,6 @@ const getDataList = async () => {
 
 onMounted(async () => {
   dataList.value = images.value
-  await getDataList()
+  // await getDataList()
 })
 </script>
