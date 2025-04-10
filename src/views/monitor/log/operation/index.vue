@@ -30,7 +30,7 @@
         <template #default>导出</template>
       </a-button>
     </template>
-    <template v-if="has.hasPermOr(['monitor:log:detail'])" #createTime="{ record }">
+    <template v-if="has.hasPermOr(['monitor:log:get'])" #createTime="{ record }">
       <a-link @click="onDetail(record)">{{ record.createTime }}</a-link>
     </template>
     <template #status="{ record }">
@@ -87,7 +87,7 @@ const columns: TableInstanceColumns[] = [
     align: 'center',
     render: ({ rowIndex }) => h('span', {}, rowIndex + 1 + (pagination.current - 1) * pagination.pageSize),
   },
-  { title: '操作时间', dataIndex: 'createTime', slotName: 'createTime', width: 180 },
+  { title: '操作时间', dataIndex: 'createTime', slotName: 'createTime', width: 185 },
   { title: '操作人', dataIndex: 'createUserString', ellipsis: true, tooltip: true },
   { title: '操作内容', dataIndex: 'description', ellipsis: true, tooltip: true },
   { title: '所属模块', dataIndex: 'module', align: 'center', ellipsis: true, tooltip: true },

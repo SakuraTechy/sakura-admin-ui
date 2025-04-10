@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <a-tabs v-model:active-key="activeKey" type="rounded" @change="change">
       <a-tab-pane key="all">
         <template #title>全部</template>
@@ -28,7 +28,7 @@
         />
       </template>
     </a-tabs>
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">

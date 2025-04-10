@@ -76,7 +76,7 @@ const columns: TableInstanceColumns[] = [
     align: 'center',
     render: ({ rowIndex }) => h('span', {}, rowIndex + 1 + (pagination.current - 1) * pagination.pageSize),
   },
-  { title: '登录时间', dataIndex: 'createTime', width: 180 },
+  { title: '登录时间', dataIndex: 'createTime', width: 185 },
   { title: '用户昵称', dataIndex: 'createUserString', ellipsis: true, tooltip: true },
   { title: '登录行为', dataIndex: 'description' },
   {

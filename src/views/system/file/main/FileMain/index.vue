@@ -103,7 +103,7 @@ import { type FileItem, type FileQuery, deleteFile, listFile, uploadFile } from 
 import { ImageTypes, OfficeTypes } from '@/constant/file'
 import 'viewerjs/dist/viewer.css'
 import { downloadByUrl } from '@/utils/downloadFile'
-
+import mittBus from '@/utils/mitt'
 import type { ExcelConfig } from '@/components/FilePreview/type'
 
 const FilePreview = defineAsyncComponent(() => import('@/components/FilePreview/index.vue'))
@@ -195,6 +195,7 @@ const handleRightMenuClick = async (mode: string, fileInfo: FileItem) => {
         await deleteFile(fileInfo.id)
         Message.success('删除成功')
         search()
+        mittBus.emit('file-total-refresh')
       },
     })
   } else if (mode === 'rename') {
@@ -221,6 +222,7 @@ const handleMulDelete = () => {
       await deleteFile(selectedFileIds.value)
       Message.success('删除成功')
       search()
+      mittBus.emit('file-total-refresh')
     },
   })
 }
@@ -240,6 +242,8 @@ const handleUpload = (options: RequestOption) => {
       search()
     } catch (error) {
       onError(error)
+    } finally {
+      mittBus.emit('file-total-refresh')
     }
   })()
   return {

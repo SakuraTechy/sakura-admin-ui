@@ -26,8 +26,8 @@
             <template #content>
               <a-doption
                 v-permission="['system:storage:setDefault']"
-                :disabled="data.isDefault"
-                :title="data.isDefault ? '该存储已设为默认存储' : ''"
+                :disabled="data.isDefault || data.status === 2"
+                :title="data.isDefault ? '该存储已设为默认存储' : data.status === 2 ? '请先启用存储' : ''"
                 @click="onSetDefault(data)"
               >
                 <icon-check-circle />
@@ -39,7 +39,6 @@
               </a-doption>
               <a-doption
                 v-permission="['system:storage:delete']"
-                class="danger"
                 :disabled="data.isDefault"
                 :title="data.isDefault ? '不允许删除默认存储' : ''"
                 @click="onDelete(data)"

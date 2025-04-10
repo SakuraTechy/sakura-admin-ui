@@ -2,7 +2,7 @@
   <div class="list-wrap">
     <a-row class="list-row" :gutter="24">
       <a-col
-        v-if="has.hasPermOr(['system:storage:add'])"
+        v-if="has.hasPermOr(['system:storage:create'])"
         :xs="24"
         :sm="24"
         :md="12"
@@ -14,7 +14,7 @@
       >
         <CardAdd :type="2" @save-success="search" />
       </a-col>
-      <a-empty v-if="!data.length && !has.hasPermOr(['system:storage:add'])" />
+      <a-empty v-if="!data.length && !has.hasPermOr(['system:storage:create'])" />
       <a-col
         v-for="item in data"
         :key="item.id"

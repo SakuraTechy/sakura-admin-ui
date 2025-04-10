@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <GiTable
       row-key="id"
       title=""
@@ -28,7 +28,7 @@
         </a-button>
       </template>
       <template #toolbar-right>
-        <a-button v-permission="['system:notice:add']" type="primary" @click="onAdd">
+        <a-button v-permission="['system:notice:create']" type="primary" @click="onAdd">
           <template #icon><icon-plus /></template>
           <template #default>新增</template>
         </a-button>
@@ -41,13 +41,13 @@
       </template>
       <template #action="{ record }">
         <a-space>
-          <a-link v-permission="['system:notice:detail']" title="详情" @click="onDetail(record)">详情</a-link>
+          <a-link v-permission="['system:notice:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['system:notice:update']" title="修改" @click="onUpdate(record)">修改</a-link>
           <a-link v-permission="['system:notice:delete']" status="danger" title="删除" @click="onDelete(record)"> 删除 </a-link>
         </a-space>
       </template>
     </GiTable>
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -95,7 +95,7 @@ const columns: TableInstanceColumns[] = [
     width: 160,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
-    show: has.hasPermOr(['system:notice:detail', 'system:notice:update', 'system:notice:delete']),
+    show: has.hasPermOr(['system:notice:get', 'system:notice:update', 'system:notice:delete']),
   },
 ]
 

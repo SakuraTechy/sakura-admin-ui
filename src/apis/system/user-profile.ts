@@ -1,11 +1,11 @@
-import type * as System from './type'
+import type * as T from './type'
 import http from '@/utils/http'
 
-const BASE_URL = '/system/user'
+const BASE_URL = '/user/profile'
 
 /** @desc 上传头像 */
 export function uploadAvatar(data: FormData) {
-  return http.post(`${BASE_URL}/avatar`, data)
+  return http.patch(`${BASE_URL}/avatar`, data)
 }
 
 /** @desc 修改用户基本信息 */
@@ -35,7 +35,7 @@ export function updateUserEmail(data: { email: string, captcha: string, oldPassw
 
 /** @desc 获取绑定的三方账号 */
 export function listUserSocial() {
-  return http.get<System.BindSocialAccountRes[]>(`${BASE_URL}/social`)
+  return http.get<T.BindSocialAccountRes[]>(`${BASE_URL}/social`)
 }
 
 /** @desc 绑定三方账号 */

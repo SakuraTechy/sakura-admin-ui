@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <GiTable
       v-model:selectedKeys="selectedKeys"
       title=""
@@ -57,7 +57,7 @@
 
     <GenConfigDrawer ref="GenConfigDrawerRef" @save-success="search" />
     <GenPreviewModal ref="GenPreviewModalRef" @generate="onGenerate" @download="onDownload" />
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">

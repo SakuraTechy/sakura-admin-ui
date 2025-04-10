@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <div class="header-actions">
       <a-radio-group v-model="viewType" type="button" size="small" style="margin-bottom: 16px;">
         <a-radio value="table">表格视图</a-radio>
@@ -33,7 +33,7 @@
         </a-button>
       </template>
       <template #toolbar-right>
-        <a-button v-permission="['system:dept:add']" type="primary" @click="onAdd()">
+        <a-button v-permission="['system:dept:create']" type="primary" @click="onAdd()">
           <template #icon><icon-plus /></template>
           <template #default>新增</template>
         </a-button>
@@ -61,7 +61,7 @@
           >
             删除
           </a-link>
-          <a-link v-permission="['system:dept:add']" title="新增" @click="onAdd(record.id)">新增</a-link>
+          <a-link v-permission="['system:dept:create']" title="新增" @click="onAdd(record.id)">新增</a-link>
         </a-space>
       </template>
     </GiTable>
@@ -89,7 +89,7 @@
       </a-card>
     </div>
     <DeptAddModal ref="DeptAddModalRef" :depts="dataList" @save-success="search" />
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -175,7 +175,7 @@ const columns: TableInstanceColumns[] = [
     width: 160,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
-    show: has.hasPermOr(['system:dept:update', 'system:dept:delete', 'system:dept:add']),
+    show: has.hasPermOr(['system:dept:update', 'system:dept:delete', 'system:dept:create']),
   },
 ]
 

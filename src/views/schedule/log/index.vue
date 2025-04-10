@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <GiTable
       title=""
       row-key="id"
@@ -42,7 +42,7 @@
       </template>
       <template #action="{ record }">
         <a-space>
-          <a-link v-permission="['schedule:log:detail']" title="详情" @click="onDetail(record)">详情</a-link>
+          <a-link v-permission="['schedule:log:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-popconfirm content="是否确定停止本次执行?" type="warning" @ok="onStop(record)">
             <a-link v-if="record.taskBatchStatus === 2" v-permission="['schedule:log:stop']" status="danger" title="停止">停止</a-link>
           </a-popconfirm>
@@ -61,7 +61,7 @@
     </GiTable>
 
     <LogDetailDrawer ref="LogDetailDrawerRef" />
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -112,7 +112,7 @@ const columns: TableInstanceColumns[] = [
     width: 130,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
-    show: has.hasPermOr(['schedule:log:detail', 'schedule:log:stop', 'schedule:log:retry']),
+    show: has.hasPermOr(['schedule:log:get', 'schedule:log:stop', 'schedule:log:retry']),
   },
 ]
 

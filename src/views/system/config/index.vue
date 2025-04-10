@@ -82,6 +82,10 @@ const change = (key: string | number) => {
   right: -20px;
 }
 
+:deep(.arco-tabs) {
+  overflow: visible;
+}
+
 :deep(.arco-tabs-nav) {
   overflow: visible;
 }

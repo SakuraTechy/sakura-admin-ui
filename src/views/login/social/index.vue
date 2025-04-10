@@ -59,7 +59,7 @@ const handleBindSocial = () => {
   bindSocialAccount(source, othersQuery)
     .then(() => {
       router.push({
-        path: '/setting/profile',
+        path: '/user/profile',
         query: {
           ...othersQuery,
         },
@@ -68,7 +68,7 @@ const handleBindSocial = () => {
     })
     .catch(() => {
       router.push({
-        path: '/setting/profile',
+        path: '/user/profile',
         query: {
           ...othersQuery,
         },

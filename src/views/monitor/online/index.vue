@@ -1,5 +1,5 @@
 <template>
-  <div class="gi_table_page">
+  <GiPageLayout>
     <GiTable
       title=""
       row-key="id"
@@ -40,7 +40,7 @@
         </a-space>
       </template>
     </GiTable>
-  </div>
+  </GiPageLayout>
 </template>
 
 <script setup lang="ts">
