@@ -18,10 +18,13 @@ import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
 import CryptoJS from 'crypto-js'
 import { addClient, getClient, updateClient } from '@/apis/system/client'
-import { type ColumnItem, GiForm } from '@/components/GiForm'
+import type { ColumnItem } from '@/components/GiForm'
+import { GiForm } from '@/components/GiForm'
 import { DisEnableStatusList } from '@/constant/common'
 import { useResetReactive } from '@/hooks'
 import { useDict } from '@/hooks/app'
+
+defineOptions({ name: 'ClientAddModal' })
 
 const emit = defineEmits<{
   (e: 'save-success'): void
@@ -36,7 +39,19 @@ const title = computed(() => (isUpdate.value ? '修改终端' : '新增终端'))
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { client_type, auth_type_enum } = useDict('auth_type_enum', 'client_type')
 
-const [form, resetForm] = useResetReactive({
+interface FormState {
+  activeTimeout: number
+  timeout: number
+  isConcurrent: number
+  isShare: number
+  status: number
+  clientSecret?: string
+  clientKey?: string
+  authType?: any[]
+  clientType?: string | number
+}
+
+const [form, resetForm] = useResetReactive<FormState>({
   activeTimeout: 1800,
   timeout: 86400,
   isConcurrent: 1,
@@ -71,8 +86,8 @@ const columns: ColumnItem[] = reactive([
       append: () => (
         <a-button onClick={handleGenerate}>
           {{
-            default: '随机生成',
-            icon: <icon-refresh />,
+            default: () => '随机生成',
+            icon: () => <icon-refresh />,
           }}
         </a-button>
       ),

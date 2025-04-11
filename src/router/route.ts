@@ -77,15 +77,19 @@ export const systemRoutes: RouteRecordRaw[] = [
       {
         path: '/about/document/api',
         component: () => import('@/views/about/document/api/index.vue'),
-        meta: { title: '接口文档', icon: 'continew', hidden: false, keepAlive: true },
+        meta: { title: '接口文档', icon: 'book', hidden: false, keepAlive: true },
+      },
+      {
+        path: 'https://sakura.hk.cn',
+        meta: { title: '官方网站', icon: 'home', hidden: false },
       },
       {
         path: 'https://continew.top',
-        meta: { title: '在线文档', icon: 'continew', hidden: false },
+        meta: { title: 'ContiNew文档', icon: 'continew', hidden: false },
       },
       {
         path: 'https://arco.design/vue/component/button',
-        meta: { title: 'Arco Design文档', icon: 'arco', hidden: false },
+        meta: { title: 'ArcoDesign文档', icon: 'arco', hidden: false },
       },
       {
         path: '/about/source',
@@ -93,16 +97,16 @@ export const systemRoutes: RouteRecordRaw[] = [
         meta: { title: '开源地址', icon: 'github', hidden: false },
         children: [
           {
-            path: 'https://gitee.com/continew/continew-admin',
+            path: 'https://gitee.com/SakuraTechy/sakura-admin',
             meta: { title: 'Gitee', icon: 'gitee', hidden: false },
           },
           {
-            path: 'https://gitcode.com/continew/continew-admin',
-            meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
+            path: 'https://github.com/SakuraTechy/sakura-admin',
+            meta: { title: 'GitHub', icon: 'github', hidden: false },
           },
           {
-            path: 'https://github.com/continew-org/continew-admin',
-            meta: { title: 'GitHub', icon: 'github', hidden: false },
+            path: 'https://gitcode.com/SakuraTechy/sakura-admin',
+            meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
           },
         ],
       },

@@ -63,6 +63,14 @@ async function bootstrap() {
   // 添加全局配置
   app.config.globalProperties.$config = window.config
 
+  // 忽略非函数slot警告
+  // app.config.warnHandler = (msg, instance, trace) => {
+  //   if (msg.includes('Non-function value encountered for slot')) {
+  //     return
+  //   }
+  //   console.warn(`[Vue warn]: ${msg}${trace}`)
+  // }
+
   app.use(router)
   app.use(pinia)
   app.use(ArcoVue)

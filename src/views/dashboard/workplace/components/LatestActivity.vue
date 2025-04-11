@@ -84,7 +84,7 @@
                 </template>
               </a-comment>
             </p>
-            <div v-if="item.type === 'push' && item.action === 'force_push'" class="compare">
+            <div v-if="item.type === 'push' && item.commit_count > 1 && item.action === 'push' || item.action === 'force_push'" class="compare">
               <p>... 以及 {{ item.commit_count - item.commits.length }} 个提交 </p>
               <a-link :href="`${giteeConfig.baseURL + item.project_compare_path}`" target="_blank" rel="noopener" :title="`${giteeConfig.baseURL + item.project_compare_path}`">比较 → {{ item.commit_from }}...{{ item.commit_to }}</a-link>
             </div>
