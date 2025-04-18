@@ -472,6 +472,10 @@ defineExpose({
 })
 </script>
 
+<script lang="ts">
+export default {}
+</script>
+
 <style lang="scss" scoped>
 .gi-table {
   &__setting-header {

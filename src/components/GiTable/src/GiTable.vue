@@ -52,6 +52,19 @@
       </a-space>
     </a-row>
     <a-row class="gi-table__toolbar-bottom">
+      <template v-if="props.showSelectionAlert && selectedKeys?.length > 0">
+        <a-alert :type="props.selectionAlertType">
+          <template v-if="selectedKeys && selectedKeys.length > 0">
+            {{ props.selectionMessage || `已选中 ${selectedKeys.length} 条记录(可跨页)` }}
+          </template>
+          <template v-else>
+            {{ props.noSelectionMessage || '未选中任何记录' }}
+          </template>
+          <template v-if="selectedKeys && selectedKeys.length > 0" #action>
+            <a-link @click="handleClearSelected">清空</a-link>
+          </template>
+        </a-alert>
+      </template>
       <slot name="toolbar-bottom"></slot>
     </a-row>
     <div class="gi-table__body" :class="`gi-table__body-pagination-${tableProps['page-position']}`">
@@ -82,7 +95,7 @@ import { computed, ref, watch } from 'vue'
 import type { DropdownInstance, TableColumnData, TableData, TableInstance } from '@arco-design/web-vue'
 import { omit } from 'lodash-es'
 import type { TableProps } from './type'
-import ColumnSetting from './components/ColumnSetting.vue'
+import type ColumnSetting from './components/ColumnSetting.vue'
 
 defineOptions({ name: 'GiTable' })
 
@@ -92,6 +105,8 @@ const props = withDefaults(defineProps<Props>(), {
   disabledColumnKeys: () => [],
   disabledTools: () => [],
   data: () => [],
+  showSelectionAlert: false,
+  selectionAlertType: 'info',
 })
 
 /** Emits 类型定义 */
@@ -99,6 +114,8 @@ const emit = defineEmits<{
   (e: 'refresh'): void
   (e: 'update:columns', columns: TableColumnData[]): void
   (e: 'change', ...args: any[]): void
+  (e: 'clear-selected'): void
+  (e: 'update:selectedKeys', keys: (string | number)[]): void
 }>()
 
 /** Slots 类型定义 */
@@ -137,6 +154,14 @@ interface Props extends TableProps {
   data: T[]
   /** 表格标识，用于存储列设置 */
   tableId?: string
+  /** 是否显示选中项提示 */
+  showSelectionAlert?: boolean
+  /** 提示类型 */
+  selectionAlertType?: 'info' | 'success' | 'warning' | 'error'
+  /** 选中时的提示信息 */
+  selectionMessage?: string
+  /** 未选中时的提示信息 */
+  noSelectionMessage?: string
 }
 
 const slots = useSlots()
@@ -204,9 +229,20 @@ const handleVisibleColumnsChange = (columns: TableColumnData[]) => {
 
 /** 表格属性计算 */
 const tableProps = computed(() => ({
-  ...omit(props, ['title', 'disabledColumnKeys', 'disabledTools']),
+  ...omit(props, ['title', 'disabledColumnKeys', 'disabledTools', 'showSelectionAlert', 'selectionAlertType', 'selectionMessage', 'noSelectionMessage']),
   ...attrs,
 }))
+
+/** 获取绑定的selectedKeys */
+const selectedKeys = computed(() => tableProps.value.selectedKeys)
+
+/** 清空所有选中数据 */
+const handleClearSelected = () => {
+  // 直接更新selectedKeys为空数组，实现双向绑定清空
+  emit('update:selectedKeys', [])
+  // 触发清空选中事件，让外部也能监听到清空操作
+  // emit('clear-selected')
+}
 
 /** 计算显示的列 */
 const visibleColumns = computed(() => {

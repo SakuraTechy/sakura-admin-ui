@@ -4,6 +4,7 @@
       <DeptTree @node-click="handleSelectDept" />
     </template>
     <GiTable
+      v-model:selectedKeys="selectedKeys"
       row-key="id"
       :data="dataList"
       :columns="columns"
@@ -12,6 +13,12 @@
       :pagination="pagination"
       :disabled-tools="['size']"
       :disabled-column-keys="['nickname']"
+      :row-selection="{ type: 'checkbox', showCheckedAll: true }"
+      :show-selection-alert="true"
+      :selection-message="`已选中 ${selectedKeys.length} 条记录(可跨页)`"
+      no-selection-message="未选中任何记录"
+      @select="select"
+      @select-all="selectAll"
       @refresh="search"
     >
       <template #top>
@@ -138,6 +145,9 @@ const {
   loading,
   pagination,
   search,
+  select,
+  selectAll,
+  selectedKeys,
   handleDelete,
 } = useTable((page) => listUser({ ...queryForm, ...page }), { immediate: false })
 const columns: TableInstanceColumns[] = [

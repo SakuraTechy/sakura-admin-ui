@@ -42,13 +42,28 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
   const selectedKeys = ref<(string | number)[]>([])
   const select: TableInstance['onSelect'] = (rowKeys) => {
     selectedKeys.value = rowKeys
+    console.log('onSelect', selectedKeys.value)
   }
 
   // 全选
   const selectAll: TableInstance['onSelectAll'] = (checked) => {
-    const key = rowKey ?? 'id'
+    // 将rowKey转为字符串，以便安全地作为对象属性访问
+    const keyStr = typeof rowKey === 'symbol' ? String(rowKey) : (rowKey as string) ?? 'id'
     const arr = (tableData.value as TableData[]).filter((i) => !(i?.disabled ?? false))
-    selectedKeys.value = checked ? arr.map((i) => i[key as string]) : []
+
+    if (checked) {
+      // 选择所有未禁用的行
+      selectedKeys.value = arr.map((item) => {
+        // 根据提供的rowKey获取值，如果不存在则尝试使用id
+        const rowValue = item[keyStr]
+        return rowValue !== undefined ? rowValue : item.id
+      })
+    } else {
+      // 取消选择所有行
+      selectedKeys.value = []
+    }
+    // 调试信息使用可选的console
+    console.log('onSelectAll', `使用键 ${keyStr}`, selectedKeys.value)
   }
 
   // 查询
