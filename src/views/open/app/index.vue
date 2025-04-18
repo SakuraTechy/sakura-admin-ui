@@ -1,6 +1,7 @@
 <template>
   <GiPageLayout>
     <GiTable
+
       title=""
       row-key="id"
       :data="dataList"
@@ -10,6 +11,7 @@
       :pagination="pagination"
       :disabled-tools="['size']"
       :disabled-column-keys="['name']"
+
       @refresh="search"
     >
       <template #toolbar-left>
@@ -42,7 +44,7 @@
           </a-tooltip>
         </a-space>
         <a-space v-else :size="[2]">
-          <span>********************</span>
+          <span>*******************</span>
           <a-tooltip content="显示">
             <a-button v-permission="['open:app:secret']" type="text" size="mini" @click="onSecret(record)">
               <template #icon><icon-eye size="16" /></template>

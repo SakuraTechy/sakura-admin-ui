@@ -1,6 +1,7 @@
 <template>
   <GiPageLayout>
     <GiTable
+      v-model:selectedKeys="selectedKeys"
       title=""
       row-key="id"
       :data="dataList"
@@ -10,6 +11,12 @@
       :pagination="pagination"
       :disabled-tools="['size']"
       :disabled-column-keys="['clientKey']"
+      :show-selection-alert="true"
+      :row-selection="{ type: 'checkbox', showCheckedAll: true }"
+      :selection-message="`已选中 ${selectedKeys.length} 条记录(可跨页)`"
+      no-selection-message="未选中任何记录"
+      @select="select"
+      @select-all="selectAll"
       @refresh="search"
     >
       <template #toolbar-left>
@@ -104,6 +111,9 @@ const {
   pagination,
   search,
   handleDelete,
+  selectedKeys,
+  select,
+  selectAll,
 } = useTable((page) => listClient({ ...queryForm, ...page }), { immediate: true })
 const columns: TableInstance['columns'] = [
   {

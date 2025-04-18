@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 interface Props {
-  status: 1 | 2
+  status: number | undefined
 }
 </script>
 

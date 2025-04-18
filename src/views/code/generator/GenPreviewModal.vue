@@ -17,7 +17,7 @@
             class="selectPreview"
             @select="onSelectPreview"
           >
-            <template #switcher-icon="node, { isLeaf }">
+            <template #switcher-icon="{ isLeaf }">
               <icon-caret-down v-if="!isLeaf" />
             </template>
             <template #icon="node">
@@ -56,8 +56,8 @@
                 <template #default>复制</template>
               </a-link>
               <GiCodeView
-                :type="'vue' === currentPreview?.fileName.split('.')[1] ? 'vue' : 'javascript'"
-                :code-json="currentPreview?.content"
+                :type="currentPreview?.fileName?.split('.')?.[1] === 'vue' ? 'vue' : 'javascript'"
+                :code-json="typeof currentPreview?.content === 'string' ? currentPreview?.content : JSON.stringify(currentPreview?.content, null, 2) || ''"
               />
             </a-scrollbar>
           </a-card>
@@ -152,6 +152,31 @@ watch(copied, () => {
     Message.success('复制成功')
   }
 })
+
+const onCopy1 = () => {
+  if (currentPreview.value && currentPreview.value.content) {
+    try {
+      const contentToCopy = typeof currentPreview.value.content === 'string'
+        ? currentPreview.value.content
+        : JSON.stringify(currentPreview.value.content, null, 2)
+
+      // 使用原生方法复制
+      const textarea = document.createElement('textarea')
+      textarea.value = contentToCopy
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+
+      Message.success('复制成功')
+    } catch (error) {
+      console.error('复制失败:', error)
+      Message.error('复制失败')
+    }
+  } else {
+    Message.error('无内容可复制')
+  }
+}
 
 const selectedKeys = ref()
 // 选择文件预览

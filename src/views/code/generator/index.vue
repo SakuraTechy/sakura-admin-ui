@@ -2,7 +2,6 @@
   <GiPageLayout>
     <GiTable
       v-model:selectedKeys="selectedKeys"
-      title=""
       row-key="tableName"
       :data="dataList"
       :columns="columns"
@@ -12,8 +11,12 @@
       :disabled-tools="['size', 'setting']"
       :disabled-column-keys="['tableName']"
       :row-selection="{ type: 'checkbox', showCheckedAll: true }"
+      :show-selection-alert="true"
+      :selection-message="`已选中 ${selectedKeys.length} 条记录(可跨页)`"
+      no-selection-message="未选中任何记录"
       @select="select"
       @select-all="selectAll"
+      @clear-selected="onClearSelected"
       @refresh="search"
     >
       <template #toolbar-left>
@@ -24,21 +27,15 @@
         </a-button>
       </template>
       <template #toolbar-right>
-        <a-button type="primary" :disabled="!selectedKeys.length" :title="!selectedKeys.length ? '请选择' : ''" @click="onPreview(selectedKeys)">
+        <a-button
+          type="primary"
+          :disabled="!selectedKeys.length"
+          :title="!selectedKeys.length ? '请选择' : ''"
+          @click="onPreview(selectedKeys)"
+        >
           <template #icon><icon-code-sandbox /></template>
           <template #default>批量生成</template>
         </a-button>
-      </template>
-      <template #toolbar-bottom>
-        <a-alert>
-          <template v-if="selectedKeys.length > 0">
-            已选中 {{ selectedKeys.length }} 条记录(可跨页)
-          </template>
-          <template v-else>未选中任何记录</template>
-          <template v-if="selectedKeys.length > 0" #action>
-            <a-link @click="onClearSelected">清空</a-link>
-          </template>
-        </a-alert>
       </template>
       <template #action="{ record }">
         <a-space>
@@ -61,14 +58,15 @@
 </template>
 
 <script setup lang="ts">
+import type { TableInstance } from '@arco-design/web-vue'
 import { Message } from '@arco-design/web-vue'
-import GenConfigDrawer from './GenConfigDrawer.vue'
+import { defineAsyncComponent } from 'vue'
 import { downloadCode, generateCode, listGenConfig } from '@/apis/code/generator'
-import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { useTable } from '@/hooks'
 import { isMobile } from '@/utils'
 
 defineOptions({ name: 'CodeGenerator' })
+const GenConfigDrawer = defineAsyncComponent(() => import('./GenConfigDrawer.vue'))
 const GenPreviewModal = defineAsyncComponent(() => import('./GenPreviewModal.vue'))
 
 const queryForm = reactive({
@@ -83,8 +81,15 @@ const {
   select,
   selectAll,
   search,
-} = useTable((page) => listGenConfig({ ...queryForm, ...page }), { immediate: true, formatResult: (data) => data.map((i) => ({ ...i, disabled: !i.createTime })) })
-const columns: TableInstanceColumns[] = [
+} = useTable(
+  (page) => listGenConfig({ ...queryForm, ...page }),
+  {
+    immediate: true,
+    rowKey: 'tableName', // 与GiTable中的row-key保持一致
+    formatResult: (data) => data.map((i) => ({ ...i, disabled: !i.createTime })),
+  },
+)
+const columns: TableInstance['columns'] = [
   {
     title: '序号',
     width: 66,
@@ -113,20 +118,20 @@ const onClearSelected = () => {
   selectedKeys.value = []
 }
 
-const GenConfigDrawerRef = ref<InstanceType<typeof GenConfigDrawer>>()
+const GenConfigDrawerRef = ref<any>()
 // 配置
 const onConfig = (tableName: string, comment: string) => {
   GenConfigDrawerRef.value?.onOpen(tableName, comment)
 }
 
-const GenPreviewModalRef = ref<InstanceType<typeof GenPreviewModal>>()
+const GenPreviewModalRef = ref<any>()
 // 预览
-const onPreview = (tableNames: Array<string>) => {
+const onPreview = (tableNames: any[]) => {
   GenPreviewModalRef.value?.onOpen(tableNames)
 }
 
 // 生成
-const onDownload = async (tableNames: Array<string>) => {
+const onDownload = async (tableNames: any[]) => {
   const res = await downloadCode(tableNames)
   const contentDisposition = res.headers['content-disposition']
   const pattern = /filename=([^;]+\.[^.;]+);*/
@@ -151,9 +156,9 @@ const onDownload = async (tableNames: Array<string>) => {
 }
 
 // 生成
-const onGenerate = async (tableNames: Array<string>) => {
+const onGenerate = async (tableNames: any[]) => {
   const res = await generateCode(tableNames)
-  if (res.code === 0) {
+  if (res.data?.code === 0) {
     Message.success('代码生成成功')
   }
 }
