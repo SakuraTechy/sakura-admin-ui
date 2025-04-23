@@ -7,6 +7,7 @@ export interface ProjectConfigResp {
   name: string
   abbreviate: string
   members: Array<string>
+  memberNames: Array<string>
   description: string
   lastDomain: string
   lastVersion: string
@@ -29,6 +30,7 @@ export interface ProjectConfigDetailResp {
   name: string
   abbreviate: string
   members: Array<string>
+  memberNames: Array<string>
   description: string
   lastDomain: string
   lastVersion: string

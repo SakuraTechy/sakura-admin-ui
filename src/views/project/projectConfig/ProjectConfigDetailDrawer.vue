@@ -4,7 +4,7 @@
       <a-descriptions-item label="项目ID">{{ dataDetail?.id }}</a-descriptions-item>
       <a-descriptions-item label="项目名称">{{ dataDetail?.name }}</a-descriptions-item>
       <a-descriptions-item label="项目简称">{{ dataDetail?.abbreviate }}</a-descriptions-item>
-      <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.members || []" /></a-descriptions-item>
+      <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.memberNames || []" /></a-descriptions-item>
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
       <a-descriptions-item label="项目域名">{{ dataDetail?.lastDomain }}</a-descriptions-item>
       <a-descriptions-item label="主线版本">{{ dataDetail?.lastVersion }}</a-descriptions-item>

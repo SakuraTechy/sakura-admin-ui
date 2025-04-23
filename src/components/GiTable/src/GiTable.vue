@@ -16,11 +16,22 @@
       </a-space>
       <a-space wrap class="gi-table__toolbar-right" :size="[8, 8]">
         <slot name="toolbar-right"></slot>
+        <!-- 斑马纹开关 -->
+        <a-tooltip content="斑马纹">
+          <a-switch v-model="stripe" size="small" type="round" />
+        </a-tooltip>
+        <!-- 边框显示按钮 -->
+        <a-tooltip content="显示边框">
+          <a-button size="mini" class="gi_hover_btn" @click="toggleBorder">
+            <template #icon><icon-borders /></template>
+          </a-button>
+        </a-tooltip>
         <a-tooltip content="刷新">
           <a-button v-if="showRefreshBtn" @click="handleRefresh">
             <template #icon><icon-refresh /></template>
           </a-button>
         </a-tooltip>
+        <!-- 表格尺寸设置 -->
         <a-dropdown v-if="showSizeBtn" @select="handleSizeChange">
           <a-tooltip content="尺寸">
             <a-button>
@@ -33,6 +44,7 @@
             </a-doption>
           </template>
         </a-dropdown>
+        <!-- 列设置按钮 -->
         <ColumnSetting
           v-if="showSettingColumnBtn"
           ref="columnSettingRef"
@@ -182,6 +194,11 @@ const TABLE_SIZE_OPTIONS = [
   { label: '中等', value: 'medium' },
   { label: '大型', value: 'large' },
 ] as const
+
+/** 切换边框显示 */
+const toggleBorder = () => {
+  isBordered.value = !isBordered.value
+}
 
 /** 处理表格尺寸变更 */
 const handleSizeChange: DropdownInstance['onSelect'] = (value) => {

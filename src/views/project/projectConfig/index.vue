@@ -47,7 +47,6 @@
           <template #default>导出</template>
         </a-button>
       </template>
-
       <template #status="{ record }">
         <GiCellStatus :status="record.status" />
       </template>
@@ -118,7 +117,7 @@ const columns: TableInstance['columns'] = [
     width: 160,
     render: ({ record }) => {
       return (
-        <GiCellTags data={record.members} />
+        <GiCellTags data={record.memberNames} />
       )
     },
   },

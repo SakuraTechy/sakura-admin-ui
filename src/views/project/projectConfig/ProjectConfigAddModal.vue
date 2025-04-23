@@ -46,6 +46,7 @@ const userList = ref<LabelValueState[]>([])
 const fetchUserList = async () => {
   try {
     const { data } = await listUserDict()
+    // userList.value = res.data
     userList.value = data.map((item) => ({ ...item, value: `${item.value}` }))
   } catch (error) {
     console.error('获取用户列表失败', error)
@@ -82,9 +83,11 @@ const columns: ColumnItem[] = reactive([
     span: 24,
     required: true,
     props: {
-      multiple: true,
       options: userList,
       placeholder: '请选择项目成员',
+      multiple: true,
+      allowClear: true,
+      allowSearch: true,
     },
   },
   {
