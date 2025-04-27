@@ -1,7 +1,7 @@
 import type { TableData, TableInstance } from '@arco-design/web-vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import type { Options as paginationOptions } from './usePagination'
-import { useBreakpoint, usePagination } from '@/hooks'
+import { useBreakpoint, useDownload, usePagination } from '@/hooks'
 
 interface Options<T, U> {
   formatResult?: (data: T[]) => U[]
@@ -102,6 +102,9 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
         return false
       }
     }
+    const onCancel = () => {
+      // selectedKeys.value = []
+    }
     const flag = options?.showModal ?? true // 是否显示对话框
     if (!flag) {
       return onDelete()
@@ -112,7 +115,43 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
       okButtonProps: { status: 'danger' },
       hideCancel: false,
       maskClosable: false,
+      onCancel,
       onBeforeOk: onDelete,
+    })
+  }
+
+  // 删除
+  const handleExport = async (
+    aip: () => Promise<any>,
+    options?: { title?: string, content?: string, successTip?: string, showModal?: boolean, multiple?: boolean },
+  ): Promise<boolean | undefined> => {
+    const onExport = async () => {
+      try {
+        const res = await useDownload(aip)
+        if (res.status === 200) {
+          options?.multiple && (selectedKeys.value = [])
+          Message.success(options?.successTip || '导出成功')
+        }
+        return res.status === 200
+      } catch (error) {
+        return false
+      }
+    }
+    const onCancel = () => {
+      // selectedKeys.value = []
+    }
+    const flag = options?.showModal ?? true // 是否显示对话框
+    if (!flag) {
+      return onExport()
+    }
+    Modal.warning({
+      title: options?.title || '提示',
+      content: options?.content || '是否确定导出全部数据？',
+      okButtonProps: { status: 'danger' },
+      hideCancel: false,
+      maskClosable: false,
+      onCancel,
+      onBeforeOk: onExport,
     })
   }
 
@@ -139,6 +178,8 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     selectAll,
     /** 处理删除、批量删除 */
     handleDelete,
+    /** 处理导出、批量导出 */
+    handleExport,
     /** 刷新表格数据，页码会缓存 */
     refresh,
     /** 操作列在小屏场景下不固定在右侧 */

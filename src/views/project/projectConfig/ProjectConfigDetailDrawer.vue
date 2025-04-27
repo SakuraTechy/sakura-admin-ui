@@ -8,7 +8,7 @@
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
       <a-descriptions-item label="项目域名">{{ dataDetail?.lastDomain }}</a-descriptions-item>
       <a-descriptions-item label="主线版本">{{ dataDetail?.lastVersion }}</a-descriptions-item>
-      <!-- <a-descriptions-item label="状态（0关闭 1开启）"><GiCellStatus :status="dataDetail?.status" /></a-descriptions-item> -->
+      <!-- <a-descriptions-item label="状态"><GiCellStatus :status="dataDetail?.status" /></a-descriptions-item> -->
       <a-descriptions-item label="状态">
         <a-tag v-if="dataDetail?.status === 1" color="green">启用</a-tag>
         <a-tag v-else color="red">禁用</a-tag>

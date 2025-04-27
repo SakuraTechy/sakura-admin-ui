@@ -42,6 +42,17 @@
           <template #icon><icon-plus /></template>
           <template #default>新增</template>
         </a-button>
+        <a-button
+          v-permission="['project:projectConfig:delete']"
+          type="primary"
+          status="danger"
+          :disabled="!selectedKeys.length"
+          :title="!selectedKeys.length ? '请选择' : ''"
+          @click="() => onDelete()"
+        >
+          <template #icon><icon-delete /></template>
+          <template #default>删除</template>
+        </a-button>
         <a-button v-permission="['project:projectConfig:export']" @click="onExport">
           <template #icon><icon-download /></template>
           <template #default>导出</template>
@@ -104,16 +115,17 @@ const {
   selectAll,
   selectedKeys,
   handleDelete,
+  handleExport,
 } = useTable((page) => listProjectConfig({ ...queryForm, ...page }), { immediate: true })
 
 const columns: TableInstance['columns'] = [
-  { title: '项目ID', dataIndex: 'id', slotName: 'id', width: 180 },
+  { title: '项目ID', dataIndex: 'id', slotName: 'id', width: 185 },
   { title: '项目名称', dataIndex: 'name', slotName: 'name', width: 250, ellipsis: true, tooltip: true },
   { title: '项目简称', dataIndex: 'abbreviate', slotName: 'abbreviate', width: 120, ellipsis: true, tooltip: true },
   {
     title: '项目成员',
-    dataIndex: 'members',
-    slotName: 'members',
+    dataIndex: 'member',
+    slotName: 'member',
     width: 160,
     render: ({ record }) => {
       return (
@@ -124,7 +136,7 @@ const columns: TableInstance['columns'] = [
   // { title: '项目描述', dataIndex: 'description', slotName: 'description' },
   // { title: '项目域名', dataIndex: 'lastDomain', slotName: 'lastDomain', width: 250, show: true },
   // { title: '主线版本', dataIndex: 'lastVersion', slotName: 'lastVersion', width: 100, show: true },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100, align: 'center' },
   { title: '创建者', dataIndex: 'createUserString', slotName: 'createUser', width: 120 },
   // { title: '创建部门', dataIndex: 'deptId', slotName: 'deptId' },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180 },
@@ -156,18 +168,34 @@ const reset = () => {
   queryForm.status = undefined
   search()
 }
-
 // 删除
-const onDelete = (record: ProjectConfigResp) => {
-  return handleDelete(() => deleteProjectConfig(record.id), {
-    content: `是否确定删除该条数据？`,
+const onDelete = (record?: ProjectConfigResp) => {
+  return handleDelete(() => deleteProjectConfig(
+    selectedKeys.value.length
+      ? selectedKeys.value.map((id) => String(id))
+      : record!.id,
+  ), {
+    content: selectedKeys.value.length ? '是否确定删除批量选中的数据？' : `是否确定删除「${record!.name}」？`,
     showModal: true,
+    multiple: true,
   })
 }
 
 // 导出
-const onExport = () => {
-  useDownload(() => exportProjectConfig(queryForm))
+const onExport = async () => {
+  return handleExport(() => exportProjectConfig(
+    selectedKeys.value.length
+      ? {
+          ...queryForm,
+          id: selectedKeys.value.join(','),
+          name: '批量选择导出',
+        }
+      : queryForm,
+  ), {
+    content: selectedKeys.value.length ? '是否确定导出批量选中的数据？' : `是否确定导出全部数据？`,
+    showModal: true,
+    multiple: true,
+  })
 }
 
 // 组件引用类型

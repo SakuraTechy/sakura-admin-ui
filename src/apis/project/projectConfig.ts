@@ -6,7 +6,7 @@ export interface ProjectConfigResp {
   id: string
   name: string
   abbreviate: string
-  members: Array<string>
+  member: Array<string>
   memberNames: Array<string>
   description: string
   lastDomain: string
@@ -29,7 +29,7 @@ export interface ProjectConfigDetailResp {
   id: string
   name: string
   abbreviate: string
-  members: Array<string>
+  member: Array<string>
   memberNames: Array<string>
   description: string
   lastDomain: string
@@ -77,8 +77,8 @@ export function updateProjectConfig(data: any, id: string) {
 }
 
 /** @desc 删除项目配置 */
-export function deleteProjectConfig(id: string) {
-  return http.del(`${BASE_URL}/${id}`)
+export function deleteProjectConfig(ids: string | Array<string>) {
+  return http.del(`${BASE_URL}/${ids}`)
 }
 
 /** @desc 导出项目配置 */

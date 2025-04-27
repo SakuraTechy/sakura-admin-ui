@@ -32,12 +32,13 @@ const { width } = useWindowSize()
 const dataId = ref('')
 const visible = ref(false)
 const isUpdate = computed(() => !!dataId.value)
-const title = computed(() => (isUpdate.value ? '修改项目配置' : '新增项目配置'))
+const title = computed(() => (isUpdate.value ? '修改项目管理-项目配置' : '新增项目管理-项目配置'))
 const formRef = ref<InstanceType<typeof GiForm>>()
+const { status_type } = useDict('status_type')
 
 const [form, resetForm] = useResetReactive({
   // todo 待补充
-  members: [],
+  member: [],
   status: 1,
 })
 
@@ -45,9 +46,9 @@ const userList = ref<LabelValueState[]>([])
 
 const fetchUserList = async () => {
   try {
-    const { data } = await listUserDict()
+    const res = await listUserDict()
     // userList.value = res.data
-    userList.value = data.map((item) => ({ ...item, value: `${item.value}` }))
+    userList.value = res.data.map((item) => ({ ...item, value: `${item.value}` }))
   } catch (error) {
     console.error('获取用户列表失败', error)
   }
@@ -57,9 +58,9 @@ const columns: ColumnItem[] = reactive([
   {
     label: '项目名称',
     field: 'name',
-    type: 'input',
     span: 24,
     required: true,
+    type: 'input',
     props: {
       maxLength: 30,
       allowClear: true,
@@ -68,9 +69,9 @@ const columns: ColumnItem[] = reactive([
   {
     label: '项目简称',
     field: 'abbreviate',
-    type: 'input',
     span: 24,
     required: true,
+    type: 'input',
     props: {
       maxLength: 30,
       allowClear: true,
@@ -78,10 +79,10 @@ const columns: ColumnItem[] = reactive([
   },
   {
     label: '项目成员',
-    field: 'members',
-    type: 'select',
+    field: 'member',
     span: 24,
     required: true,
+    type: 'select',
     props: {
       options: userList,
       placeholder: '请选择项目成员',
@@ -93,20 +94,20 @@ const columns: ColumnItem[] = reactive([
   {
     label: '项目描述',
     field: 'description',
-    type: 'textarea',
+    span: 24,
+    type: 'input',
     props: {
-      autoSize: true,
-      maxLength: 250,
+      maxLength: 255,
       allowClear: true,
     },
-    span: 24,
   },
   {
     label: '状态',
     field: 'status',
-    type: 'switch',
     span: 24,
+    type: 'switch',
     props: {
+      options: status_type,
       type: 'round',
       checkedValue: 1,
       uncheckedValue: 2,

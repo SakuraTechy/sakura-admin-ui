@@ -43,6 +43,7 @@ export const useDownload = async (api: () => Promise<any>, isNotify = false, tem
     // 去除下载对 url 的影响
     document.body.removeChild(exportFile)
     window.URL.revokeObjectURL(blobUrl)
+    return res
   } catch (error) {
     // console.log(error)
   }

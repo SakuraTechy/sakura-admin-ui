@@ -45,14 +45,16 @@
           </template>
         </a-dropdown>
         <!-- 列设置按钮 -->
-        <ColumnSetting
-          v-if="showSettingColumnBtn"
-          ref="columnSettingRef"
-          v-model:columns="innerColumns"
-          :disabled-keys="disabledColumnKeys"
-          :table-id="tableId"
-          @visible-columns-change="handleVisibleColumnsChange"
-        />
+        <a-tooltip content="列设置">
+          <ColumnSetting
+            v-if="showSettingColumnBtn"
+            ref="columnSettingRef"
+            v-model:columns="innerColumns"
+            :disabled-keys="disabledColumnKeys"
+            :table-id="tableId"
+            @visible-columns-change="handleVisibleColumnsChange"
+          />
+        </a-tooltip>
         <a-tooltip content="全屏">
           <a-button v-if="showFullscreenBtn" @click="toggleFullscreen">
             <template #icon>

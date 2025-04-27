@@ -56,7 +56,7 @@
               :error="!record.fieldType"
             >
               <a-option value="String">String</a-option>
-              <!-- <a-option value="Json">Json</a-option> -->
+              <a-option value="List<String>">List</a-option>
               <a-option value="Integer">Integer</a-option>
               <a-option value="Long">Long</a-option>
               <a-option value="Float">Float</a-option>
