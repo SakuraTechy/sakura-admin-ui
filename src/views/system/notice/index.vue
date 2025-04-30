@@ -88,6 +88,8 @@ const columns: TableInstanceColumns[] = [
   { title: '终止时间', dataIndex: 'terminateTime', width: 180 },
   { title: '创建人', dataIndex: 'createUserString', show: false, ellipsis: true, tooltip: true },
   { title: '创建时间', dataIndex: 'createTime', width: 180 },
+  { title: '修改人', dataIndex: 'updateUserString', show: false, ellipsis: true, tooltip: true },
+  { title: '修改时间', dataIndex: 'updateTime', width: 180 },
   {
     title: '操作',
     dataIndex: 'action',

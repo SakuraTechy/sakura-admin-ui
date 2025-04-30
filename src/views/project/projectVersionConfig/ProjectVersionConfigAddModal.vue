@@ -16,12 +16,16 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
-import { addProjectConfig, getProjectConfig, updateProjectConfig } from '@/apis/project/projectConfig'
+import { addProjectVersionConfig, getProjectVersionConfig, updateProjectVersionConfig } from '@/apis/project/projectVersionConfig'
 import type { ColumnItem, GiForm } from '@/components/GiForm'
 import { useResetReactive } from '@/hooks'
 import { useDict } from '@/hooks/app'
-import { listUserDict } from '@/apis/common/common'
-import type { LabelValueState } from '@/types/global'
+
+const props = defineProps({
+  projectList: {
+    type: Array,
+  },
+})
 
 const emit = defineEmits<{
   (e: 'save-success'): void
@@ -32,7 +36,7 @@ const { width } = useWindowSize()
 const dataId = ref('')
 const visible = ref(false)
 const isUpdate = computed(() => !!dataId.value)
-const title = computed(() => (isUpdate.value ? '修改项目管理-项目配置' : '新增项目管理-项目配置'))
+const title = computed(() => (isUpdate.value ? '修改项目管理-版本配置' : '新增项目管理-版本配置'))
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { status_type } = useDict('status_type')
 
@@ -40,21 +44,21 @@ const [form, resetForm] = useResetReactive({
   status: 1,
 })
 
-const userList = ref<LabelValueState[]>([])
-
-const fetchUserList = async () => {
-  try {
-    const res = await listUserDict()
-    // userList.value = res.data
-    userList.value = res.data.map((item) => ({ ...item, value: `${item.value}` }))
-  } catch (error) {
-    console.error('获取用户列表失败', error)
-  }
-}
-
-const columns: ColumnItem[] = reactive([
+const columns = computed<ColumnItem[]>(() => [
   {
-    label: '项目名称',
+    label: '所属项目',
+    field: 'projectId',
+    span: 24,
+    required: true,
+    type: 'select',
+    props: {
+      options: props.projectList,
+      allowClear: true,
+      allowSearch: true,
+    },
+  },
+  {
+    label: '版本名称',
     field: 'name',
     span: 24,
     required: true,
@@ -65,32 +69,7 @@ const columns: ColumnItem[] = reactive([
     },
   },
   {
-    label: '项目简称',
-    field: 'abbreviate',
-    span: 24,
-    required: true,
-    type: 'input',
-    props: {
-      maxLength: 30,
-      allowClear: true,
-    },
-  },
-  {
-    label: '项目成员',
-    field: 'member',
-    span: 24,
-    required: true,
-    type: 'select',
-    props: {
-      options: userList,
-      placeholder: '请选择项目成员',
-      multiple: true,
-      allowClear: true,
-      allowSearch: true,
-    },
-  },
-  {
-    label: '项目描述',
+    label: '版本描述',
     field: 'description',
     span: 24,
     type: 'input',
@@ -127,10 +106,10 @@ const save = async () => {
     const isInvalid = await formRef.value?.formRef?.validate()
     if (isInvalid) return false
     if (isUpdate.value) {
-      await updateProjectConfig(form, dataId.value)
+      await updateProjectVersionConfig(form, dataId.value)
       Message.success('修改成功')
     } else {
-      await addProjectConfig(form)
+      await addProjectVersionConfig(form)
       Message.success('新增成功')
     }
     emit('save-success')
@@ -144,7 +123,6 @@ const save = async () => {
 const onAdd = async () => {
   reset()
   dataId.value = ''
-  await fetchUserList()
   visible.value = true
 }
 
@@ -152,8 +130,7 @@ const onAdd = async () => {
 const onUpdate = async (id: string) => {
   reset()
   dataId.value = id
-  await fetchUserList()
-  const { data } = await getProjectConfig(id)
+  const { data } = await getProjectVersionConfig(id)
   Object.assign(form, data)
   visible.value = true
 }

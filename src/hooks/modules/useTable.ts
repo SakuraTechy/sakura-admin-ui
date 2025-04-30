@@ -16,7 +16,7 @@ type Api<T> = (params: PaginationParams) => Promise<ApiRes<PageRes<T[]>>> | Prom
 
 export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U>) {
   const { formatResult, onSuccess, immediate, rowKey } = options || {}
-  const { pagination, setTotal } = usePagination(() => getTableData(), options?.paginationOption)
+  const { pagination, current, pageSize, total, changeCurrent, changePageSize, setTotal } = usePagination(() => getTableData(), options?.paginationOption)
   const loading = ref(false)
   const tableData: Ref<U[]> = ref([])
 
@@ -52,17 +52,28 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     const arr = (tableData.value as TableData[]).filter((i) => !(i?.disabled ?? false))
 
     if (checked) {
-      // 选择所有未禁用的行
-      selectedKeys.value = arr.map((item) => {
-        // 根据提供的rowKey获取值，如果不存在则尝试使用id
+      // 获取当前页所有未禁用行的ID
+      const currentPageIds = arr.map((item) => {
         const rowValue = item[keyStr]
         return rowValue !== undefined ? rowValue : item.id
       })
+
+      // 将当前页ID与之前选中的ID合并，并去重
+      const existingKeys = selectedKeys.value || []
+      selectedKeys.value = [...new Set([...existingKeys, ...currentPageIds])]
     } else {
-      // 取消选择所有行
-      selectedKeys.value = []
+      // 获取当前页所有行的ID
+      const currentPageIds = (tableData.value as TableData[]).map((item) => {
+        const rowValue = item[keyStr]
+        return rowValue !== undefined ? rowValue : item.id
+      })
+
+      // 从已选中项中移除当前页的ID
+      selectedKeys.value = selectedKeys.value.filter(
+        (key) => !currentPageIds.includes(key),
+      )
     }
-    // 调试信息使用可选的console
+
     console.log('onSelectAll', `使用键 ${keyStr}`, selectedKeys.value)
   }
 
@@ -170,6 +181,9 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     search,
     /** 分页的传参 */
     pagination,
+    current,
+    pageSize,
+    total,
     /** 选择的行keys */
     selectedKeys,
     /** 选择行 */

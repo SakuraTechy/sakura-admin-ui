@@ -1,5 +1,10 @@
 <template>
-  <div class="gi-table" :class="{ 'gi-table--fullscreen': isFullscreen }">
+  <div
+    class="gi-table" :class="{
+      'gi-table--fullscreen': isFullscreen,
+      'gi-table--has-selection': hasSelectedItems,
+    }"
+  >
     <a-row v-if="props.title" justify="space-between" align="center" class="gi-table__header">
       <a-space wrap>
         <slot name="custom-title">
@@ -65,7 +70,7 @@
         </a-tooltip>
       </a-space>
     </a-row>
-    <a-row class="gi-table__toolbar-bottom">
+    <!-- <a-row class="gi-table__toolbar-bottom">
       <template v-if="props.showSelectionAlert && selectedKeys?.length > 0">
         <a-alert :type="props.selectionAlertType">
           <template v-if="selectedKeys && selectedKeys.length > 0">
@@ -80,7 +85,7 @@
         </a-alert>
       </template>
       <slot name="toolbar-bottom"></slot>
-    </a-row>
+    </a-row> -->
     <div class="gi-table__body" :class="`gi-table__body-pagination-${tableProps['page-position']}`">
       <div class="gi-table__container">
         <a-table
@@ -93,10 +98,24 @@
           :scrollbar="true"
           :data="data"
           column-resizable
+          :pagination="{
+            ...props.pagination,
+            showJumper: true,
+            showMore: true,
+            pageSizeOptions: [10, 20, 30, 40, 50, 100],
+            size: 'small',
+          }"
           @change="handleTableChange"
         >
           <template v-for="key in Object.keys(slots)" :key="key" #[key]="scope">
             <slot :key="key" :name="key" v-bind="scope" />
+          </template>
+          <!-- 自定义分页左侧的选中提示 -->
+          <template v-if="selectedKeys && selectedKeys.length > 0" #pagination-left>
+            <div class="gi-table-selection-info">
+              <span>{{ props.selectionMessage || `已选中 ${selectedKeys.length} 条记录(可跨页)` }}</span>
+              <a-link class="clear-link" @click="handleClearSelected">清空</a-link>
+            </div>
           </template>
         </a-table>
       </div>
@@ -183,7 +202,13 @@ const attrs = useAttrs()
 
 /** 组件状态 */
 const tableRef = useTemplateRef('tableRef')
-const columnSettingRef = ref<InstanceType<typeof ColumnSetting> | null>(null)
+// 定义 ColumnSetting 组件暴露的方法接口
+interface ColumnSettingInstance {
+  resetColumns?: () => void
+  saveColumns?: () => void
+}
+// 使用接口标注 ref 类型
+const columnSettingRef = ref<ColumnSettingInstance | null>(null)
 const stripe = ref(false)
 const size = ref<TableInstance['size']>('large')
 const isBordered = ref(false)
@@ -280,6 +305,11 @@ const handleTableChange = (...args: any[]) => {
   emit('change', ...args)
 }
 
+// 计算是否有选中项
+const hasSelectedItems = computed(() => {
+  return !!(selectedKeys.value && selectedKeys.value.length > 0)
+})
+
 defineExpose({
   tableRef,
   resetColumns: () => columnSettingRef.value?.resetColumns?.(),
@@ -305,6 +335,11 @@ defineExpose({
     top: 0;
     bottom: 0;
     z-index: 1001;
+  }
+
+  // 当有选中项时强制应用两端对齐
+  &--has-selection :deep(.arco-table-pagination) {
+    justify-content: space-between !important;
   }
 
   &__container {
@@ -345,10 +380,27 @@ defineExpose({
       height: 100%;
     }
 
+    // 选中提示的样式
+    .gi-table-selection-info {
+      color: var(--color-text-2);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      margin-right: auto;
+      gap: 10px;
+    }
+
     // 分页默认位置
     :deep(.arco-pagination) {
       margin-top: 10px;
       justify-content: end;
+    }
+
+    :deep(.arco-table-pagination) {
+      display: flex;
+      align-items: baseline;
+      margin-top: 12px;
+      justify-content: flex-end;
     }
 
     &-pagination-top {

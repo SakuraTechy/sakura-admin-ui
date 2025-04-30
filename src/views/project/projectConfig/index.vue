@@ -59,7 +59,8 @@
         </a-button>
       </template>
       <template #status="{ record }">
-        <GiCellStatus :status="record.status" />
+        <!-- <GiCellStatus :status="record.status" /> -->
+        <GiCellTag :value="record.status" :dict="status_type" />
       </template>
       <template #action="{ record }">
         <a-space>
@@ -103,7 +104,7 @@ const queryForm = reactive<ProjectConfigQuery>({
   name: undefined,
   abbreviate: undefined,
   status: undefined,
-  sort: ['id,desc'],
+  sort: ['createTime,desc'],
 })
 
 const {
@@ -137,11 +138,11 @@ const columns: TableInstance['columns'] = [
   // { title: '项目域名', dataIndex: 'lastDomain', slotName: 'lastDomain', width: 250, show: true },
   // { title: '主线版本', dataIndex: 'lastVersion', slotName: 'lastVersion', width: 100, show: true },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 100, align: 'center' },
-  { title: '创建者', dataIndex: 'createUserString', slotName: 'createUser', width: 120 },
+  { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120 },
   // { title: '创建部门', dataIndex: 'deptId', slotName: 'deptId' },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180 },
-  { title: '更新者', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120 },
-  { title: '更新时间', dataIndex: 'updateTime', slotName: 'updateTime', width: 180 },
+  { title: '修改人', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120 },
+  { title: '修改时间', dataIndex: 'updateTime', slotName: 'updateTime', width: 180 },
   // { title: '更新IP', dataIndex: 'updateIp', slotName: 'updateIp' },
   // { title: '备注', dataIndex: 'remark', slotName: 'remark' },
   // { title: '版本', dataIndex: 'version', slotName: 'version' },

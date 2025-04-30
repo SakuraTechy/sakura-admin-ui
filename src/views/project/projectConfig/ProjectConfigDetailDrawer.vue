@@ -4,22 +4,22 @@
       <a-descriptions-item label="项目ID">{{ dataDetail?.id }}</a-descriptions-item>
       <a-descriptions-item label="项目名称">{{ dataDetail?.name }}</a-descriptions-item>
       <a-descriptions-item label="项目简称">{{ dataDetail?.abbreviate }}</a-descriptions-item>
-      <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.memberNames || []" /></a-descriptions-item>
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
-      <a-descriptions-item label="项目域名">{{ dataDetail?.lastDomain }}</a-descriptions-item>
-      <a-descriptions-item label="主线版本">{{ dataDetail?.lastVersion }}</a-descriptions-item>
+      <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.memberNames || []" /></a-descriptions-item>
       <!-- <a-descriptions-item label="状态"><GiCellStatus :status="dataDetail?.status" /></a-descriptions-item> -->
       <a-descriptions-item label="状态">
         <a-tag v-if="dataDetail?.status === 1" color="green">启用</a-tag>
         <a-tag v-else color="red">禁用</a-tag>
       </a-descriptions-item>
+      <a-descriptions-item label="主线版本">{{ dataDetail?.lastVersion }}</a-descriptions-item>
+      <a-descriptions-item label="项目域名">{{ dataDetail?.lastDomain }}</a-descriptions-item>
       <!-- <a-descriptions-item label="创建者">{{ dataDetail?.createUser }}</a-descriptions-item> -->
       <a-descriptions-item label="创建人">{{ dataDetail?.createUserString }}</a-descriptions-item>
       <!-- <a-descriptions-item label="创建部门">{{ dataDetail?.deptId }}</a-descriptions-item> -->
       <a-descriptions-item label="创建时间">{{ dataDetail?.createTime }}</a-descriptions-item>
       <!-- <a-descriptions-item label="更新者">{{ dataDetail?.updateUser }}</a-descriptions-item> -->
       <a-descriptions-item label="修改人">{{ dataDetail?.updateUserString }}</a-descriptions-item>
-      <a-descriptions-item label="更新时间">{{ dataDetail?.updateTime }}</a-descriptions-item>
+      <a-descriptions-item label="修改时间">{{ dataDetail?.updateTime }}</a-descriptions-item>
       <a-descriptions-item label="更新IP">{{ dataDetail?.updateIp }}</a-descriptions-item>
       <a-descriptions-item label="备注">{{ dataDetail?.remark }}</a-descriptions-item>
       <a-descriptions-item label="版本">{{ dataDetail?.version }}</a-descriptions-item>

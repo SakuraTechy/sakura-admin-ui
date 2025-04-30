@@ -57,7 +57,7 @@ export interface ProjectConfigQuery {
 export interface ProjectConfigPageQuery extends ProjectConfigQuery, PageQuery {}
 
 /** @desc 查询项目配置列表 */
-export function listProjectConfig(query: ProjectConfigPageQuery) {
+export function listProjectConfig(query?: ProjectConfigPageQuery) {
   return http.get<PageRes<ProjectConfigResp[]>>(`${BASE_URL}`, query)
 }
 
