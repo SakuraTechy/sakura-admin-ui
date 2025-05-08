@@ -22,7 +22,7 @@
     >
       <template #toolbar-left>
         <a-input-search v-model="queryForm.id" placeholder="请输入项目ID" allow-clear @search="search" />
-        <a-input-search v-model="queryForm.name" placeholder="请输入项目名称" allow-clear @search="search" />
+        <a-input-search v-model="queryForm.name" placeholder="请输入项目名称" style="width: 260px;" allow-clear @search="search" />
         <a-input-search v-model="queryForm.abbreviate" placeholder="请输入项目简称" allow-clear @search="search" />
         <a-select
           v-model="queryForm.status"

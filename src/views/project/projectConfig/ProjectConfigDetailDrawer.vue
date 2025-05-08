@@ -7,9 +7,12 @@
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
       <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.memberNames || []" /></a-descriptions-item>
       <!-- <a-descriptions-item label="状态"><GiCellStatus :status="dataDetail?.status" /></a-descriptions-item> -->
-      <a-descriptions-item label="状态">
+      <!-- <a-descriptions-item label="状态">
         <a-tag v-if="dataDetail?.status === 1" color="green">启用</a-tag>
         <a-tag v-else color="red">禁用</a-tag>
+      </a-descriptions-item> -->
+      <a-descriptions-item label="状态">
+        <GiCellTag :value="dataDetail?.status" :dict="status_type" />
       </a-descriptions-item>
       <a-descriptions-item label="主线版本">{{ dataDetail?.lastVersion }}</a-descriptions-item>
       <a-descriptions-item label="项目域名">{{ dataDetail?.lastDomain }}</a-descriptions-item>
@@ -31,7 +34,9 @@
 <script setup lang="ts">
 import { useWindowSize } from '@vueuse/core'
 import { type ProjectConfigDetailResp, getProjectConfig as getDetail } from '@/apis/project/projectConfig'
+import { useDict } from '@/hooks/app'
 
+const { status_type } = useDict('status_type')
 const { width } = useWindowSize()
 
 const dataId = ref('')

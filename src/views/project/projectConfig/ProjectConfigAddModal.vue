@@ -93,9 +93,10 @@ const columns: ColumnItem[] = reactive([
     label: '项目描述',
     field: 'description',
     span: 24,
-    type: 'input',
+    type: 'textarea',
     props: {
       maxLength: 255,
+      autoSize: true,
       allowClear: true,
     },
   },

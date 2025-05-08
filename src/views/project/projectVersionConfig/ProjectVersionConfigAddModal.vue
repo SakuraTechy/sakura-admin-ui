@@ -72,9 +72,10 @@ const columns = computed<ColumnItem[]>(() => [
     label: '版本描述',
     field: 'description',
     span: 24,
-    type: 'input',
+    type: 'textarea',
     props: {
       maxLength: 255,
+      autoSize: true,
       allowClear: true,
     },
   },
@@ -84,7 +85,7 @@ const columns = computed<ColumnItem[]>(() => [
     span: 24,
     type: 'switch',
     props: {
-      options: status_type,
+      options: status_type.value,
       type: 'round',
       checkedValue: 1,
       uncheckedValue: 2,
