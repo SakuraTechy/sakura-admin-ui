@@ -7,7 +7,7 @@
     </template>
     <div class="preview-content">
       <a-layout :has-sider="true">
-        <a-layout-sider theme="dark" style="max-width:600px; height: 700px" :resize-directions="['right']" :width="370">
+        <a-layout-sider theme="dark" style="max-width:600px; height: 700px" :resize-directions="['right']" :width="450">
           <a-tree
             ref="treeRef"
             :data="treeData"

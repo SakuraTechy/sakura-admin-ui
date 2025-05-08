@@ -14,16 +14,17 @@
       </a-tab-pane>
       <a-tab-pane key="2" title="字段配置">
         <GiTable
-          row-key="tableName"
-          :data="dataList"
+          row-key="fieldName"
+          :data="paginatedData"
           :columns="columns"
           :loading="loading"
-          :scroll="{ x: '100%', y: '100%', minWidth: 1000 }"
-          :pagination="false"
+          :scroll="{ x: '100%', y: 800, minWidth: 900 }"
+          :pagination="{ current: currentPage, pageSize, total: dataList.length }"
           :draggable="{ type: 'handle', width: 40 }"
           :disabled-tools="[]"
           :disabled-column-keys="['tableName']"
-          @change="handleChangeSort"
+          @page-change="handlePageChange"
+          @change="handleTableChange"
         >
           <template #toolbar-left>
             <a-popconfirm
@@ -142,6 +143,8 @@ const activeKey = ref('1')
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { form_type_enum, query_type_enum } = useDict('form_type_enum', 'query_type_enum')
 const dictList = ref<LabelValueState[]>([])
+const currentPage = ref(1)
+const pageSize = ref(10)
 
 const [form, resetForm] = useResetReactive({
   isOverride: false,
@@ -212,6 +215,14 @@ const formColumns: ColumnItem[] = reactive([
 
 const dataList = ref<FieldConfigResp[]>([])
 const loading = ref(false)
+
+// 计算当前页的数据
+const paginatedData = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  const end = start + pageSize.value
+  return dataList.value.slice(start, end)
+})
+
 // 查询列表数据
 const getDataList = async (tableName: string, requireSync: boolean) => {
   try {
@@ -241,6 +252,7 @@ const columns: TableInstanceColumns[] = [
 const reset = () => {
   formRef.value?.formRef?.resetFields()
   resetForm()
+  currentPage.value = 1
 }
 
 // 同步
@@ -251,6 +263,23 @@ const handleRefresh = async (tableName: string) => {
 // 拖拽排序
 const handleChangeSort = (newDataList: FieldConfigResp[]) => {
   dataList.value = newDataList
+}
+
+// 添加分页变化处理函数
+const handlePageChange = (page: number) => {
+  currentPage.value = page
+}
+
+// 修改表格变化处理函数
+const handleTableChange = (data: any) => {
+  // 如果是分页变化
+  if (data.type === 'pagination') {
+    currentPage.value = data.pagination.current
+  }
+  // 如果是拖拽排序
+  else if (data.type === 'drag') {
+    handleChangeSort(data.dataList)
+  }
 }
 
 // 保存
@@ -292,8 +321,8 @@ const onOpen = async (tableName: string, comment: string) => {
 defineExpose({ onOpen })
 </script>
 
-<style scoped lang="scss">
-:deep(.gen-config.arco-form) {
-  width: 50%;
-}
-</style>
+  <style scoped lang="scss">
+  :deep(.gen-config.arco-form) {
+    width: 50%;
+  }
+  </style>
