@@ -14,6 +14,12 @@ export interface LabelValueState {
   extra?: string
 }
 
+/** 键值对 */
+export interface KeyValuePair {
+  key: string
+  value: string
+}
+
 declare global{
   type Recordable<T = any> = Record<string, T>
 

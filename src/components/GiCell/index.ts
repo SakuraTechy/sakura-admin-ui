@@ -1,0 +1,4 @@
+export { default as GiCellTags } from './GiCellTags.vue'
+export { default as GiCellKeyValue } from './GiCellKeyValue.vue'
+export { default as GiCellPassword } from './GiCellPassword.vue'
+export { default as GiCellVersion } from './GiCellVersion.vue'

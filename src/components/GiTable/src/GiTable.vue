@@ -98,7 +98,7 @@
           :scrollbar="true"
           :data="data"
           column-resizable
-          :pagination="{
+          :pagination="props.pagination === false ? false : {
             ...props.pagination,
             showJumper: true,
             showMore: true,

@@ -27,6 +27,7 @@ export type ColumnItemType =
   | 'auto-complete'
   | 'mention'
   | 'group-title'
+  | 'custom'
 
 export type ComponentProps =
   & A.InputInstance['$props']
@@ -187,6 +188,7 @@ export type ComponentSlots =
 export interface ColumnItemSlots extends Omit<ComponentSlots, 'label' | 'option'> {
   label?: (e: { data: A.CheckboxOption | A.SelectOptionData | A.CascaderOption }) => VNode
   option?: (e: { data: (string | number | A.SelectOptionData | A.SelectOptionGroup)[] | A.CascaderOption | A.SelectOptionData }) => VNode
+  default?: () => VNode
 }
 
 export type ColumnItemHide<F> = boolean | ((form: F) => boolean)

@@ -26,6 +26,9 @@
                   @update:model-value="valueChange($event, item.field)"
                 />
               </template>
+              <template v-else-if="item.type === 'custom' && item.slots?.default">
+                <component :is="item.slots.default"></component>
+              </template>
               <component
                 :is="`a-${item.type}`" v-else v-bind="getComponentBindProps(item)"
                 :model-value="modelValue[item.field as keyof typeof modelValue]"

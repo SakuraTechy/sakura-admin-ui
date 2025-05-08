@@ -15,7 +15,7 @@ import type { GiCellTagType } from '@/components/GiCell/type'
 
 defineOptions({ name: 'GiCellTag' })
 const props = withDefaults(defineProps<Partial<GiCellTagType>>(), {
-  dict: [{
+  dict: () => [{
     label: '',
     value: '',
   }],
