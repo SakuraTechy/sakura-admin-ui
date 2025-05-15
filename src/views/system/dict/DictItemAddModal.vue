@@ -70,7 +70,7 @@ const columns: ColumnItem[] = reactive([
     span: 24,
     required: true,
     props: {
-      maxLength: 30,
+      maxLength: 60,
     },
   },
   {

@@ -152,26 +152,27 @@ const {
 } = useTable((page) => listProjectServerConfig({ ...queryForm, ...page }), { immediate: true })
 
 const columns: TableInstance['columns'] = [
-  { title: 'ID', dataIndex: 'id', slotName: 'id', width: 185, ellipsis: true, tooltip: true },
+  { title: 'ID', dataIndex: 'id', slotName: 'id', fixed: 'left', width: 185, ellipsis: true, tooltip: true },
   // { title: '所属项目', dataIndex: 'projectId', slotName: 'projectId', width: 120, ellipsis: true, tooltip: true },
   {
     title: '所属项目',
     dataIndex: 'projectName',
     slotName: 'projectName',
+    fixed: 'left',
     width: 240,
     render: ({ record }) => {
       return (
-        <GiCellTags data={[record.projectName]} />
+        <GiCellTags data={[record?.projectName]} />
       )
     },
   },
   { title: '类型', dataIndex: 'type', slotName: 'type', width: 100, ellipsis: true, tooltip: true },
-  { title: '版本', dataIndex: 'version', slotName: 'version', width: 150, ellipsis: true, tooltip: true },
+  { title: '版本', dataIndex: 'version', slotName: 'version', width: 180, ellipsis: true, tooltip: true },
   { title: 'IP', dataIndex: 'ip', slotName: 'ip', width: 120, ellipsis: true, tooltip: true },
   { title: '端口', dataIndex: 'port', slotName: 'port', width: 80, ellipsis: true, tooltip: true },
   { title: '用户名', dataIndex: 'userName', slotName: 'userName', width: 80, ellipsis: true, tooltip: true },
-  { title: '密码', dataIndex: 'passWord', slotName: 'passWord', width: 180, ellipsis: true, tooltip: true },
-  { title: '描述', dataIndex: 'description', slotName: 'description', width: 150, ellipsis: true, tooltip: true },
+  { title: '密码', dataIndex: 'passWord', slotName: 'passWord', width: 160, ellipsis: true, tooltip: true },
+  { title: '描述', dataIndex: 'description', slotName: 'description', width: 160, ellipsis: true, tooltip: true },
   {
     title: '参数配置',
     dataIndex: 'configList',
@@ -181,6 +182,7 @@ const columns: TableInstance['columns'] = [
     render: ({ record }) => {
       return (
         <GiCellKeyValue data={record.configList} title="服务器参数配置" />
+        // <GiCellKeyValue data={record?.configList ?? []} title="服务器参数配置" />
       )
     },
   },
@@ -231,7 +233,7 @@ const onSecret = async (record: ProjectServerConfigResp) => {
 
 // 隐藏密码
 const onSecretHide = (record: ProjectServerConfigResp) => {
-  return record.passWord = undefined
+  return record.passWord = ''
 }
 
 // 重置

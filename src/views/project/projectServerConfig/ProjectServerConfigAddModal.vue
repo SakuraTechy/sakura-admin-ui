@@ -24,12 +24,10 @@ import { Message } from '@arco-design/web-vue'
 import { IconInfoCircle, IconQuestionCircle } from '@arco-design/web-vue/es/icon'
 import { useWindowSize } from '@vueuse/core'
 import { h, ref, watch } from 'vue'
-import { addProjectServerConfig, getProjectServerConfig, updateProjectServerConfig } from '@/apis/project/projectServerConfig'
+import { addProjectServerConfig, getProjectServerConfig, testProjectServerConfig, updateProjectServerConfig } from '@/apis/project/projectServerConfig'
 import type { ColumnItem, GiForm } from '@/components/GiForm'
 import { useResetReactive } from '@/hooks'
 import { useDict } from '@/hooks/app'
-import { listUserDict } from '@/apis/common/common'
-import type { LabelValueState } from '@/types/global'
 import KeyValuePairForm from '@/components/KeyValuePairForm'
 
 const props = defineProps({
@@ -66,28 +64,41 @@ const getServerHelp = (typeValue: string) => {
 
   if (typeLabel.includes('Windows') || typeValue === 'Windows') {
     return {
-      title: 'Windows如何查看服务器版本？',
+      title: 'Windows如何开启远程连接？',
       content: h('div', {}, [
         h('div', {}, `工具：FreeSShd 或 Bitvise SSH Client`),
-        h('div', {}, `下载：https://download.cnet.com/freessh/3000-2085_4-75937656.html`),
         h('div', {}, `教程：https://zhuanlan.zhihu.com/p/115563492`),
+        h('div', {}, `下载：https://download.cnet.com/freessh/3000-2085_4-75937656.html`),
+        h('div', { style: 'font-weight: 500; margin-top: 5px; display: flex; align-items: center;' }, [
+          h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
+            `Windows如何查看服务器版本？`,
+        ]),
+        h('div', {}, `教程：https://yuanbao.tencent.com/bot/app/share/chat/FoS1iyKhCjqY`),
+        h('div', {}, `方法一：【PowerShell专用命令】`),
+        h('div', {}, `执行：Get-WmiObject Win32_OperatingSystem | Select-Object Caption, Version`),
+        h('div', { style: 'margin-top: 5px;' }, '方法二：【​通过​系统属性查看】'),
+        h('div', {}, `右键点击"此电脑" → 选择"属性"`),
+        h('div', {}, `在"Windows 规格"区域直接显示版本信息（如：Windows Server 2022 Datacenter 21H2）`),
       ]),
     }
   } else if (typeLabel.includes('Linux') || typeValue === 'Linux') {
     return {
-      title: 'Linux如何查看服务器版本？',
+      title: 'Linux如何开启远程连接？',
       content: h('div', {}, [
+        h('div', {}, `执行: sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config`),
+        h('div', {}, `执行: systemctl reload sshd`),
+        h('div', { style: 'font-weight: 500; margin-top: 5px; display: flex; align-items: center;' }, [
+          h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
+            `Linux如何查看服务器版本？`,
+        ]),
+        h('div', {}, `方法一：【lsb_release】`),
         h('div', {}, `下载: wget https://downloads.sourceforge.net/lsb/lsb-release-1.4.tar.gz`),
         h('div', {}, `解压: tar -zxvf lsb-release-1.4.tar.gz &&  cd lsb-release-1.4`),
         h('div', {}, `安装: sudo make install`),
         h('div', {}, `执行: lsb_release -a`),
-        h('div', {}, `通用：cat /etc/*-release`),
-        h('div', { style: 'font-weight: 500; margin-top: 5px; display: flex; align-items: center;' }, [
-          h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
-            `Linux如何开启远程连接？`,
-        ]),
-        h('div', {}, `执行: sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config`),
-        h('div', {}, `执行: systemctl reload sshd`),
+        h('div', {}, `查看: CentOS Linux release 7.9.2009 (Core)`),
+        h('div', { style: 'margin-top: 5px;' }, `方法二：【cat /etc/*-release】`),
+        h('div', {}, `查看: CentOS Linux release 7.9.2009 (Core)`),
       ]),
     }
   } else {
@@ -112,12 +123,14 @@ const typeChanged = ref(false)
 // 监听服务器类型变化
 watch(() => form.type, (newType) => {
   if (newType) {
-    typeChanged.value = true
     const help = getServerHelp(newType)
     versionHelpTitle.value = help.title
     versionHelpContent.value = help.content
-  } else {
+  }
+  if (form.version) {
     typeChanged.value = false
+  } else {
+    typeChanged.value = true
   }
 }, { immediate: true })
 
@@ -183,6 +196,9 @@ const columns = computed<ColumnItem[]>(() => {
       span: 24,
       required: true,
       type: 'input-number',
+      props: {
+        allowClear: true,
+      },
     },
     {
       label: '服务器用户名',
@@ -269,6 +285,7 @@ const columns = computed<ColumnItem[]>(() => {
           h('div', { style: 'font-weight: 500; margin-bottom: 4px; display: flex; align-items: center;' }, [
             h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
             `${typeLabel}${versionHelpTitle.value.replace('Windows', '').replace('Linux', '')}`,
+            // `${typeLabel}${versionHelpTitle.value}`,
           ]),
           versionHelpContent.value,
         ]),
@@ -293,6 +310,7 @@ const save = async () => {
   try {
     const isInvalid = await formRef.value?.formRef?.validate()
     if (isInvalid) return false
+    await testProjectServerConfig(form)
     if (isUpdate.value) {
       await updateProjectServerConfig(form, dataId.value)
       Message.success('修改成功')

@@ -11,9 +11,12 @@ export interface ProjectServerConfigResp {
   ip: string
   port: string
   userName: string
-  passWord: string | undefined
+  passWord: string
   description: string
-  configList: Array<object>
+  configList?: [{
+    paramsName: string
+    paramsValue: string
+  }]
   status: number
   createUser: string
   createTime: string
@@ -36,7 +39,10 @@ export interface ProjectServerConfigDetailResp {
   userName: string
   passWord: string
   description: string
-  configList?: KeyValueItem[]
+  configList?: [{
+    paramsName: string
+    paramsValue: string
+  }]
   status: number
   createUser: string
   createTime: string
@@ -46,10 +52,6 @@ export interface ProjectServerConfigDetailResp {
   delFlag: number
   createUserString: string
   updateUserString: string
-}
-export interface KeyValueItem {
-  paramsName: string
-  paramsValue: string
 }
 export interface ProjectServerConfigQuery {
   id: string | undefined
@@ -89,4 +91,9 @@ export function deleteProjectServerConfig(ids: string | Array<string>) {
 /** @desc 导出项目管理-服务器配置 */
 export function exportProjectServerConfig(query: ProjectServerConfigQuery) {
   return http.download(`${BASE_URL}/export`, query)
+}
+
+/** @desc 测试项目管理-服务器配置 */
+export function testProjectServerConfig(data: any) {
+  return http.post(`${BASE_URL}/test`, data)
 }
