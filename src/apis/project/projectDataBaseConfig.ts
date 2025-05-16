@@ -57,17 +57,17 @@ export interface ProjectDataBaseConfigDetailResp {
   updateUserString: string
 }
 export interface ProjectDataBaseConfigQuery {
-  id: string | undefined
-  projectId: string | undefined
-  type: string | undefined
-  ip: string | undefined
-  status: number | undefined
-  sort: Array<string>
+  id?: string | undefined
+  projectId?: string | undefined
+  type?: string | undefined
+  ip?: string | undefined
+  status?: number | undefined
+  sort?: Array<string>
 }
 export interface ProjectDataBaseConfigPageQuery extends ProjectDataBaseConfigQuery, PageQuery {}
 
 /** @desc 查询项目管理-数据库配置列表 */
-export function listProjectDataBaseConfig(query: ProjectDataBaseConfigPageQuery) {
+export function listProjectDataBaseConfig(query?: ProjectDataBaseConfigPageQuery) {
   return http.get<PageRes<ProjectDataBaseConfigResp[]>>(`${BASE_URL}`, query)
 }
 

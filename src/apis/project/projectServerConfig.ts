@@ -54,17 +54,17 @@ export interface ProjectServerConfigDetailResp {
   updateUserString: string
 }
 export interface ProjectServerConfigQuery {
-  id: string | undefined
-  projectId: string | undefined
-  type: string | undefined
-  ip: string | undefined
-  status: number | undefined
-  sort: Array<string>
+  id?: string | undefined
+  projectId?: string | undefined
+  type?: string | undefined
+  ip?: string | undefined
+  status?: number | undefined
+  sort?: Array<string>
 }
 export interface ProjectServerConfigPageQuery extends ProjectServerConfigQuery, PageQuery {}
 
 /** @desc 查询项目管理-服务器配置列表 */
-export function listProjectServerConfig(query: ProjectServerConfigPageQuery) {
+export function listProjectServerConfig(query?: ProjectServerConfigPageQuery) {
   return http.get<PageRes<ProjectServerConfigResp[]>>(`${BASE_URL}`, query)
 }
 

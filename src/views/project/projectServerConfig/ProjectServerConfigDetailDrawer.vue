@@ -24,7 +24,9 @@
       <a-descriptions-item label="状态">
         <GiCellTag :value="dataDetail?.status" :dict="status_type" />
       </a-descriptions-item>
-      <a-descriptions-item label="删除标志（0删除 1存在）">{{ dataDetail?.delFlag }}</a-descriptions-item>
+      <a-descriptions-item label="删除标志（0删除 1存在）">
+        <GiCellTag :value="dataDetail?.delFlag" :dict="delete_type" />
+      </a-descriptions-item>
       <a-descriptions-item label="创建人">{{ dataDetail?.createUserString }}</a-descriptions-item>
       <a-descriptions-item label="创建时间">{{ dataDetail?.createTime }}</a-descriptions-item>
       <a-descriptions-item label="修改人">{{ dataDetail?.updateUserString }}</a-descriptions-item>
@@ -40,7 +42,7 @@ import { type ProjectServerConfigDetailResp, getProjectServerConfig as getDetail
 import { useDict } from '@/hooks/app'
 import { GiCellVersion } from '@/components/GiCell'
 
-const { server_type, status_type } = useDict('server_type', 'status_type')
+const { server_type, status_type, delete_type } = useDict('server_type', 'status_type', 'delete_type')
 
 const { width } = useWindowSize()
 
@@ -69,9 +71,4 @@ export default {}
 </script>
 
 <style scoped lang="scss">
-:deep(.gi-cell-key-value) {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-}
 </style>

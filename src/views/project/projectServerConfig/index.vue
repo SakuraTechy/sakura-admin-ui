@@ -95,6 +95,8 @@
         <a-space>
           <a-link v-permission="['project:projectServerConfig:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['project:projectServerConfig:update']" title="修改" @click="onUpdate(record)">修改</a-link>
+          <a-link v-permission="['project:projectServerConfig:create']" title="复制" @click="onCopy(record)">复制</a-link>
+          <a-link v-permission="['project:projectServerConfig:test']" title="测试" @click="onTest(record)">测试</a-link>
           <a-link
             v-permission="['project:projectServerConfig:delete']"
             status="danger"
@@ -171,8 +173,8 @@ const columns: TableInstance['columns'] = [
   { title: 'IP', dataIndex: 'ip', slotName: 'ip', width: 120, ellipsis: true, tooltip: true },
   { title: '端口', dataIndex: 'port', slotName: 'port', width: 80, ellipsis: true, tooltip: true },
   { title: '用户名', dataIndex: 'userName', slotName: 'userName', width: 80, ellipsis: true, tooltip: true },
-  { title: '密码', dataIndex: 'passWord', slotName: 'passWord', width: 160, ellipsis: true, tooltip: true },
-  { title: '描述', dataIndex: 'description', slotName: 'description', width: 160, ellipsis: true, tooltip: true },
+  { title: '密码', dataIndex: 'passWord', slotName: 'passWord', width: 140, ellipsis: true, tooltip: true },
+  { title: '描述', dataIndex: 'description', slotName: 'description', width: 150, ellipsis: true, tooltip: true },
   {
     title: '参数配置',
     dataIndex: 'configList',
@@ -186,7 +188,7 @@ const columns: TableInstance['columns'] = [
       )
     },
   },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100, ellipsis: true, tooltip: true, align: 'center' },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120, ellipsis: true, tooltip: true },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180, ellipsis: true, tooltip: true },
   { title: '修改人', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120, ellipsis: true, tooltip: true },
@@ -197,7 +199,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 160,
+    width: 250,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectServerConfig:get', 'project:projectServerConfig:update', 'project:projectServerConfig:delete']),
@@ -280,6 +282,8 @@ const onExport = async () => {
 interface ProjectServerConfigAddModalType {
   onAdd: () => void
   onUpdate: (id: string) => void
+  onCopy: (id: string) => void
+  onTest: (record: any) => void
 }
 interface ProjectServerConfigDetailDrawerType {
   onOpen: (id: string) => void
@@ -296,6 +300,16 @@ const onUpdate = (record: ProjectServerConfigResp) => {
   ProjectServerConfigAddModalRef.value?.onUpdate(record.id)
 }
 
+// 复制
+const onCopy = (record: ProjectServerConfigResp) => {
+  ProjectServerConfigAddModalRef.value?.onCopy(record.id)
+}
+
+// 测试
+const onTest = (record: ProjectServerConfigResp) => {
+  ProjectServerConfigAddModalRef.value?.onTest(record)
+}
+
 const ProjectServerConfigDetailDrawerRef = ref<ProjectServerConfigDetailDrawerType>()
 // 详情
 const onDetail = (record: ProjectServerConfigResp) => {
@@ -303,4 +317,10 @@ const onDetail = (record: ProjectServerConfigResp) => {
 }
 </script>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+:deep(.gi-cell-key-value) {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+</style>

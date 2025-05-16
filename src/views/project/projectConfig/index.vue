@@ -137,7 +137,7 @@ const columns: TableInstance['columns'] = [
   // { title: '项目描述', dataIndex: 'description', slotName: 'description' },
   // { title: '项目域名', dataIndex: 'lastDomain', slotName: 'lastDomain', width: 250, show: true },
   // { title: '主线版本', dataIndex: 'lastVersion', slotName: 'lastVersion', width: 100, show: true },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100, align: 'center' },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120 },
   // { title: '创建部门', dataIndex: 'deptId', slotName: 'deptId' },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180 },

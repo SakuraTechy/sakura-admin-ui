@@ -27,11 +27,13 @@
       <a-descriptions-item label="状态">
         <GiCellTag :value="dataDetail?.status" :dict="status_type" />
       </a-descriptions-item>
+      <a-descriptions-item label="删除标志（0删除 1存在）">
+        <GiCellTag :value="dataDetail?.delFlag" :dict="delete_type" />
+      </a-descriptions-item>
       <a-descriptions-item label="创建人">{{ dataDetail?.createUserString }}</a-descriptions-item>
       <a-descriptions-item label="创建时间">{{ dataDetail?.createTime }}</a-descriptions-item>
       <a-descriptions-item label="修改人">{{ dataDetail?.updateUserString }}</a-descriptions-item>
       <a-descriptions-item label="修改时间">{{ dataDetail?.updateTime }}</a-descriptions-item>
-      <a-descriptions-item label="删除标志（0删除 1存在）">{{ dataDetail?.delFlag }}</a-descriptions-item>
     </a-descriptions>
   </a-drawer>
 </template>
@@ -41,7 +43,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type ProjectDataBaseConfigDetailResp, getProjectDataBaseConfig as getDetail } from '@/apis/project/projectDataBaseConfig'
 import { useDict } from '@/hooks/app'
 
-const { database_type, status_type } = useDict('database_type', 'status_type')
+const { database_type, status_type, delete_type } = useDict('database_type', 'status_type', 'delete_type')
 
 const { width } = useWindowSize()
 

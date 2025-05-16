@@ -35,16 +35,16 @@ export interface ProjectVersionConfigDetailResp {
   updateUserString: string
 }
 export interface ProjectVersionConfigQuery {
-  id: string | undefined
-  projectId: string | undefined
-  name: string | undefined
-  status: number | undefined
-  sort: Array<string>
+  id?: string | undefined
+  projectId?: string | undefined
+  name?: string | undefined
+  status?: number | undefined
+  sort?: Array<string>
 }
 export interface ProjectVersionConfigPageQuery extends ProjectVersionConfigQuery, PageQuery {}
 
 /** @desc 查询项目管理-版本配置列表 */
-export function listProjectVersionConfig(query: ProjectVersionConfigPageQuery) {
+export function listProjectVersionConfig(query?: ProjectVersionConfigPageQuery) {
   return http.get<PageRes<ProjectVersionConfigResp[]>>(`${BASE_URL}`, query)
 }
 

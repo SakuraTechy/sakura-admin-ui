@@ -3,9 +3,13 @@
     <a-descriptions :column="2" size="large" class="general-description">
       <a-descriptions-item label="项目ID">{{ dataDetail?.id }}</a-descriptions-item>
       <a-descriptions-item label="项目名称">{{ dataDetail?.name }}</a-descriptions-item>
-      <a-descriptions-item label="项目简称">{{ dataDetail?.abbreviate }}</a-descriptions-item>
+      <a-descriptions-item label="项目简称">
+        <a-tag color="arcoblue"> {{ dataDetail?.abbreviate }} </a-tag>
+      </a-descriptions-item>
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
-      <a-descriptions-item label="项目成员"><GiCellTags :data="dataDetail?.memberNames || []" /></a-descriptions-item>
+      <a-descriptions-item label="项目成员">
+        <GiCellTags :data="dataDetail?.memberNames || []" />
+      </a-descriptions-item>
       <!-- <a-descriptions-item label="状态"><GiCellStatus :status="dataDetail?.status" /></a-descriptions-item> -->
       <!-- <a-descriptions-item label="状态">
         <a-tag v-if="dataDetail?.status === 1" color="green">启用</a-tag>
@@ -26,7 +30,9 @@
       <a-descriptions-item label="更新IP">{{ dataDetail?.updateIp }}</a-descriptions-item>
       <a-descriptions-item label="备注">{{ dataDetail?.remark }}</a-descriptions-item>
       <a-descriptions-item label="版本">{{ dataDetail?.version }}</a-descriptions-item>
-      <a-descriptions-item label="删除标志（0删除 1存在）">{{ dataDetail?.delFlag }}</a-descriptions-item>
+      <a-descriptions-item label="删除标志（0删除 1存在）">
+        <GiCellTag :value="dataDetail?.delFlag" :dict="delete_type" />
+      </a-descriptions-item>
     </a-descriptions>
   </a-drawer>
 </template>
@@ -36,7 +42,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type ProjectConfigDetailResp, getProjectConfig as getDetail } from '@/apis/project/projectConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type } = useDict('status_type')
+const { status_type, delete_type } = useDict('status_type', 'delete_type')
 const { width } = useWindowSize()
 
 const dataId = ref('')

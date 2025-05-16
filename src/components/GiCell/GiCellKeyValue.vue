@@ -1,18 +1,38 @@
 <template>
   <div v-if="data && data.length" class="gi-cell-key-value">
     <a-popover trigger="click" :content-style="{ maxWidth: '500px', padding: '12px 16px' }">
-      <a-link class="view-params-link">
-        点击查看
+      <a-link v-if="slotName" class="view-params-link">
+        {{ data.find(item => ['名称', 'IP'].some(keyword => item.paramsName.includes(keyword)))?.paramsValue }}
+      </a-link>
+      <a-link v-else class="view-params-link">
+        查看更多
         <span class="params-count">+{{ data.length }}</span>
       </a-link>
       <template #content>
-        <div class="popover-title">{{ title }}</div>
+        <div class="popover-title">{{ title }}详情信息</div>
         <a-divider style="margin: 8px 0" />
         <table class="popover-table">
           <tbody>
             <tr v-for="item in data" :key="item.paramsName">
               <td class="key-column">{{ item.paramsName || '' }}</td>
-              <td class="value-column">{{ item.paramsValue || '' }}</td>
+              <td class="value-column">
+                <template v-if="item.paramsName.includes('类型')">
+                  <a-tag color="arcoblue">{{ item.paramsValue }}</a-tag>
+                </template>
+                <template v-else-if="item.paramsName.includes('密码')">
+                  <GiCellPassword :value="item.paramsValue" />
+                </template>
+                <template v-else-if="item.paramsName.includes('状态')">
+                  <GiCellTag :value="item.paramsValue" :dict="status_type" />
+                </template>
+                <template v-else-if="typeof item.paramsValue === 'number'">
+                  <a-tag color="arcoblue">{{ item.paramsValue }}</a-tag>
+                </template>
+                <template v-else-if="typeof item.paramsValue === 'object'">
+                  <GiCellKeyValue :data="item.paramsValue ?? []" :title="item.paramsName ?? ''" />
+                </template>
+                <template v-else>{{ item.paramsValue }}</template>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -22,14 +42,19 @@
   <span v-else class="no-data">-</span>
 </template>
 
-<script setup lang="ts">
+<script setup lang="tsx">
+import { useDict } from '@/hooks/app'
+
 defineOptions({ name: 'GiCellKeyValue' })
 
 withDefaults(defineProps<Props>(), {
   data: () => [],
   showPlusIcon: true,
+  slotName: false,
   title: '参数配置',
 })
+
+const { status_type } = useDict('status_type')
 
 interface KeyValueItem {
   paramsName: string
@@ -40,6 +65,7 @@ interface KeyValueItem {
 interface Props {
   data: KeyValueItem[]
   showPlusIcon?: boolean
+  slotName?: boolean
   title?: string
 }
 </script>
@@ -48,7 +74,7 @@ interface Props {
 .gi-cell-key-value {
   display: flex;
   align-items: center;
-  justify-content: space-around;
+  justify-content: flex-start;
 }
 
 .view-params-link {

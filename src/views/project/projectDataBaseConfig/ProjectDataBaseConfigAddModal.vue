@@ -423,7 +423,22 @@ const onUpdate = async (id: string) => {
   visible.value = true
 }
 
-defineExpose({ onAdd, onUpdate })
+// 复制
+const onCopy = async (id: string) => {
+  reset()
+  dataId.value = ''
+  const { data } = await getProjectDataBaseConfig(id)
+  Object.assign(form, data)
+  visible.value = true
+}
+
+// 测试
+const onTest = async (record: any) => {
+  const { msg } = await testProjectDataBaseConfig(record)
+  msg === 'ok' ? Message.success('测试连接成功') : Message.error(msg)
+}
+
+defineExpose({ onAdd, onUpdate, onCopy, onTest })
 </script>
 
 <script lang="ts">

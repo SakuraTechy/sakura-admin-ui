@@ -93,6 +93,8 @@
         <a-space>
           <a-link v-permission="['project:projectDataBaseConfig:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['project:projectDataBaseConfig:update']" title="修改" @click="onUpdate(record)">修改</a-link>
+          <a-link v-permission="['project:projectDataBaseConfig:create']" title="复制" @click="onCopy(record)">复制</a-link>
+          <a-link v-permission="['project:projectDataBaseConfig:test']" title="测试" @click="onTest(record)">测试</a-link>
           <a-link
             v-permission="['project:projectDataBaseConfig:delete']"
             status="danger"
@@ -183,7 +185,7 @@ const columns: TableInstance['columns'] = [
       )
     },
   },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 120, ellipsis: true, tooltip: true, align: 'center' },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120, ellipsis: true, tooltip: true },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180, ellipsis: true, tooltip: true },
   { title: '修改人', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120, ellipsis: true, tooltip: true },
@@ -192,7 +194,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 160,
+    width: 250,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectDataBaseConfig:get', 'project:projectDataBaseConfig:update', 'project:projectDataBaseConfig:delete']),
@@ -249,7 +251,7 @@ const onDelete = (record?: ProjectDataBaseConfigResp) => {
       ? selectedKeys.value.map((id) => String(id))
       : record!.id,
   ), {
-    content: selectedKeys.value.length ? '是否确定删除批量选中的数据？' : `是否确定删除「${record!.name}」？`,
+    content: selectedKeys.value.length ? '是否确定删除批量选中的数据？' : `是否确定删除「${record!.ip}」？`,
     showModal: true,
     multiple: true,
   })
@@ -262,7 +264,7 @@ const onExport = async () => {
       ? {
           ...queryForm,
           id: selectedKeys.value.join(','),
-          name: '批量选择导出',
+          ip: '批量选择导出',
         }
       : queryForm,
   ), {
@@ -276,6 +278,8 @@ const onExport = async () => {
 interface ProjectDataBaseConfigAddModalType {
   onAdd: () => void
   onUpdate: (id: string) => void
+  onCopy: (id: string) => void
+  onTest: (record: any) => void
 }
 interface ProjectDataBaseConfigDetailDrawerType {
   onOpen: (id: string) => void
@@ -290,6 +294,16 @@ const onAdd = () => {
 // 修改
 const onUpdate = (record: ProjectDataBaseConfigResp) => {
   ProjectDataBaseConfigAddModalRef.value?.onUpdate(record.id)
+}
+
+// 复制
+const onCopy = (record: ProjectDataBaseConfigResp) => {
+  ProjectDataBaseConfigAddModalRef.value?.onCopy(record.id)
+}
+
+// 测试
+const onTest = (record: ProjectDataBaseConfigResp) => {
+  ProjectDataBaseConfigAddModalRef.value?.onTest(record)
 }
 
 const ProjectDataBaseConfigDetailDrawerRef = ref<ProjectDataBaseConfigDetailDrawerType>()

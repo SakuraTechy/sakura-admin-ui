@@ -137,7 +137,7 @@ const columns: TableInstance['columns'] = [
     title: '所属项目',
     dataIndex: 'projectName',
     slotName: 'projectName',
-    width: 250,
+    width: 240,
     render: ({ record }) => {
       return (
         <GiCellTags data={[record.projectName]} />
@@ -145,8 +145,8 @@ const columns: TableInstance['columns'] = [
     },
   },
   { title: '版本名称', dataIndex: 'name', slotName: 'name', width: 120, ellipsis: true, tooltip: true },
-  { title: '版本描述', dataIndex: 'description', slotName: 'description', width: 150, ellipsis: true, tooltip: true },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 120, ellipsis: true, tooltip: true, align: 'center' },
+  { title: '版本描述', dataIndex: 'description', slotName: 'description', width: 200, ellipsis: true, tooltip: true },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120, ellipsis: true, tooltip: true },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180, ellipsis: true, tooltip: true },
   { title: '修改人', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120 },
