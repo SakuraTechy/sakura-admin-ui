@@ -30,8 +30,8 @@
       <a-descriptions-item label="更新IP">{{ dataDetail?.updateIp }}</a-descriptions-item>
       <a-descriptions-item label="备注">{{ dataDetail?.remark }}</a-descriptions-item>
       <a-descriptions-item label="版本">{{ dataDetail?.version }}</a-descriptions-item>
-      <a-descriptions-item label="删除标志（0删除 1存在）">
-        <GiCellTag :value="dataDetail?.delFlag" :dict="delete_type" />
+      <a-descriptions-item label="删除标志（3正常 4异常）">
+        <GiCellTag :value="dataDetail?.delFlag" :dict="status_type" />
       </a-descriptions-item>
     </a-descriptions>
   </a-drawer>
@@ -42,7 +42,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type ProjectConfigDetailResp, getProjectConfig as getDetail } from '@/apis/project/projectConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type, delete_type } = useDict('status_type', 'delete_type')
+const { status_type } = useDict('status_type')
 const { width } = useWindowSize()
 
 const dataId = ref('')

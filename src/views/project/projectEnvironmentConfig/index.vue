@@ -34,7 +34,7 @@
         <a-input-search v-model="queryForm.name" placeholder="请输入环境名称" allow-clear @search="search" />
         <a-select
           v-model="queryForm.status"
-          :options="status_type"
+          :options="status_type.filter(item => item.value === '1' || item.value === '2')"
           placeholder="请选择状态"
           allow-clear
           style="width: 150px"
@@ -73,6 +73,7 @@
         <a-space>
           <a-link v-permission="['project:projectEnvironmentConfig:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['project:projectEnvironmentConfig:update']" title="修改" @click="onUpdate(record)">修改</a-link>
+          <a-link v-permission="['project:projectEnvironmentConfig:create']" title="复制" @click="onCopy(record)">复制</a-link>
           <a-link
             v-permission="['project:projectEnvironmentConfig:delete']"
             status="danger"
@@ -93,7 +94,6 @@
 
 <script setup lang="tsx">
 import type { TableInstance } from '@arco-design/web-vue'
-import { c } from 'vite/dist/node/types.d-aGj9QkWt'
 import ProjectEnvironmentConfigAddModal from './ProjectEnvironmentConfigAddModal.vue'
 import ProjectEnvironmentConfigDetailDrawer from './ProjectEnvironmentConfigDetailDrawer.vue'
 import { type ProjectEnvironmentConfigQuery, type ProjectEnvironmentConfigResp, deleteProjectEnvironmentConfig, exportProjectEnvironmentConfig, listProjectEnvironmentConfig } from '@/apis/project/projectEnvironmentConfig'
@@ -233,12 +233,12 @@ const columns: TableInstance['columns'] = [
   // { title: '更新IP', dataIndex: 'updateIp', slotName: 'updateIp', width: 120, ellipsis: true, tooltip: true },
   // { title: '备注', dataIndex: 'remark', slotName: 'remark', width: 120, ellipsis: true, tooltip: true },
   // { title: '版本', dataIndex: 'version', slotName: 'version', width: 120, ellipsis: true, tooltip: true },
-  // { title: '删除标志（0删除 1存在）', dataIndex: 'delFlag', slotName: 'delFlag', width: 120, ellipsis: true, tooltip: true },
+  // { title: '删除标志（3正常 4异常）', dataIndex: 'delFlag', slotName: 'delFlag', width: 120, ellipsis: true, tooltip: true },
   {
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 160,
+    width: 200,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectEnvironmentConfig:get', 'project:projectEnvironmentConfig:update', 'project:projectEnvironmentConfig:delete']),
@@ -310,6 +310,7 @@ const onExport = async () => {
 interface ProjectEnvironmentConfigAddModalType {
   onAdd: () => void
   onUpdate: (id: string) => void
+  onCopy: (id: string) => void
 }
 interface ProjectEnvironmentConfigDetailDrawerType {
   onOpen: (id: string) => void
@@ -324,6 +325,11 @@ const onAdd = () => {
 // 修改
 const onUpdate = (record: ProjectEnvironmentConfigResp) => {
   ProjectEnvironmentConfigAddModalRef.value?.onUpdate(record.id)
+}
+
+// 复制
+const onCopy = (record: ProjectEnvironmentConfigResp) => {
+  ProjectEnvironmentConfigAddModalRef.value?.onCopy(record.id)
 }
 
 const ProjectEnvironmentConfigDetailDrawerRef = ref<ProjectEnvironmentConfigDetailDrawerType>()

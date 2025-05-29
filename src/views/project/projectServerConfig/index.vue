@@ -42,7 +42,7 @@
         <a-input-search v-model="queryForm.ip" placeholder="请输入服务器IP" allow-clear @search="search" />
         <a-select
           v-model="queryForm.status"
-          :options="status_type"
+          :options="status_type.filter(item => item.value === '1' || item.value === '2')"
           placeholder="请选择状态"
           allow-clear
           style="width: 150px"
@@ -194,7 +194,7 @@ const columns: TableInstance['columns'] = [
   { title: '修改人', dataIndex: 'updateUserString', slotName: 'updateUser', width: 120, ellipsis: true, tooltip: true },
   { title: '修改时间', dataIndex: 'updateTime', slotName: 'updateTime', width: 180, ellipsis: true, tooltip: true },
   // { title: '更新人IP', dataIndex: 'updateIp', slotName: 'updateIp', width: 120, ellipsis: true, tooltip: true },
-  // { title: '删除标志（0删除 1存在）', dataIndex: 'delFlag', slotName: 'delFlag', width: 120, ellipsis: true, tooltip: true },
+  // { title: '删除标志（3正常 4异常）', dataIndex: 'delFlag', slotName: 'delFlag', width: 120, ellipsis: true, tooltip: true },
   {
     title: '操作',
     dataIndex: 'action',

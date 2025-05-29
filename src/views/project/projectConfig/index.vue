@@ -26,7 +26,7 @@
         <a-input-search v-model="queryForm.abbreviate" placeholder="请输入项目简称" allow-clear @search="search" />
         <a-select
           v-model="queryForm.status"
-          :options="status_type"
+          :options="status_type.filter(item => item.value === '1' || item.value === '2')"
           placeholder="请选择状态"
           allow-clear
           style="width: 150px"

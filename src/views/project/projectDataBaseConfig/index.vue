@@ -43,7 +43,7 @@
         <a-input-search v-model="queryForm.ip" placeholder="请输入数据库IP" allow-clear @search="search" />
         <a-select
           v-model="queryForm.status"
-          :options="status_type"
+          :options="status_type.filter(item => item.value === '1' || item.value === '2')"
           placeholder="请选择状态"
           allow-clear
           style="width: 150px"

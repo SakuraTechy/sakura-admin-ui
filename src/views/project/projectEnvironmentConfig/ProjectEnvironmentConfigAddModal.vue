@@ -196,7 +196,6 @@ const columns = computed<ColumnItem[]>(() => [
     type: 'select',
     props: {
       options: versionList.value,
-      placeholder: '请选择环境版本信息',
       allowClear: true,
       allowSearch: true,
     },
@@ -209,7 +208,6 @@ const columns = computed<ColumnItem[]>(() => [
     type: 'select',
     props: {
       options: serverList.value,
-      placeholder: '请选择环境服务器信息',
       allowClear: true,
       allowSearch: true,
     },
@@ -222,7 +220,6 @@ const columns = computed<ColumnItem[]>(() => [
     type: 'select',
     props: {
       options: dataBaseList.value,
-      placeholder: '请选择环境数据库信息',
       allowClear: true,
       allowSearch: true,
     },
@@ -297,7 +294,22 @@ const onUpdate = async (id: string) => {
   visible.value = true
 }
 
-defineExpose({ onAdd, onUpdate })
+// 修改
+const onCopy = async (id: string) => {
+  reset()
+  dataId.value = ''
+  const { data } = await getProjectEnvironmentConfig(id)
+  const perform = {
+    ...data,
+    versionConfig: data.versionConfig.map((item: any) => item.id) ?? [],
+    serverConfig: data.serverConfig.map((item: any) => item.id) ?? [],
+    dataBaseConfig: data.dataBaseConfig.map((item: any) => item.id) ?? [],
+  }
+  Object.assign(form, perform)
+  visible.value = true
+}
+
+defineExpose({ onAdd, onUpdate, onCopy })
 </script>
 
 <script lang="ts">
