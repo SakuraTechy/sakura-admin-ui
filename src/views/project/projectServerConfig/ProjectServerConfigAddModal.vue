@@ -346,6 +346,7 @@ const onCopy = async (id: string) => {
   reset()
   dataId.value = ''
   const { data } = await getProjectServerConfig(id)
+  data.id = ''
   Object.assign(form, data)
   visible.value = true
 }

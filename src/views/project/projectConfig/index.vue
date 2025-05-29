@@ -66,6 +66,7 @@
         <a-space>
           <a-link v-permission="['project:projectConfig:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['project:projectConfig:update']" title="修改" @click="onUpdate(record)">修改</a-link>
+          <a-link v-permission="['project:projectConfig:create']" title="复制" @click="onCopy(record)">复制</a-link>
           <a-link
             v-permission="['project:projectConfig:delete']"
             status="danger"
@@ -151,7 +152,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 160,
+    width: 200,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectConfig:get', 'project:projectConfig:update', 'project:projectConfig:delete']),
@@ -203,6 +204,7 @@ const onExport = async () => {
 interface ProjectConfigAddModalType {
   onAdd: () => void
   onUpdate: (id: string) => void
+  onCopy: (id: string) => void
 }
 interface ProjectConfigDetailDrawerType {
   onOpen: (id: string) => void
@@ -217,6 +219,11 @@ const onAdd = () => {
 // 修改
 const onUpdate = (record: ProjectConfigResp) => {
   ProjectConfigAddModalRef.value?.onUpdate(record.id)
+}
+
+// 复制
+const onCopy = (record: ProjectConfigResp) => {
+  ProjectConfigAddModalRef.value?.onCopy(record.id)
 }
 
 const ProjectConfigDetailDrawerRef = ref<ProjectConfigDetailDrawerType>()

@@ -234,6 +234,7 @@ const onCopy = async (id: string) => {
   dataId.value = ''
   await getAutomationProjectList()
   const { data } = await getAutomationJenkinsConfig(id)
+  data.id = ''
   const perform = {
     ...data,
     jobList: data.jobList.map((item: any) => item.id) ?? [],

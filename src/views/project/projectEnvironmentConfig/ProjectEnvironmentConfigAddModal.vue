@@ -294,11 +294,12 @@ const onUpdate = async (id: string) => {
   visible.value = true
 }
 
-// 修改
+// 复制
 const onCopy = async (id: string) => {
   reset()
   dataId.value = ''
   const { data } = await getProjectEnvironmentConfig(id)
+  data.id = ''
   const perform = {
     ...data,
     versionConfig: data.versionConfig.map((item: any) => item.id) ?? [],

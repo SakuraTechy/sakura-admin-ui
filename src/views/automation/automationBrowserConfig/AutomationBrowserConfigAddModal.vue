@@ -4,7 +4,7 @@
     :title="title"
     :mask-closable="false"
     :esc-to-close="false"
-    :width="width >= 650 ? 650 : '100%'"
+    :width="width >= 900 ? 900 : '100%'"
     draggable
     @before-ok="save"
     @close="reset"
@@ -16,7 +16,7 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
-import { addAutomationProjectConfig, getAutomationProjectConfig, updateAutomationProjectConfig } from '@/apis/automation/automationProjectConfig'
+import { addAutomationBrowserConfig, getAutomationBrowserConfig, updateAutomationBrowserConfig } from '@/apis/automation/automationBrowserConfig'
 import type { ColumnItem, GiForm } from '@/components/GiForm'
 import { useResetReactive } from '@/hooks'
 import { useDict } from '@/hooks/app'
@@ -33,9 +33,9 @@ const { width } = useWindowSize()
 const dataId = ref('')
 const visible = ref(false)
 const isUpdate = computed(() => !!dataId.value)
-const title = computed(() => (isUpdate.value ? '修改自动化管理-项目配置' : '新增自动化管理-项目配置'))
+const title = computed(() => (isUpdate.value ? '修改自动化管理-浏览器配置' : '新增自动化管理-浏览器配置'))
 const formRef = ref<InstanceType<typeof GiForm>>()
-const { automation_type, status_type } = useDict('automation_type', 'status_type')
+const { status_type, browser_type } = useDict('status_type', 'browser_type')
 
 const [form, resetForm] = useResetReactive({
   status: 1,
@@ -43,19 +43,30 @@ const [form, resetForm] = useResetReactive({
 
 const columns = computed<ColumnItem[]>(() => [
   {
-    label: '项目类型',
+    label: '浏览器类型',
     field: 'type',
     span: 24,
     required: true,
     type: 'select',
     props: {
-      options: automation_type.value,
+      options: browser_type.value,
       allowClear: true,
       allowSearch: true,
     },
   },
   {
-    label: '项目名称',
+    label: '浏览器版本',
+    field: 'version',
+    span: 24,
+    required: true,
+    type: 'input',
+    props: {
+      maxLength: 30,
+      allowClear: true,
+    },
+  },
+  {
+    label: '浏览器名称',
     field: 'name',
     span: 24,
     required: true,
@@ -66,8 +77,30 @@ const columns = computed<ColumnItem[]>(() => [
     },
   },
   {
-    label: '项目地址',
-    field: 'url',
+    label: '浏览器程序下载地址',
+    field: 'officialDownload',
+    span: 24,
+    type: 'textarea',
+    props: {
+      maxLength: 255,
+      autoSize: true,
+      allowClear: true,
+    },
+  },
+  {
+    label: '浏览器驱动下载地址',
+    field: 'driverDownload',
+    span: 24,
+    type: 'textarea',
+    props: {
+      maxLength: 255,
+      autoSize: true,
+      allowClear: true,
+    },
+  },
+  {
+    label: '浏览器程序路径',
+    field: 'exePath',
     span: 24,
     required: true,
     type: 'input',
@@ -77,7 +110,28 @@ const columns = computed<ColumnItem[]>(() => [
     },
   },
   {
-    label: '项目描述',
+    label: '浏览器驱动路径',
+    field: 'driverPath',
+    span: 24,
+    required: true,
+    type: 'input',
+    props: {
+      maxLength: 255,
+      allowClear: true,
+    },
+  },
+  {
+    label: '浏览器配置文件路径',
+    field: 'profilePath',
+    span: 24,
+    type: 'input',
+    props: {
+      maxLength: 255,
+      allowClear: true,
+    },
+  },
+  {
+    label: '浏览器描述',
     field: 'description',
     span: 24,
     type: 'input',
@@ -114,10 +168,10 @@ const save = async () => {
     const isInvalid = await formRef.value?.formRef?.validate()
     if (isInvalid) return false
     if (isUpdate.value) {
-      await updateAutomationProjectConfig(form, dataId.value)
+      await updateAutomationBrowserConfig(form, dataId.value)
       Message.success('修改成功')
     } else {
-      await addAutomationProjectConfig(form)
+      await addAutomationBrowserConfig(form)
       Message.success('新增成功')
     }
     emit('save-success')
@@ -138,7 +192,7 @@ const onAdd = async () => {
 const onUpdate = async (id: string) => {
   reset()
   dataId.value = id
-  const { data } = await getAutomationProjectConfig(id)
+  const { data } = await getAutomationBrowserConfig(id)
   Object.assign(form, data)
   visible.value = true
 }
@@ -147,7 +201,7 @@ const onUpdate = async (id: string) => {
 const onCopy = async (id: string) => {
   reset()
   dataId.value = ''
-  const { data } = await getAutomationProjectConfig(id)
+  const { data } = await getAutomationBrowserConfig(id)
   data.id = ''
   Object.assign(form, data)
   visible.value = true
