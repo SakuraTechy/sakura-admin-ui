@@ -41,8 +41,12 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
   // 多选
   const selectedKeys = ref<(string | number)[]>([])
   const select: TableInstance['onSelect'] = (rowKeys) => {
-    selectedKeys.value = rowKeys
-    console.log('onSelect', selectedKeys.value)
+    if (Array.isArray(rowKeys)) {
+      selectedKeys.value = rowKeys
+      // console.log('onSelect', selectedKeys.value)
+    } else {
+      console.warn('Expected array for rowKeys, but got:', typeof rowKeys)
+    }
   }
 
   // 全选
@@ -74,7 +78,7 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
       )
     }
 
-    console.log('onSelectAll', `使用键 ${keyStr}`, selectedKeys.value)
+    // console.log('onSelectAll', `使用键 ${keyStr}`, selectedKeys.value)
   }
 
   // 查询
@@ -131,7 +135,7 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     })
   }
 
-  // 删除
+  // 导出
   const handleExport = async (
     aip: () => Promise<any>,
     options?: { title?: string, content?: string, successTip?: string, showModal?: boolean, multiple?: boolean },
@@ -166,6 +170,42 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     })
   }
 
+  // 同步
+  const handleSync = async (
+    aip: () => Promise<any>,
+    options?: { title?: string, content?: string, successTip?: string, showModal?: boolean, multiple?: boolean },
+  ): Promise<boolean | undefined> => {
+    const onSync = async () => {
+      try {
+        const res = await aip()
+        if (res.success) {
+          options?.multiple && (selectedKeys.value = [])
+          Message.success(options?.successTip || '同步成功')
+          await getTableData()
+        }
+        return res.success
+      } catch (error) {
+        return false
+      }
+    }
+    const onCancel = () => {
+      // selectedKeys.value = []
+    }
+    const flag = options?.showModal ?? true // 是否显示对话框
+    if (!flag) {
+      return onSync()
+    }
+    Modal.warning({
+      title: options?.title || '提示',
+      content: options?.content || '是否确定同步该条数据？',
+      okButtonProps: { status: 'danger' },
+      hideCancel: false,
+      maskClosable: false,
+      onCancel,
+      onBeforeOk: onSync,
+    })
+  }
+
   const { breakpoint } = useBreakpoint()
   // 表格操作列在小屏下不固定在右侧
   const fixed = computed(() => !['xs', 'sm'].includes(breakpoint.value) ? 'right' : undefined)
@@ -194,6 +234,8 @@ export function useTable<T extends U, U = T>(api: Api<T>, options?: Options<T, U
     handleDelete,
     /** 处理导出、批量导出 */
     handleExport,
+    /** 处理同步 、批量同步 */
+    handleSync,
     /** 刷新表格数据，页码会缓存 */
     refresh,
     /** 操作列在小屏场景下不固定在右侧 */

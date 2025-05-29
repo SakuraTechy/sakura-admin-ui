@@ -1,9 +1,21 @@
 <template>
   <div v-if="data && data.length" class="gi-cell-key-value">
-    <a-popover trigger="click" :content-style="{ maxWidth: '500px', padding: '12px 16px' }">
-      <a-link v-if="slotName" class="view-params-link">
-        {{ data.find(item => ['名称', 'IP'].some(keyword => item.paramsName.includes(keyword)))?.paramsValue }}
+    <a-popover :content-style="{ maxWidth: '2000px', padding: '12px 16px' }">
+      <a-link
+        v-if="slotName"
+        class="view-params-link"
+        :href="data.find(item => ['地址'].some(keyword => item.paramsName.includes(keyword)))?.paramsValue"
+        target="_blank"
+      >
+        {{ data.find(item => ['名称', 'IP', '状态'].some(keyword => item.paramsName.includes(keyword)))?.paramsValue ?? '-' }}
       </a-link>
+      <!-- <GiCellTag v-else-if="slotTag" :value="data.find(item => ['状态'].some(keyword => item.paramsName.includes(keyword)))?.paramsValue ?? '-'" :dict="status_type" /> -->
+      <a-space v-else-if="slotTag" :size="8">
+        <GiCellTag v-for="item in data.filter(item => typeof item.paramsValue === 'number')" :key="item.paramsName" :value="item.paramsValue" :dict="status_type" />
+      </a-space>
+      <!-- <div v-for="item in data" v-else-if="slotTag" :key="item.paramsName">
+        <GiCellTag :value="item.paramsValue" :dict="status_type" />
+      </div> -->
       <a-link v-else class="view-params-link">
         查看更多
         <span class="params-count">+{{ data.length }}</span>
@@ -14,24 +26,30 @@
         <table class="popover-table">
           <tbody>
             <tr v-for="item in data" :key="item.paramsName">
-              <td class="key-column">{{ item.paramsName || '' }}</td>
+              <td class="key-column">{{ item.paramsName ?? '-' }}</td>
               <td class="value-column">
                 <template v-if="item.paramsName.includes('类型')">
-                  <a-tag color="arcoblue">{{ item.paramsValue }}</a-tag>
+                  <a-tag color="arcoblue">{{ item.paramsValue ?? '-' }}</a-tag>
                 </template>
                 <template v-else-if="item.paramsName.includes('密码')">
-                  <GiCellPassword :value="item.paramsValue" />
+                  <GiCellPassword :value="item.paramsValue ?? '-'" />
                 </template>
                 <template v-else-if="item.paramsName.includes('状态')">
-                  <GiCellTag :value="item.paramsValue" :dict="status_type" />
+                  <GiCellTag :value="item.paramsValue ?? '-'" :dict="status_type" />
+                </template>
+                <template v-else-if="item.paramsName.includes('地址')">
+                  <a-link :href="item.paramsValue" target="_blank">{{ item.paramsValue ?? '-' }}</a-link>
+                </template>
+                <template v-else-if="item.paramsName.includes('凭据')">
+                  <a-link :href="item.paramsValue" target="_blank">{{ item.paramsValue?.split('credential/')[1]?.trim() ?? '-' }}</a-link>
                 </template>
                 <template v-else-if="typeof item.paramsValue === 'number'">
-                  <a-tag color="arcoblue">{{ item.paramsValue }}</a-tag>
+                  <a-tag color="arcoblue">{{ item.paramsValue ?? '-' }}</a-tag>
                 </template>
                 <template v-else-if="typeof item.paramsValue === 'object'">
                   <GiCellKeyValue :data="item.paramsValue ?? []" :title="item.paramsName ?? ''" />
                 </template>
-                <template v-else>{{ item.paramsValue }}</template>
+                <template v-else>{{ item.paramsValue ?? '-' }}</template>
               </td>
             </tr>
           </tbody>
@@ -66,6 +84,7 @@ interface Props {
   data: KeyValueItem[]
   showPlusIcon?: boolean
   slotName?: boolean
+  slotTag?: boolean
   title?: string
 }
 </script>

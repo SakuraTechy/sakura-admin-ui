@@ -11,6 +11,7 @@ declare module 'vue' {
     Breadcrumb: typeof import('./../components/Breadcrumb/index.vue')['default']
     CellCopy: typeof import('./../components/CellCopy/index.vue')['default']
     Chart: typeof import('./../components/Chart/index.vue')['default']
+    CodeMirror: typeof import('./../components/GiCode/CodeMirror/index.vue')['default']
     ColumnSetting: typeof import('./../components/GiTable/src/components/ColumnSetting.vue')['default']
     CronForm: typeof import('./../components/GenCron/CronForm/index.vue')['default']
     CronModal: typeof import('./../components/GenCron/CronModal/index.vue')['default']
@@ -71,6 +72,7 @@ declare module 'vue' {
     VerifyPoints: typeof import('./../components/Verify/Verify/VerifyPoints.vue')['default']
     VerifySlide: typeof import('./../components/Verify/Verify/VerifySlide.vue')['default']
     WeekForm: typeof import('./../components/GenCron/CronForm/component/week-form.vue')['default']
+    XmlJsonConverter: typeof import('./../components/XmlJsonConverter/index.vue')['default']
     YearForm: typeof import('./../components/GenCron/CronForm/component/year-form.vue')['default']
   }
 }

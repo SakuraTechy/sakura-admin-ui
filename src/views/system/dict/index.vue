@@ -78,7 +78,7 @@ defineOptions({ name: 'SystemDict' })
 
 const queryForm = reactive<DictItemQuery>({
   dictId: '',
-  sort: ['createTime,desc'],
+  sort: ['sort,asc'],
 })
 
 const {
