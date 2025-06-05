@@ -66,9 +66,14 @@ export interface ProjectDataBaseConfigQuery {
 }
 export interface ProjectDataBaseConfigPageQuery extends ProjectDataBaseConfigQuery, PageQuery {}
 
-/** @desc 查询项目管理-数据库配置列表 */
+/** @desc 分页查询项目管理-数据库配置列表 */
 export function listProjectDataBaseConfig(query?: ProjectDataBaseConfigPageQuery) {
   return http.get<PageRes<ProjectDataBaseConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询项目管理-数据库配置列表 */
+export function getProjectDataBaseConfigList(query?: ProjectDataBaseConfigPageQuery) {
+  return http.get<ProjectDataBaseConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询项目管理-数据库配置详情 */

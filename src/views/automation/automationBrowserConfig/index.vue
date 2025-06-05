@@ -32,6 +32,14 @@
           @change="search"
         />
         <a-input-search v-model="queryForm.name" placeholder="请输入浏览器名称" allow-clear @search="search" />
+        <a-select
+          v-model="queryForm.status"
+          :options="status_type.filter(item => item.value === '1' || item.value === '2')"
+          placeholder="请选择状态"
+          allow-clear
+          style="width: 150px"
+          @change="search"
+        />
         <a-button @click="reset">
           <template #icon><icon-refresh /></template>
           <template #default>重置</template>
@@ -108,6 +116,7 @@ const queryForm = reactive<AutomationBrowserConfigQuery>({
   id: undefined,
   type: undefined,
   name: undefined,
+  status: undefined,
   sort: ['createTime,desc'],
 })
 
@@ -179,6 +188,7 @@ const reset = () => {
   queryForm.id = undefined
   queryForm.type = undefined
   queryForm.name = undefined
+  queryForm.status = undefined
   search()
 }
 

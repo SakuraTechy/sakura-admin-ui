@@ -25,37 +25,46 @@
         <a-select
           v-model="queryForm.jenkinsId"
           :options="jenkinsList"
-          placeholder="请选择Jenkins"
+          placeholder="Jenkins"
           allow-clear
           allow-search
-          style="width: 150px"
+          style="width: 120px"
           @change="search"
         />
-        <a-input-search v-model="queryForm.name" style="width: 150px" placeholder="请输入节点名称" allow-clear @search="search" />
+        <a-select
+          v-model="queryForm.type"
+          :options="server_type"
+          placeholder="节点类型"
+          allow-clear
+          allow-search
+          style="width: 105px"
+          @change="search"
+        />
+        <a-input-search v-model="queryForm.name" style="width: 145px" placeholder="节点名称" allow-clear @search="search" />
         <a-select
           v-model="queryForm.offlineStatus"
           :options="status_type.filter(item => item.value === '5' || item.value === '6')"
-          placeholder="请选择在线状态"
+          placeholder="在线状态"
           allow-clear
           allow-search
-          style="width: 140px"
+          style="width: 105px"
           @change="search"
         />
         <a-select
           v-model="queryForm.idleStatus"
-          :options="status_type.filter(item => item.value === '7' || item.value === '8' || item.value === '9')"
-          placeholder="请选择使用状态"
+          :options="status_type.filter(item => item.value === '6' || item.value === '7' || item.value === '8')"
+          placeholder="使用状态"
           allow-clear
           allow-search
-          style="width: 140px"
+          style="width: 105px"
           @change="search"
         />
         <a-select
           v-model="queryForm.status"
           :options="status_type.filter(item => item.value === '1' || item.value === '2')"
-          placeholder="请选择状态"
+          placeholder="启用状态"
           allow-clear
-          style="width: 120px"
+          style="width: 105px"
           @change="search"
         />
         <a-button @click="reset">
@@ -154,7 +163,7 @@ import { listAutomationJenkinsConfig } from '@/apis/automation/automationJenkins
 
 defineOptions({ name: 'AutomationNodeConfig' })
 
-const { status_type } = useDict('status_type')
+const { server_type, status_type } = useDict('server_type', 'status_type')
 
 const queryForm = reactive<AutomationNodeConfigQuery>({
   id: undefined,
@@ -192,6 +201,18 @@ const columns: TableInstance['columns'] = [
       )
     },
   },
+  {
+    title: '节点类型',
+    dataIndex: 'type',
+    slotName: 'type',
+    width: 100,
+    align: 'center',
+    render: ({ record }) => {
+      return (
+        <GiCellTag value={record.type} dict={server_type.value} />
+      )
+    },
+  },
   { title: '节点名称', dataIndex: 'name', slotName: 'name', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   // { title: '节点地址', dataIndex: 'url', slotName: 'url', width: 360, ellipsis: true, tooltip: true },
   {
@@ -209,7 +230,7 @@ const columns: TableInstance['columns'] = [
         { paramsName: '类型', paramsValue: item?.systemType },
         { paramsName: '用户名', paramsValue: item?.userName },
         { paramsName: '密码', paramsValue: item?.passWord },
-        { paramsName: '凭据', paramsValue: record?.description?.credentialsId },
+        { paramsName: '凭据', paramsValue: item?.credentialsId },
         { paramsName: '地址', paramsValue: record?.url },
       ])
       return (
@@ -254,9 +275,9 @@ const columns: TableInstance['columns'] = [
         ? idle.currentExecutable
         : [idle.currentExecutable]
       const map = data.flatMap((item: any) => [
-        { paramsName: '姓名', paramsValue: item?.user },
-        { paramsName: '地址', paramsValue: item?.url },
-        { paramsName: '状态', paramsValue: idle.status },
+        { paramsName: '使用者姓名', paramsValue: item?.user },
+        { paramsName: '使用者地址', paramsValue: item?.url },
+        { paramsName: '使用状态', paramsValue: idle.status },
       ])
       return (
         offline.status === 5 && idle.status === 7
@@ -272,7 +293,7 @@ const columns: TableInstance['columns'] = [
     title: '参数列表',
     dataIndex: 'configList',
     slotName: 'configList',
-    width: 130,
+    width: 150,
     align: 'center',
     render: ({ record }) => {
       return (

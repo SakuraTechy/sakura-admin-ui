@@ -95,7 +95,7 @@
             <p v-else-if="item.type === 'issue' && item.action === 'changed_state'">
               更改了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>
               的 Issue <a-link :href=" `${giteeConfig.baseURL + item.target.path}`" target="_blank" rel="noopener">#{{ item.target.pre_iid }}  {{ item.target.title }}</a-link>
-              状态为 {{ item.payload.issue_state ? '已关闭' : '已取消' }}
+              状态为 {{ item.payload?.issue_state ? '已关闭' : '已取消' }}
             </p>
             <p v-else-if="item.type === 'note' && item.action === 'commented'">
               评论了 <a-link :href="`${giteeConfig.baseURL + item.project.path}`" target="_blank" rel="noopener">{{ item.project.name_with_namespace }}</a-link>

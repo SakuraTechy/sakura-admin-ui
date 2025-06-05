@@ -51,9 +51,14 @@ export interface AutomationJenkinsConfigQuery {
 }
 export interface AutomationJenkinsConfigPageQuery extends AutomationJenkinsConfigQuery, PageQuery {}
 
-/** @desc 查询自动化管理-Jenkins配置列表 */
+/** @desc 分页查询自动化管理-Jenkins配置列表 */
 export function listAutomationJenkinsConfig(query?: AutomationJenkinsConfigPageQuery) {
   return http.get<PageRes<AutomationJenkinsConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询自动化管理-Jenkins配置列表 */
+export function getAutomationJenkinsConfigList(query?: AutomationJenkinsConfigQuery) {
+  return http.get<AutomationJenkinsConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询自动化管理-Jenkins配置详情 */

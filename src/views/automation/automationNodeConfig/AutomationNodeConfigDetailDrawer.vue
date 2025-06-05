@@ -70,13 +70,13 @@ const getDataDetail = async () => {
     : [data.active?.idle?.currentExecutable]
 
   const currentExecutable = currentExecutableData.flatMap((item: any) => [
-    { paramsName: '名称', paramsValue: item?.user ?? '' },
-    { paramsName: '地址', paramsValue: data?.url ?? '' },
+    { paramsName: '使用者名称', paramsValue: item?.user ?? '' },
+    { paramsName: '使用者地址', paramsValue: data?.url ?? '' },
   ])
 
   active = activeData.flatMap((item: any) => [
     { paramsName: '在线状态', paramsValue: item.offline?.status ?? '' },
-    ...(item.idle?.status === 6
+    ...(item.offline?.status === 6
       ? [{ paramsName: '离线原因', paramsValue: item?.offline?.offlineCauseReason ?? '' }]
       : []
     ),

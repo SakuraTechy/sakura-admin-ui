@@ -48,13 +48,19 @@ export interface AutomationBrowserConfigQuery {
   id?: string | undefined
   type?: string | undefined
   name?: string | undefined
+  status?: number | undefined
   sort?: Array<string>
 }
 export interface AutomationBrowserConfigPageQuery extends AutomationBrowserConfigQuery, PageQuery {}
 
-/** @desc 查询自动化管理-浏览器配置列表 */
+/** @desc 分页查询自动化管理-浏览器配置列表 */
 export function listAutomationBrowserConfig(query?: AutomationBrowserConfigPageQuery) {
   return http.get<PageRes<AutomationBrowserConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询自动化管理-浏览器配置列表 */
+export function getAutomationBrowserConfigList(query?: AutomationBrowserConfigQuery) {
+  return http.get<AutomationBrowserConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询自动化管理-浏览器配置详情 */

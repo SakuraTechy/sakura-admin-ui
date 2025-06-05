@@ -86,6 +86,7 @@ export interface AutomationNodeConfigDetailResp {
 export interface AutomationNodeConfigQuery {
   id?: string | undefined
   jenkinsId?: string | undefined
+  type?: string | undefined
   name?: string | undefined
   active?: string | undefined
   offlineStatus?: string | undefined
@@ -99,7 +100,9 @@ export interface AutomationNodeConfigPageQuery extends AutomationNodeConfigQuery
 export function listAutomationNodeConfig(query?: AutomationNodeConfigPageQuery) {
   return http.get<PageRes<AutomationNodeConfigResp[]>>(`${BASE_URL}`, query)
 }
-
+export function getAutomationNodeConfigList(query?: AutomationNodeConfigPageQuery) {
+  return http.get<AutomationNodeConfigResp[]>(`${BASE_URL}/list`, query)
+}
 /** @desc 查询自动化管理-节点配置详情 */
 export function getAutomationNodeConfig(id: string) {
   return http.get<AutomationNodeConfigDetailResp>(`${BASE_URL}/${id}`)

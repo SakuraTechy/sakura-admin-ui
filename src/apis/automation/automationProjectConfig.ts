@@ -44,9 +44,13 @@ export interface AutomationProjectConfigQuery {
 }
 export interface AutomationProjectConfigPageQuery extends AutomationProjectConfigQuery, PageQuery {}
 
-/** @desc 查询自动化管理-项目配置列表 */
+/** @desc 分页查询自动化管理-项目配置列表 */
 export function listAutomationProjectConfig(query?: AutomationProjectConfigPageQuery) {
   return http.get<PageRes<AutomationProjectConfigResp[]>>(`${BASE_URL}`, query)
+}
+/** @desc 全部查询自动化管理-项目配置列表 */
+export function getAutomationProjectConfigList(query?: AutomationProjectConfigPageQuery) {
+  return http.get<AutomationProjectConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询自动化管理-项目配置详情 */

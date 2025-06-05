@@ -63,9 +63,14 @@ export interface ProjectServerConfigQuery {
 }
 export interface ProjectServerConfigPageQuery extends ProjectServerConfigQuery, PageQuery {}
 
-/** @desc 查询项目管理-服务器配置列表 */
+/** @desc 分页查询项目管理-服务器配置列表 */
 export function listProjectServerConfig(query?: ProjectServerConfigPageQuery) {
   return http.get<PageRes<ProjectServerConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询项目管理-服务器配置列表 */
+export function getProjectServerConfigList(query?: ProjectServerConfigPageQuery) {
+  return http.get<ProjectServerConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询项目管理-服务器配置详情 */

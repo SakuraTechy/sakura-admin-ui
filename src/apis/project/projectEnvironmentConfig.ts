@@ -59,9 +59,14 @@ export interface ProjectEnvironmentConfigQuery {
 }
 export interface ProjectEnvironmentConfigPageQuery extends ProjectEnvironmentConfigQuery, PageQuery {}
 
-/** @desc 查询项目管理-环境配置列表 */
+/** @desc 分页查询项目管理-环境配置列表 */
 export function listProjectEnvironmentConfig(query: ProjectEnvironmentConfigPageQuery) {
   return http.get<PageRes<ProjectEnvironmentConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询项目管理-环境配置列表 */
+export function getProjectEnvironmentConfigList(query?: ProjectEnvironmentConfigPageQuery) {
+  return http.get<ProjectEnvironmentConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询项目管理-环境配置详情 */

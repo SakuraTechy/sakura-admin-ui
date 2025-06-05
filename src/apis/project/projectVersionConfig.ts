@@ -43,9 +43,14 @@ export interface ProjectVersionConfigQuery {
 }
 export interface ProjectVersionConfigPageQuery extends ProjectVersionConfigQuery, PageQuery {}
 
-/** @desc 查询项目管理-版本配置列表 */
+/** @desc 分页查询项目管理-版本配置列表 */
 export function listProjectVersionConfig(query?: ProjectVersionConfigPageQuery) {
   return http.get<PageRes<ProjectVersionConfigResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询项目管理-版本配置列表 */
+export function getProjectVersionConfigList(query?: ProjectVersionConfigQuery) {
+  return http.get<ProjectVersionConfigResp[]>(`${BASE_URL}/list`, query)
 }
 
 /** @desc 查询项目管理-版本配置详情 */

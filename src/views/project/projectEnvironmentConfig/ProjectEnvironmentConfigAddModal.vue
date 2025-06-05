@@ -23,9 +23,9 @@ import { useDict } from '@/hooks/app'
 import { listUserDict } from '@/apis/common/common'
 import type { LabelValueState } from '@/types/global'
 import KeyValuePairForm from '@/components/KeyValuePairForm'
-import { listProjectVersionConfig } from '@/apis/project/projectVersionConfig'
-import { listProjectServerConfig } from '@/apis/project/projectServerConfig'
-import { listProjectDataBaseConfig } from '@/apis/project/projectDataBaseConfig'
+import { getProjectVersionConfigList } from '@/apis/project/projectVersionConfig'
+import { getProjectServerConfigList } from '@/apis/project/projectServerConfig'
+import { getProjectDataBaseConfigList } from '@/apis/project/projectDataBaseConfig'
 
 const props = defineProps({
   projectList: {
@@ -60,17 +60,17 @@ const dataBaseList = ref<LabelValueState[]>([])
 
 const getVersionList = async (newProjectId?: string) => {
   try {
-    const res = await listProjectVersionConfig({
+    const res = await getProjectVersionConfigList({
       projectId: newProjectId,
       status: 1,
       sort: ['name,desc'],
     })
-    versionList.value = res.data.list.map((item) => ({
+    versionList.value = res.data.map((item) => ({
       label: item.name,
       value: item.id,
       extra: JSON.stringify(item),
     }))
-    form.versionConfig = res.data.list.filter((item) => {
+    form.versionConfig = res.data.filter((item) => {
       return item.id === form.versionConfig[0]
     }).map((item) => item.id)
   } catch (error) {
@@ -80,17 +80,17 @@ const getVersionList = async (newProjectId?: string) => {
 
 const getServerList = async (newProjectId?: string) => {
   try {
-    const res = await listProjectServerConfig({
+    const res = await getProjectServerConfigList({
       projectId: newProjectId,
       status: 1,
       sort: ['ip,desc'],
     })
-    serverList.value = res.data.list.map((item) => ({
+    serverList.value = res.data.map((item) => ({
       label: item.ip,
       value: item.id,
       extra: JSON.stringify(item),
     }))
-    form.serverConfig = res.data.list.filter((item) => {
+    form.serverConfig = res.data.filter((item) => {
       return item.id === form.serverConfig[0]
     }).map((item) => item.id)
   } catch (error) {
@@ -100,17 +100,17 @@ const getServerList = async (newProjectId?: string) => {
 
 const getDataBaseList = async (newProjectId?: string) => {
   try {
-    const res = await listProjectDataBaseConfig({
+    const res = await getProjectDataBaseConfigList({
       projectId: newProjectId,
       status: 1,
       sort: ['ip,desc'],
     })
-    dataBaseList.value = res.data.list.map((item) => ({
+    dataBaseList.value = res.data.map((item) => ({
       label: item.ip,
       value: item.id,
       extra: JSON.stringify(item),
     }))
-    form.dataBaseConfig = res.data.list.filter((item) => {
+    form.dataBaseConfig = res.data.filter((item) => {
       return item.id === form.dataBaseConfig[0]
     }).map((item) => item.id)
   } catch (error) {
