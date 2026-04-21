@@ -48,11 +48,11 @@ export interface ProjectConfigDetailResp {
   updateUserString: string
 }
 export interface ProjectConfigQuery {
-  id: string | undefined
-  name: string | undefined
-  abbreviate: string | undefined
-  status: number | undefined
-  sort: Array<string>
+  id?: string | undefined
+  name?: string | undefined
+  abbreviate?: string | undefined
+  status?: number | undefined
+  sort?: Array<string>
 }
 export interface ProjectConfigPageQuery extends ProjectConfigQuery, PageQuery {}
 

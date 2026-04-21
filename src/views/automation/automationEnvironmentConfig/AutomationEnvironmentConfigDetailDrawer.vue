@@ -39,7 +39,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type AutomationEnvironmentConfigDetailResp, getAutomationEnvironmentConfig as getDetail } from '@/apis/automation/automationEnvironmentConfig'
 import { useDict } from '@/hooks/app'
 
-const { automation_type, status_type } = useDict('automation_type', 'status_type')
+const { automation_type, status_type, server_type, browser_type } = useDict('automation_type', 'status_type', 'server_type', 'browser_type')
 
 const { width } = useWindowSize()
 
@@ -61,7 +61,7 @@ const getDataDetail = async () => {
     : [data.projectConfig[0]]
   projectConfig = projectData.flatMap((item: any) => [
     { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-    { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+    { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
     { paramsName: '项目名称', paramsValue: item?.name ?? '' },
     { paramsName: '项目地址', paramsValue: item?.url ?? '' },
     { paramsName: '项目描述', paramsValue: item?.description ?? '' },
@@ -76,7 +76,7 @@ const getDataDetail = async () => {
     : [data.jenkinsConfig[0]?.jobList]
   const jobList = jobListData.flatMap((item: any) => [
     { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-    { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+    { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
     { paramsName: '项目名称', paramsValue: item?.name ?? '' },
     { paramsName: '项目地址', paramsValue: item?.url ?? '' },
     { paramsName: '项目描述', paramsValue: item?.description ?? '' },
@@ -103,7 +103,7 @@ const getDataDetail = async () => {
     : [data.nodeConfig[0]?.description]
   const description = descriptionData.flatMap((item: any) => [
     { paramsName: '名称', paramsValue: item?.name },
-    { paramsName: '类型', paramsValue: item?.systemType },
+    { paramsName: '类型', paramsValue: item?.systemType, paramsType: server_type.value },
     { paramsName: '用户名', paramsValue: item?.userName },
     { paramsName: '密码', paramsValue: item?.passWord },
     { paramsName: '凭据', paramsValue: item?.credentialsId },
@@ -136,7 +136,7 @@ const getDataDetail = async () => {
   nodeConfig = nodeData.flatMap((item: any) => [
     // { paramsName: 'Jenkins', paramsValue: item?.jenkinsName ?? '' },
     { paramsName: '节点 ID', paramsValue: item?.id ?? '' },
-    { paramsName: '节点类型', paramsValue: item?.type ?? '' },
+    { paramsName: '节点类型', paramsValue: item?.type ?? '', paramsType: server_type.value },
     { paramsName: '节点名称', paramsValue: item?.name ?? '' },
     { paramsName: '节点地址', paramsValue: item?.url ?? '' },
     { paramsName: '节点描述', paramsValue: description ?? '' },
@@ -150,7 +150,7 @@ const getDataDetail = async () => {
     : [data.browserConfig[0]]
   browserConfig = browserData.flatMap((item: any) => [
     { paramsName: '浏览器ID', paramsValue: item?.id ?? '' },
-    { paramsName: '浏览器类型', paramsValue: item?.type ?? '' },
+    { paramsName: '浏览器类型', paramsValue: item?.type ?? '', paramsType: browser_type.value },
     { paramsName: '浏览器版本', paramsValue: item?.version ?? '' },
     { paramsName: '浏览器名称', paramsValue: item?.name ?? '' },
     { paramsName: '官方下载地址', paramsValue: item?.officialDownload },

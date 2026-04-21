@@ -71,7 +71,7 @@ const getServerHelp = (typeValue: string) => {
         h('div', {}, `下载：https://download.cnet.com/freessh/3000-2085_4-75937656.html`),
         h('div', { style: 'font-weight: 500; margin-top: 5px; display: flex; align-items: center;' }, [
           h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
-            `Windows如何查看服务器版本？`,
+          `Windows如何查看服务器版本？`,
         ]),
         h('div', {}, `教程：https://yuanbao.tencent.com/bot/app/share/chat/FoS1iyKhCjqY`),
         h('div', {}, `方法一：【PowerShell专用命令】`),
@@ -89,7 +89,7 @@ const getServerHelp = (typeValue: string) => {
         h('div', {}, `执行: systemctl reload sshd`),
         h('div', { style: 'font-weight: 500; margin-top: 5px; display: flex; align-items: center;' }, [
           h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
-            `Linux如何查看服务器版本？`,
+          `Linux如何查看服务器版本？`,
         ]),
         h('div', {}, `方法一：【lsb_release】`),
         h('div', {}, `下载: wget https://downloads.sourceforge.net/lsb/lsb-release-1.4.tar.gz`),

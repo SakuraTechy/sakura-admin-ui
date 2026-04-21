@@ -4,7 +4,7 @@
     :title="title"
     :mask-closable="false"
     :esc-to-close="false"
-    :width="width >= 500 ? 500 : '100%'"
+    :width="width >= 500 ? 900 : '100%'"
     draggable
     @before-ok="save"
     @close="reset"
@@ -50,6 +50,17 @@ const formRef = ref<InstanceType<typeof GiForm>>()
 const [form, resetForm] = useResetReactive({
   sort: 999,
   status: 1,
+  value: 'web-geturl',
+  color: 'primary',
+  description: JSON.stringify({
+    type: '浏览器操作',
+    name: '打开默认网页',
+    value: 'web-geturl',
+    config: [{
+      paramsName: 'value',
+      paramsValue: 'https://example.com/login', // 使用示例URL替代硬编码的内网IP
+    }],
+  }, null, 2),
 })
 
 const columns: ColumnItem[] = reactive([
@@ -94,6 +105,9 @@ const columns: ColumnItem[] = reactive([
     field: 'description',
     type: 'textarea',
     span: 24,
+    props: {
+      maxLength: 2000,
+    },
   },
   {
     label: '状态',

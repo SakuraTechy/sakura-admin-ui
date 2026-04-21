@@ -7,6 +7,9 @@
       </a-descriptions-item>
       <a-descriptions-item label="版本名称">{{ dataDetail?.name }}</a-descriptions-item>
       <a-descriptions-item label="版本描述">{{ dataDetail?.description }}</a-descriptions-item>
+      <a-descriptions-item label="版本类型">
+        <GiCellTag :value="dataDetail?.type" :dict="version_type" />
+      </a-descriptions-item>
       <a-descriptions-item label="状态">
         <GiCellTag :value="dataDetail?.status" :dict="status_type" />
       </a-descriptions-item>
@@ -27,7 +30,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type ProjectVersionConfigDetailResp, getProjectVersionConfig as getDetail } from '@/apis/project/projectVersionConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type } = useDict('status_type')
+const { version_type, status_type } = useDict('version_type', 'status_type')
 const { width } = useWindowSize()
 
 const dataId = ref('')

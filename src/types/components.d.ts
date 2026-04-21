@@ -7,6 +7,7 @@ export {}
 
 declare module 'vue' {
   export interface GlobalComponents {
+    AiEditor: typeof import('./../components/GiEditor/AiEditor.vue')['default']
     Avatar: typeof import('./../components/Avatar/index.vue')['default']
     Breadcrumb: typeof import('./../components/Breadcrumb/index.vue')['default']
     CellCopy: typeof import('./../components/CellCopy/index.vue')['default']
@@ -32,9 +33,11 @@ declare module 'vue' {
     GiEditTable: typeof import('./../components/GiEditTable/GiEditTable.vue')['default']
     GiFooter: typeof import('./../components/GiFooter/index.vue')['default']
     GiForm: typeof import('./../components/GiForm/src/GiForm.vue')['default']
+    GiFormModal: typeof import('./../components/GiFormModal/index.vue')['default']
     GiIconBox: typeof import('./../components/GiIconBox/index.vue')['default']
     GiIconSelector: typeof import('./../components/GiIconSelector/index.vue')['default']
     GiIframe: typeof import('./../components/GiIframe/index.vue')['default']
+    GiMenu: typeof import('./../components/GiMenu/index.vue')['default']
     GiOption: typeof import('./../components/GiOption/index.vue')['default']
     GiOptionItem: typeof import('./../components/GiOptionItem/index.vue')['default']
     GiPageLayout: typeof import('./../components/GiPageLayout/index.vue')['default']
@@ -46,6 +49,7 @@ declare module 'vue' {
     GiTable: typeof import('./../components/GiTable/src/GiTable.vue')['default']
     GiTag: typeof import('./../components/GiTag/index.tsx')['default']
     GiThemeBtn: typeof import('./../components/GiThemeBtn/index.vue')['default']
+    GiTree: typeof import('./../components/GiTree/index.vue')['default']
     HourForm: typeof import('./../components/GenCron/CronForm/component/hour-form.vue')['default']
     Icon403: typeof import('./../components/icons/Icon403.vue')['default']
     Icon404: typeof import('./../components/icons/Icon404.vue')['default']
@@ -60,6 +64,7 @@ declare module 'vue' {
     MonthForm: typeof import('./../components/GenCron/CronForm/component/month-form.vue')['default']
     ParentView: typeof import('./../components/ParentView/index.vue')['default']
     PasswordToggle: typeof import('./../components/PasswordToggle/index.vue')['default']
+    QuillEditor: typeof import('./../components/GiEditor/QuillEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SecondForm: typeof import('./../components/GenCron/CronForm/component/second-form.vue')['default']

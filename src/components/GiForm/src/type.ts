@@ -1,5 +1,5 @@
 import type * as A from '@arco-design/web-vue'
-import type { VNode } from 'vue'
+import type { CSSProperties, VNode } from 'vue'
 
 export type ColumnItemType =
   | 'input'
@@ -200,6 +200,7 @@ export type ColumnItemFormat<T = any> = (res: T) => ColumnItemOptions | ColumnIt
 export interface ColumnItem<F = any> {
   type?: ColumnItemType // 类型
   label?: A.FormItemInstance['label'] | (() => VNode) // 标签
+  style?: CSSProperties
   field: A.FormItemInstance['field'] // 字段(必须唯一)
   span?: A.GridItemProps['span']
   props?: ColumnItemProps

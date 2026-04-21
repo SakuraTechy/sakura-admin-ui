@@ -7,6 +7,7 @@ export interface ProjectVersionConfigResp {
   projectId: string
   name: string
   description: string
+  type: string
   status: number
   createUser: string
   createTime: string
@@ -24,6 +25,7 @@ export interface ProjectVersionConfigDetailResp {
   projectName: string
   name: string
   description: string
+  type: string
   status: number
   createUser: string
   createTime: string
@@ -38,6 +40,7 @@ export interface ProjectVersionConfigQuery {
   id?: string | undefined
   projectId?: string | undefined
   name?: string | undefined
+  type?: string | undefined
   status?: number | undefined
   sort?: Array<string>
 }

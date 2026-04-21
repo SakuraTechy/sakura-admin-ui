@@ -1,18 +1,23 @@
 <template>
   <a-row align="stretch" :gutter="rowGutter" class="gi-page-layout" :class="getClass">
-    <a-col v-if="slots.left" v-show="!isCollapsed" v-bind="props.leftColProps" :sm="8" :md="7" :lg="6" :xl="5" :xxl="4">
-      <div class="gi-page-layout__left" :style="props.leftStyle">
+    <a-col
+      v-if="slots.left"
+      v-show="!isCollapsed"
+      v-bind="props.leftColProps"
+      :style="leftColStyle"
+    >
+      <div class="gi-page-layout__left" :style="leftStyle">
         <slot name="left"></slot>
       </div>
     </a-col>
-    <div v-if="slots.left" class="gi-page-layout__divider" :class="{ none: isCollapsed || !isDesktop }">
-      <div v-if="defaultCollapsed" class="gi-split-button" :class="{ none: isCollapsed || !isDesktop }" :style="isCollapsed ? 'left:0px' : 'left:-12px'" @click="toggleCollapsed">
+    <div v-if="slots.left" class="gi-page-layout__divider" :class="{ none: isCollapsed || !isDesktop }" @mousedown="startDrag">
+      <div v-if="defaultCollapsed" class="gi-split-button" :class="{ none: isCollapsed || !isDesktop }" :style="splitButtonStyle" @click="toggleCollapsed()">
         <icon-right v-if="isCollapsed" />
         <icon-left v-else />
       </div>
     </div>
-
     <a-col :sm="16" :md="17" :lg="18" :xl="19" :xxl="20" flex="1" v-bind="props.rightColProps">
+      <!-- <a-col v-bind="props.rightColProps" style="flex: 1 1 auto;"> -->
       <div v-if="slots.header" class="gi-page-layout__header" :style="props.headerStyle">
         <slot name="header"></slot>
       </div>
@@ -51,6 +56,19 @@ defineSlots<{
   default: () => void
 }>()
 
+/** 组件属性定义 */
+interface Props {
+  margin?: boolean
+  padding?: boolean
+  gutter?: boolean | number
+  defaultCollapsed?: boolean
+  leftColProps?: ColProps
+  rightColProps?: ColProps
+  leftStyle?: CSSProperties
+  headerStyle?: CSSProperties
+  bodyStyle?: CSSProperties
+}
+
 const { isDesktop } = useDevice()
 const getClass = computed(() => {
   return {
@@ -67,29 +85,78 @@ const rowGutter = computed(() => {
   return props.gutter
 })
 
-/** 组件属性定义 */
-interface Props {
-  margin?: boolean
-  padding?: boolean
-  gutter?: boolean | number
-  defaultCollapsed?: boolean
-  leftColProps?: ColProps
-  rightColProps?: ColProps
-  leftStyle?: CSSProperties
-  headerStyle?: CSSProperties
-  bodyStyle?: CSSProperties
-}
-
 const slots = useSlots()
 const isCollapsed = ref(false)
-const toggleCollapsed = () => {
-  isCollapsed.value = !isCollapsed.value
+const normalizeWidth = (val: unknown, fallback = 400) => {
+  if (typeof val === 'number' && Number.isFinite(val)) return val
+  if (typeof val === 'string') {
+    const n = Number.parseFloat(val)
+    if (Number.isFinite(n)) return n
+  }
+  return fallback
+}
+
+const leftWidth = ref<number>(normalizeWidth(props.leftStyle?.width, 400))
+
+watch(
+  () => props.leftStyle?.width,
+  (val) => {
+    // 外部传入 width 变化时，同步（避免出现 NaN 导致布局失效）
+    leftWidth.value = normalizeWidth(val, leftWidth.value || 400)
+  },
+)
+
+const toggleCollapsed = (status?: boolean) => {
+  isCollapsed.value = status ?? !isCollapsed.value
 }
 
 const { breakpoint } = useBreakpoint()
 watch(() => breakpoint.value, (val) => {
   isCollapsed.value = ['xs'].includes(val)
 }, { immediate: true })
+
+// 拖拽相关逻辑
+let startX = 0
+let startWidth = 0
+
+const onDrag = (e: MouseEvent) => {
+  const dx = e.clientX - startX
+  const next = startWidth + dx
+  leftWidth.value = Math.max(50, Math.min(window.innerWidth * 0.5, next)) // 最小50px，最大屏宽50%
+}
+
+const stopDrag = () => {
+  document.removeEventListener('mousemove', onDrag)
+  document.removeEventListener('mouseup', stopDrag)
+}
+
+const startDrag = (e: MouseEvent) => {
+  e.preventDefault()
+  startX = e.clientX
+  startWidth = leftWidth.value
+  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mouseup', stopDrag)
+}
+
+// 动态计算左侧样式
+const leftStyle = computed(() => ({
+  ...props.leftStyle,
+  width: `${leftWidth.value}px`,
+}))
+
+// 左侧列必须跟随拖拽宽度，否则会被栅格百分比“锁死”
+const leftColStyle = computed<CSSProperties>(() => ({
+  flex: `0 0 ${leftWidth.value}px`,
+  width: `${leftWidth.value}px`,
+  maxWidth: `${leftWidth.value}px`,
+}))
+
+// 动态计算分割线按钮样式
+const splitButtonStyle = computed(() => ({
+  left: isCollapsed.value ? `-10px` : '-12px', // 分割线按钮位置与左侧宽度同步
+}))
+
+defineExpose({ toggleCollapsed })
 </script>
 
 <style lang='scss' scoped>
@@ -157,8 +224,14 @@ watch(() => breakpoint.value, (val) => {
 
 .gi-page-layout__divider {
   position: relative;
-  width: 1px;
+  width: 2px;
   background-color: var(--color-border);
+  cursor: ew-resize;
+  transition: background-color 0.3s ease;
+
+  &:hover {
+    background-color: rgb(var(--primary-6)); /* 悬停时变为蓝色 */
+  }
 }
 
 .gi-page-layout__divider.none {
@@ -180,7 +253,6 @@ watch(() => breakpoint.value, (val) => {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  left: -12px;
   overflow: hidden;
   box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
 }

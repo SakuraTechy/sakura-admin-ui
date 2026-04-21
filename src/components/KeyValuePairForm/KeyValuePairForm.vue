@@ -1,28 +1,28 @@
 <template>
   <div class="key-value-pair-form">
     <a-form ref="formRef" :model="formData" :label-col-props="{ span: 0 }" :wrapper-col-props="{ span: 24 }">
-      <div class="key-value-pair-list">
+      <div :class="{ 'key-value-pair-list': addKeyValue }">
         <div v-for="(item, index) in formData.items" :key="index" class="key-value-pair-item">
           <a-row :gutter="colGap" align="center">
             <a-col :span="nameColSpan">
               <a-form-item :field="`items[${index}].paramsName`" class="no-margin">
-                <a-input v-model="item.paramsName" placeholder="参数名称" allow-clear @change="handleItemChange" />
+                <a-input v-model="item.paramsName" placeholder="参数名称" allow-clear :disabled="disabled" @change="handleItemChange" />
               </a-form-item>
             </a-col>
             <a-col :span="valueColSpan">
               <a-form-item :field="`items[${index}].paramsValue`" class="no-margin">
-                <a-input v-model="item.paramsValue" placeholder="参数值" allow-clear @change="handleItemChange" />
+                <a-input v-model="item.paramsValue" placeholder="参数值" allow-clear :disabled="disabled" @change="handleItemChange" />
               </a-form-item>
             </a-col>
             <a-col :span="actionColSpan" class="item-actions">
-              <a-button type="text" status="danger" @click="() => removeItem(index)">
+              <a-button type="text" status="danger" :disabled="disabled" @click="() => removeItem(index)">
                 <template #icon><icon-delete /></template>
               </a-button>
             </a-col>
           </a-row>
         </div>
       </div>
-      <a-row>
+      <a-row v-if="addKeyValue">
         <a-col :span="24">
           <div class="key-value-pair-actions">
             <a-button type="dashed" long @click="addItem">
@@ -52,6 +52,8 @@ interface Props {
   actionColSpan?: number
   colGap?: number
   labelWidth?: number
+  addKeyValue?: boolean
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -61,6 +63,8 @@ const props = withDefaults(defineProps<Props>(), {
   actionColSpan: 4,
   colGap: 8,
   labelWidth: 0,
+  addKeyValue: true,
+  disabled: false,
 })
 
 const emit = defineEmits<{
@@ -152,7 +156,7 @@ const validate = async () => {
   try {
     const isInvalid = await formRef.value?.validate()
     return !isInvalid
-  } catch (error) {
+  } catch {
     return false
   }
 }

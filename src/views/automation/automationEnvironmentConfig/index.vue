@@ -110,7 +110,7 @@ import { GiCellKeyValue, GiCellPassword, GiCellTags, GiCellVersion } from '@/com
 
 defineOptions({ name: 'AutomationEnvironmentConfig' })
 
-const { automation_type, status_type } = useDict('automation_type', 'status_type')
+const { automation_type, status_type, server_type, browser_type } = useDict('automation_type', 'status_type', 'server_type', 'browser_type')
 
 const queryForm = reactive<AutomationEnvironmentConfigQuery>({
   id: undefined,
@@ -148,7 +148,7 @@ const columns: TableInstance['columns'] = [
         : [record.projectConfig[0]]
       const projectConfig = projectData.flatMap((item: any) => [
         { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-        { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+        { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
         { paramsName: '项目名称', paramsValue: item?.name ?? '' },
         { paramsName: '项目地址', paramsValue: item?.url ?? '' },
         { paramsName: '项目描述', paramsValue: item?.description ?? '' },
@@ -174,7 +174,7 @@ const columns: TableInstance['columns'] = [
         : [record.jenkinsConfig[0]?.jobList]
       const jobList = jobListData.flatMap((item: any) => [
         { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-        { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+        { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
         { paramsName: '项目名称', paramsValue: item?.name ?? '' },
         { paramsName: '项目地址', paramsValue: item?.url ?? '' },
         { paramsName: '项目描述', paramsValue: item?.description ?? '' },
@@ -212,7 +212,7 @@ const columns: TableInstance['columns'] = [
         : [record.nodeConfig[0]?.description]
       const description = descriptionData.flatMap((item: any) => [
         { paramsName: '名称', paramsValue: item?.name },
-        { paramsName: '类型', paramsValue: item?.systemType },
+        { paramsName: '类型', paramsValue: item?.systemType, paramsType: server_type.value },
         { paramsName: '用户名', paramsValue: item?.userName },
         { paramsName: '密码', paramsValue: item?.passWord },
         { paramsName: '凭据', paramsValue: item?.credentialsId },
@@ -274,7 +274,7 @@ const columns: TableInstance['columns'] = [
       const nodeConfig = nodeData.flatMap((item: any) => [
         // { paramsName: 'Jenkins', paramsValue: item?.jenkinsName ?? '' },
         { paramsName: '节点 ID', paramsValue: item?.id ?? '' },
-        { paramsName: '节点类型', paramsValue: item?.type ?? '' },
+        { paramsName: '节点类型', paramsValue: item?.type ?? '', paramsType: server_type.value },
         { paramsName: '节点名称', paramsValue: item?.name ?? '' },
         { paramsName: '节点地址', paramsValue: item?.url ?? '' },
         { paramsName: '节点描述', paramsValue: description ?? '' },
@@ -307,7 +307,7 @@ const columns: TableInstance['columns'] = [
       // ])
       const browserConfigList = browserConfig.flatMap((item: any) => [
         { paramsName: '浏览器ID', paramsValue: item?.id ?? '' },
-        { paramsName: '浏览器类型', paramsValue: item?.type ?? '' },
+        { paramsName: '浏览器类型', paramsValue: item?.type ?? '', paramsType: browser_type.value },
         { paramsName: '浏览器版本', paramsValue: item?.version ?? '' },
         { paramsName: '浏览器名称', paramsValue: item?.name ?? '' },
         { paramsName: '官方下载地址', paramsValue: item?.officialDownload },
@@ -333,7 +333,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 200,
+    width: 210,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['automation:automationEnvironmentConfig:get', 'automation:automationEnvironmentConfig:update', 'automation:automationEnvironmentConfig:delete']),

@@ -1,19 +1,21 @@
 <template>
   <a-form ref="formRef" v-bind="formProps" :model="modelValue" :size="props.size ?? 'large'" :layout="props.layout ?? (props.search ? 'inline' : 'horizontal')">
-    <a-grid class="w-full" :col-gap="8" v-bind="props.gridProps" :collapsed="collapsed">
-      <template v-for="item in columns" :key="item.field">
+    <a-grid class="w-full" :col-gap="8" :row-gap="0" v-bind="props.gridProps">
+      <template v-for="(item, index) in columns" :key="item.field">
         <a-grid-item
-          v-if="item.show !== undefined ? isShow(item) : !isHide(item)"
+          v-if="item.show !== undefined ? isShow(item, index) : !isHide(item, index)"
           v-bind="item.gridItemProps || defaultGridItemProps"
           :span="item.span || item.gridItemProps?.span || defaultGridItemProps?.span"
         >
           <a-form-item
             v-bind="item.formItemProps" :field="item.field" :rules="getFormItemRules(item)"
-            :disabled="isDisabled(item)"
+            :disabled="isDisabled(item)" :style="item?.style"
           >
             <template #label>
-              <template v-if="typeof item.label === 'string'">{{ item.label }}</template>
-              <component :is="item.label" v-else></component>
+              <template v-if="typeof item.label === 'string'">
+                <span :style="item?.style">{{ item.label }}</span>
+              </template>
+              <component :is="item.label" v-else :style="item.style"></component>
             </template>
             <slot
               v-if="!['group-title'].includes(item.type || '')" :name="item.field"
@@ -23,7 +25,7 @@
                 <DateRangePicker
                   v-bind="(item.props as A.RangePickerInstance['$props'])"
                   :model-value="modelValue[item.field as keyof typeof modelValue]"
-                  @update:model-value="valueChange($event, item.field)"
+                  @update:model-value="updateValue($event, item.field)"
                 />
               </template>
               <template v-else-if="item.type === 'custom' && item.slots?.default">
@@ -52,7 +54,7 @@
           </a-form-item>
         </a-grid-item>
       </template>
-      <a-grid-item
+      <!-- <a-grid-item
         v-if="props.search" :key="!props.suffix ? String(collapsed) : undefined"
         v-bind="defaultGridItemProps" :span="defaultGridItemProps?.span"
         :suffix="props.search && (props.suffix || (!props.suffix && collapsed))"
@@ -79,20 +81,42 @@
             </a-button>
           </slot>
         </a-space>
-      </a-grid-item>
+      </a-grid-item> -->
     </a-grid>
+    <div v-if="props.search" style="display: flex; flex-direction: column; gap: 18px;">
+      <a-button type="primary" @click="emit('search')">
+        <template #icon><icon-search /></template>
+        <template #default>{{ props.searchBtnText }}</template>
+      </a-button>
+      <a-button @click="emit('reset')">
+        <template #icon><icon-refresh /></template>
+        <template #default>重置</template>
+      </a-button>
+      <a-button
+        v-if="!props.hideFoldBtn" class="gi-form__fold-btn" type="text" size="mini"
+        @click="collapsed = !collapsed"
+      >
+        <template #icon>
+          <icon-up v-if="!collapsed" />
+          <icon-down v-else />
+        </template>
+        <template #default>{{ collapsed ? '展开' : '收起' }}</template>
+      </a-button>
+    </div>
   </a-form>
 </template>
 
 <script setup lang="ts">
 import { cloneDeep, omit } from 'lodash-es'
 import type { FormInstance, GridItemProps, GridProps } from '@arco-design/web-vue'
+import type { CSSProperties } from 'vue'
 import type { ColumnItem } from './type'
 
 interface Props {
   modelValue: any
   layout?: FormInstance['layout']
   size?: FormInstance['size']
+  style?: CSSProperties
   labelColProps?: FormInstance['labelColProps']
   wrapperColProps?: FormInstance['wrapperColProps']
   labelAlign?: FormInstance['labelAlign']
@@ -151,7 +175,7 @@ const STATIC_PROPS = new Map<ColumnItem['type'], Partial<ColumnItem['props']>>([
   ['textarea', { allowClear: false, maxLength: 200, showWordLimit: !props.search, autoSize: { minRows: 3, maxRows: 5 } }],
   ['input-tag', { allowClear: true }],
   ['mention', { allowClear: true }],
-  ['select', { allowClear: true }],
+  ['select', { allowClear: true, allowSearch: true }],
   ['tree-select', { allowClear: true }],
   ['cascader', { allowClear: true }],
   ['date-picker', { allowClear: true }],
@@ -212,20 +236,89 @@ const getFormItemRules = (item: ColumnItem) => {
 }
 
 /** 显示表单项 */
-const isShow = (item: ColumnItem) => {
+const isShow1 = (item: ColumnItem) => {
   if (typeof item.show === 'boolean') return item.show
   if (typeof item.show === 'function') {
     return item.show(props.modelValue)
   }
 }
 
+const isShow2 = (item: ColumnItem, index: number) => {
+  if (item.show !== undefined) {
+    if (typeof item.show === 'function') {
+      return item.show({ ...props.modelValue, collapsed: collapsed.value })
+    }
+    return item.show
+  }
+
+  if (index < 3) return true
+  return !collapsed.value
+}
+
 /** 隐藏表单项 */
-const isHide = (item: ColumnItem) => {
+const isHide1 = (item: ColumnItem) => {
   if (item.hide === undefined) return false
   if (typeof item.hide === 'boolean') return item.hide
   if (typeof item.hide === 'function') {
     return item.hide(props.modelValue)
   }
+}
+
+const isHide = (item: ColumnItem, index?: number) => {
+  if (item.hide === undefined) return false
+  if (typeof item.hide === 'boolean') return item.hide
+  if (typeof item.hide === 'function') {
+    return item.hide({
+      ...props.modelValue,
+      collapsed: collapsed.value,
+      index,
+    })
+  }
+  return false
+}
+
+const isShow = (item: ColumnItem, index?: number) => {
+  if (item.show !== undefined) {
+    if (typeof item.show === 'boolean') return item.show
+    if (typeof item.show === 'function') {
+      return item.show({
+        ...props.modelValue,
+        collapsed: collapsed.value,
+        index,
+      })
+    }
+  }
+
+  // 仅当未设置 show 时才参考 hide
+  return !isHide(item, index)
+}
+
+const shouldRender1 = (item: ColumnItem, index: number) => {
+  // 前6个字段始终显示
+  if (index < 6) return true
+
+  // 后续字段受控于 show/hide + collapsed
+  if (item.show !== undefined) {
+    if (typeof item.show === 'boolean') return item.show
+    if (typeof item.show === 'function') {
+      return item.show({
+        ...props.modelValue,
+        collapsed: collapsed.value,
+        index,
+      })
+    }
+  }
+
+  return !isHide(item, index)
+}
+
+const shouldRender = (item: ColumnItem) => {
+  console.log(item)
+
+  if (item.foldable === true) {
+    return !collapsed.value
+  }
+  return true
 }
 
 /** 禁用表单项 */
@@ -258,7 +351,6 @@ props.columns.forEach((item) => {
 
 // 要深克隆，否则无法监听新旧值变化
 const cloneForm = computed(() => cloneDeep(props.modelValue))
-
 watch(cloneForm as any, (newVal, oldVal) => {
   hasCascaderColumns.forEach((item) => {
     if (newVal[item.field] !== oldVal[item.field]) {
@@ -280,6 +372,7 @@ watch(cloneForm as any, (newVal, oldVal) => {
       })
     }
   })
+  emit('search')
 })
 
 defineExpose({ formRef })
@@ -288,5 +381,12 @@ defineExpose({ formRef })
 <style lang="scss" scoped>
 .gi-form__fold-btn {
   padding: 0 5px;
+}
+:deep(.arco-space){
+  display: flex;
+  flex-direction: column;
+}
+:deep(.arco-col) {
+  overflow: revert !important;
 }
 </style>

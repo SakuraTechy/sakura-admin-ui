@@ -179,6 +179,7 @@ defineSlots<{
 interface Props extends TableProps {
   /** 表格标题 */
   title?: string
+  size?: TableInstance['size']
   /** 禁止控制显示隐藏的列 */
   disabledColumnKeys?: string[]
   /** 禁止显示的工具 */
@@ -210,7 +211,7 @@ interface ColumnSettingInstance {
 // 使用接口标注 ref 类型
 const columnSettingRef = ref<ColumnSettingInstance | null>(null)
 const stripe = ref(false)
-const size = ref<TableInstance['size']>('large')
+const size = ref<TableInstance['size']>(props.size ?? 'large')
 const isBordered = ref(false)
 const isFullscreen = ref(false)
 

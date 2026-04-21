@@ -38,9 +38,10 @@ const visible = ref(false)
 const isUpdate = computed(() => !!dataId.value)
 const title = computed(() => (isUpdate.value ? '修改项目管理-版本配置' : '新增项目管理-版本配置'))
 const formRef = ref<InstanceType<typeof GiForm>>()
-const { status_type } = useDict('status_type')
+const { version_type, status_type } = useDict('version_type', 'status_type')
 
 const [form, resetForm] = useResetReactive({
+  type: '',
   status: 1,
 })
 
@@ -80,6 +81,17 @@ const columns = computed<ColumnItem[]>(() => [
     },
   },
   {
+    label: '版本类型',
+    field: 'type',
+    span: 24,
+    type: 'select',
+    props: {
+      options: version_type.value,
+      allowClear: true,
+      allowSearch: true,
+    },
+  },
+  {
     label: '状态',
     field: 'status',
     span: 24,
@@ -106,6 +118,7 @@ const save = async () => {
   try {
     const isInvalid = await formRef.value?.formRef?.validate()
     if (isInvalid) return false
+    // form.type = version_type.value.find((item) => item.value === form.type)?.label ?? form.type
     if (isUpdate.value) {
       await updateProjectVersionConfig(form, dataId.value)
       Message.success('修改成功')

@@ -36,7 +36,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type AutomationNodeConfigDetailResp, getAutomationNodeConfig as getDetail } from '@/apis/automation/automationNodeConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type } = useDict('status_type')
+const { status_type, server_type } = useDict('status_type', 'server_type')
 
 const { width } = useWindowSize()
 
@@ -57,7 +57,7 @@ const getDataDetail = async () => {
     : [data.description]
   description = descriptionData.flatMap((item: any) => [
     { paramsName: '名称', paramsValue: item?.name },
-    { paramsName: '类型', paramsValue: item?.systemType },
+    { paramsName: '类型', paramsValue: item?.systemType, paramsType: server_type.value },
     { paramsName: '用户名', paramsValue: item?.userName },
     { paramsName: '密码', paramsValue: item?.passWord },
     { paramsName: '凭据', paramsValue: data?.description?.credentialsId },

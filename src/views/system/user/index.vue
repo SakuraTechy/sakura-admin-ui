@@ -1,5 +1,5 @@
 <template>
-  <GiPageLayout>
+  <GiPageLayout :left-style="{ width: 350 }">
     <template #left>
       <DeptTree @node-click="handleSelectDept" />
     </template>
@@ -262,9 +262,12 @@ const onUpdateRole = (record: UserResp) => {
 .page_header {
   flex: 0 0 auto;
 }
-
 .page_content {
   flex: 1;
   overflow: auto;
+}
+:deep(.arco-form){
+  flex-direction: row;
+  flex-wrap: nowrap;
 }
 </style>

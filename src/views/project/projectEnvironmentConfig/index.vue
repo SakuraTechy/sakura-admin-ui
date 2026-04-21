@@ -107,7 +107,7 @@ import { GiCellKeyValue, GiCellPassword, GiCellTags, GiCellVersion } from '@/com
 
 defineOptions({ name: 'ProjectEnvironmentConfig' })
 
-const { status_type } = useDict('status_type')
+const { version_type, server_type, database_type, status_type } = useDict('version_type', 'server_type', 'database_type', 'status_type')
 
 const queryForm = reactive<ProjectEnvironmentConfigQuery>({
   id: undefined,
@@ -158,6 +158,7 @@ const columns: TableInstance['columns'] = [
         { paramsName: '版本ID', paramsValue: item?.id ?? '' },
         { paramsName: '版本名称', paramsValue: item?.name ?? '' },
         { paramsName: '版本描述', paramsValue: item?.description ?? '' },
+        { paramsName: '版本类型', paramsValue: item?.type ?? '', paramsType: version_type.value },
         { paramsName: '版本状态', paramsValue: item?.status ?? '' },
       ])
       return (
@@ -177,7 +178,7 @@ const columns: TableInstance['columns'] = [
         : [record.serverConfig]
       const serverConfig = serverData.flatMap((item: any) => [
         { paramsName: '服务器ID', paramsValue: item?.id ?? '' },
-        { paramsName: '服务器类型', paramsValue: item?.type ?? '' },
+        { paramsName: '服务器类型', paramsValue: item?.type ?? '', paramsType: server_type.value },
         { paramsName: '服务器版本', paramsValue: item?.version ?? '' },
         { paramsName: '服务器IP', paramsValue: item?.ip ?? '' },
         { paramsName: '服务器端口', paramsValue: item?.port ?? '' },
@@ -204,7 +205,7 @@ const columns: TableInstance['columns'] = [
         : [record.dataBaseConfig]
       const dataBaseConfig = dataBaseData.flatMap((item: any) => [
         { paramsName: '数据库ID', paramsValue: item?.id ?? '' },
-        { paramsName: '数据库类型', paramsValue: item?.type ?? '' },
+        { paramsName: '数据库类型', paramsValue: item?.type ?? '', paramsType: database_type.value },
         { paramsName: '数据库版本', paramsValue: item?.version ?? '' },
         { paramsName: '数据库驱动', paramsValue: item?.driver ?? '' },
         { paramsName: '数据库IP', paramsValue: item?.ip ?? '' },
@@ -238,7 +239,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 200,
+    width: 210,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectEnvironmentConfig:get', 'project:projectEnvironmentConfig:update', 'project:projectEnvironmentConfig:delete']),

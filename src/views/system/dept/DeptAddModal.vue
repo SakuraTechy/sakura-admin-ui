@@ -42,6 +42,7 @@ const formRef = ref<InstanceType<typeof GiForm>>()
 
 // 转换为部门树
 const deptSelectTree = computed(() => {
+  console.log('props.depts', props.depts)
   const data = JSON.parse(JSON.stringify(props.depts)) as DeptResp[]
   return mapTree(data, (i) => ({
     key: i.id,
@@ -67,6 +68,8 @@ const columns: ColumnItem[] = reactive([
       allowSearch: true,
       fallbackOption: false,
       filterTreeNode(searchKey, nodeData) {
+        console.log('searchKey', searchKey)
+        console.log('nodeData', nodeData)
         if (nodeData.title) {
           return nodeData.title.toLowerCase().includes(searchKey.toLowerCase())
         }

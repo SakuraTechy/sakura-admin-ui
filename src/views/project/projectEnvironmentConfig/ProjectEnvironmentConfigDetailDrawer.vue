@@ -43,7 +43,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type ProjectEnvironmentConfigDetailResp, getProjectEnvironmentConfig as getDetail } from '@/apis/project/projectEnvironmentConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type } = useDict('status_type')
+const { version_type, server_type, database_type, status_type } = useDict('version_type', 'server_type', 'database_type', 'status_type')
 
 const { width } = useWindowSize()
 
@@ -67,11 +67,12 @@ const getDataDetail = async () => {
     { paramsName: '版本ID', paramsValue: item?.id ?? '' },
     { paramsName: '版本名称', paramsValue: item?.name ?? '' },
     { paramsName: '版本描述', paramsValue: item?.description ?? '' },
+    { paramsName: '版本类型', paramsValue: item?.type ?? '', paramsType: version_type.value },
     { paramsName: '版本状态', paramsValue: item?.status ?? '' },
   ])
   serverConfig = data.serverConfig.flatMap((item: any) => [
     { paramsName: '服务器ID', paramsValue: item?.id ?? '' },
-    { paramsName: '服务器类型', paramsValue: item?.type ?? '' },
+    { paramsName: '服务器类型', paramsValue: item?.type ?? '', paramsType: server_type.value },
     { paramsName: '服务器版本', paramsValue: item?.version ?? '' },
     { paramsName: '服务器IP', paramsValue: item?.ip ?? '' },
     { paramsName: '服务器端口', paramsValue: item?.port ?? '' },
@@ -83,7 +84,7 @@ const getDataDetail = async () => {
   ])
   dataBaseConfig = data.dataBaseConfig.flatMap((item: any) => [
     { paramsName: '数据库ID', paramsValue: item?.id ?? '' },
-    { paramsName: '数据库类型', paramsValue: item?.type ?? '' },
+    { paramsName: '数据库类型', paramsValue: item?.type ?? '', paramsType: database_type.value },
     { paramsName: '数据库版本', paramsValue: item?.version ?? '' },
     { paramsName: '数据库驱动', paramsValue: item?.driver ?? '' },
     { paramsName: '数据库IP', paramsValue: item?.ip ?? '' },

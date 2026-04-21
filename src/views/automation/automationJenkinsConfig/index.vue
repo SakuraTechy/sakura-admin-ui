@@ -106,7 +106,7 @@ import { GiCellKeyValue, GiCellPassword, GiCellTags, GiCellVersion } from '@/com
 
 defineOptions({ name: 'AutomationJenkinsConfig' })
 
-const { status_type } = useDict('status_type')
+const { status_type, automation_type } = useDict('status_type', 'automation_type')
 
 const queryForm = reactive<AutomationJenkinsConfigQuery>({
   id: undefined,
@@ -128,8 +128,8 @@ const {
 } = useTable((page) => listAutomationJenkinsConfig({ ...queryForm, ...page }), { immediate: true })
 
 const columns: TableInstance['columns'] = [
-  { title: 'ID', dataIndex: 'id', slotName: 'id', width: 185, ellipsis: true, tooltip: true },
-  { title: '版本', dataIndex: 'version', slotName: 'version', width: 160, ellipsis: true, tooltip: true },
+  { title: 'ID', dataIndex: 'id', slotName: 'id', width: 180, ellipsis: true, tooltip: true },
+  { title: '版本', dataIndex: 'version', slotName: 'version', width: 140, ellipsis: true, tooltip: true },
   // { title: 'IP', dataIndex: 'ip', slotName: 'ip', width: 120, ellipsis: true, tooltip: true },
   {
     title: 'IP',
@@ -159,7 +159,7 @@ const columns: TableInstance['columns'] = [
     title: '关联项目',
     dataIndex: 'jobList',
     slotName: 'jobList',
-    width: 230,
+    width: 250,
     align: 'center',
     render: ({ record }) => {
       const jobData = Array.isArray(record.jobList)
@@ -167,7 +167,7 @@ const columns: TableInstance['columns'] = [
         : [record.jobList]
       const jobList = jobData.flatMap((item: any) => [
         { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-        { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+        { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type?.value },
         { paramsName: '项目名称', paramsValue: item?.name ?? '' },
         { paramsName: '项目地址', paramsValue: item?.url ?? '' },
         { paramsName: '项目描述', paramsValue: item?.description ?? '' },
@@ -199,7 +199,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 200,
+    width: 210,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['automation:automationJenkinsConfig:get', 'automation:automationJenkinsConfig:update', 'automation:automationJenkinsConfig:delete']),

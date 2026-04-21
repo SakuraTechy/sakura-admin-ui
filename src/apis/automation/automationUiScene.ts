@@ -1,0 +1,214 @@
+import http from '@/utils/http'
+
+const BASE_URL = '/automation/automationUiScene'
+
+export interface AutomationUiSceneResp {
+  id: string
+  sceneId: string
+  name: string
+  description: string
+  projectId: string
+  projectName: string
+  versionId: string
+  versionName: string
+  moduleId: string
+  modulePath: string
+  level: string
+  status: number
+  tags: Array<object>
+  caseList: [
+    {
+      id: string
+      name: string
+      remark: string
+      type: string
+      stepList: [
+        {
+          id: string
+          name: string
+          type: string
+        },
+      ]
+    },
+  ]
+  testPlanId: Array<object>
+  reportId: string
+  debugRecord: Array<object>
+  executeStatus: string
+  executeResult: string
+  testRecord: Array<object>
+  buildNumber: number
+  consoleUrl: string
+  testReportUrl: string
+  caseTotal: number
+  casePass: number
+  caseFail: number
+  caseSkip: number
+  passRate: string
+  lastResult: string
+  stepTotal: number
+  stepPass: number
+  stepFail: number
+  stepSkip: number
+  createUser: string
+  createTime: string
+  updateUser: string
+  updateTime: string
+  updateIp: string
+  delFlag: number
+  createUserString: string
+  updateUserString: string
+  disabled: boolean
+}
+export interface AutomationUiSceneDetailResp {
+  id: string
+  sceneId: string
+  name: string
+  description: string
+  projectId: string
+  projectName: string
+  versionId: string
+  versionName: string
+  moduleId: string
+  modulePath: string
+  level: string
+  status: number
+  tags: Array<object>
+  caseList: [
+    {
+      id: string
+      name: string
+      remark: string
+      stepList: [
+        {
+          id: string
+          name: string
+        },
+      ]
+    },
+  ]
+  testPlanId: Array<object>
+  reportId: string
+  debugRecord: Array<object>
+  executeStatus: string
+  executeResult: string
+  testRecord: Array<object>
+  buildNumber: number
+  consoleUrl: string
+  testReportUrl: string
+  caseTotal: number
+  casePass: number
+  caseFail: number
+  caseSkip: number
+  passRate: string
+  lastResult: string
+  stepTotal: number
+  stepPass: number
+  stepFail: number
+  stepSkip: number
+  createUser: string
+  createTime: string
+  updateUser: string
+  updateTime: string
+  updateIp: string
+  delFlag: number
+  createUserString: string
+  updateUserString: string
+}
+export interface AutomationUiSceneQuery {
+  id?: string | undefined
+  sceneId?: string | undefined
+  name?: string | undefined
+  projectId?: string | undefined
+  versionId?: string | undefined
+  moduleId?: string | undefined
+  level?: string | undefined
+  executeStatus?: string | undefined
+  executeResult?: string | undefined
+  status?: number | undefined
+  createUser?: string
+  updateUser?: string
+  createTime?: Array<string>
+  sort?: Array<string>
+}
+export interface AutomationUiScenePageQuery extends AutomationUiSceneQuery, PageQuery {}
+
+/** @desc 分页查询自动化管理-UI自动化场景列表 */
+export function listAutomationUiScene(query?: AutomationUiScenePageQuery) {
+  return http.get<PageRes<AutomationUiSceneResp[]>>(`${BASE_URL}`, query)
+}
+
+/** @desc 全部查询自动化管理-UI自动化场景列表 */
+export function getAutomationUiSceneList(query?: AutomationUiScenePageQuery) {
+  return http.get<AutomationUiSceneResp[]>(`${BASE_URL}/list`, query)
+}
+
+/** @desc 查询自动化管理-UI自动化场景详情 */
+export function getAutomationUiScene(id: string) {
+  return http.get<AutomationUiSceneDetailResp>(`${BASE_URL}/${id}`)
+}
+
+/** @desc 新增自动化管理-UI自动化场景 */
+export function addAutomationUiScene(data: any) {
+  return http.post(`${BASE_URL}`, data)
+}
+
+/** @desc 修改自动化管理-UI自动化场景 */
+export function updateAutomationUiScene(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}`, data)
+}
+
+/** @desc 复制自动化管理-UI自动化场景 */
+export function copyAutomationUiScene(data: any, id: string) {
+  return http.post(`${BASE_URL}/${id}/copy`, data)
+}
+
+/** @desc 删除自动化管理-UI自动化场景 */
+export function deleteAutomationUiScene(ids: string | Array<string>) {
+  return http.del(`${BASE_URL}/${ids}`)
+}
+
+/** @desc 导出自动化管理-UI自动化场景 */
+export function exportAutomationUiScene(query: AutomationUiSceneQuery) {
+  return http.download(`${BASE_URL}/export`, query)
+}
+
+/** @desc 添加自动化管理-UI自动化场景用例 */
+export function addCase(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/addCase`, data)
+}
+
+/** @desc 修改自动化管理-UI自动化场景用例 */
+export function updateCase(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/updateCase`, data)
+}
+
+/** @desc 删除自动化管理-UI自动化场景用例 */
+export function deleteCase(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/deleteCase`, data)
+}
+
+/** @desc 拖拽自动化管理-UI自动化场景用例 */
+export function dragCase(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/dragCase`, data)
+}
+
+/** @desc 添加自动化管理-UI自动化场景用例步骤 */
+export function addStep(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/addStep`, data)
+}
+
+/** @desc 修改自动化管理-UI自动化场景用例步骤 */
+export function updateStep(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/updateStep`, data)
+}
+
+/** @desc 删除自动化管理-UI自动化场景用例步骤 */
+export function deleteStep(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/deleteStep`, data)
+}
+
+/** @desc 拖拽自动化管理-UI自动化场景用例步骤 */
+export function dragStep(data: any, id: string) {
+  return http.put(`${BASE_URL}/${id}/dragStep`, data)
+}

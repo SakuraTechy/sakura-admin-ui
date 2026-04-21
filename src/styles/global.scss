@@ -600,7 +600,9 @@
     border-radius: 0 4px 4px 0;
   }
 }
-
+.arco-textarea-clear-btn{
+  right: 160px
+}
 // 禁用 view-transition 动画
 ::view-transition-old(root),
 ::view-transition-new(root) {

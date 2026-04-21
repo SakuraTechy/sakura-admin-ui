@@ -227,7 +227,7 @@ const columns: TableInstance['columns'] = [
         : [record.description]
       const map = data.flatMap((item: any) => [
         { paramsName: '名称', paramsValue: item?.name },
-        { paramsName: '类型', paramsValue: item?.systemType },
+        { paramsName: '类型', paramsValue: item?.systemType, paramsType: server_type.value },
         { paramsName: '用户名', paramsValue: item?.userName },
         { paramsName: '密码', paramsValue: item?.passWord },
         { paramsName: '凭据', paramsValue: item?.credentialsId },
@@ -451,8 +451,11 @@ const onUpdate = async (record: AutomationNodeConfigResp) => {
 }
 
 // 复制
-const onCopy = (record: AutomationNodeConfigResp) => {
-  AutomationNodeConfigAddModalRef.value?.onCopy(record.id)
+const onCopy = async (record: AutomationNodeConfigResp) => {
+  const { success } = await syncNode(record.id)
+  if (success) {
+    AutomationNodeConfigAddModalRef.value?.onCopy(record.id)
+  }
 }
 
 const AutomationNodeConfigDetailDrawerRef = ref<AutomationNodeConfigDetailDrawerType>()

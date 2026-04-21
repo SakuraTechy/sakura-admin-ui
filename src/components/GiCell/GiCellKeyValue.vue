@@ -29,9 +29,12 @@
               <!-- <span>{{ typeof item.paramsValue }}</span> -->
               <td class="key-column">{{ item.paramsName ?? '-' }}</td>
               <td class="value-column">
-                <!-- {{ item }} -->
+                <!-- {{ item }}
+                {{ typeof item.paramsName }}
+                {{ Array.isArray(item.paramsName) }} -->
                 <template v-if="item.paramsName.includes('类型')">
-                  <a-tag color="arcoblue">{{ item.paramsValue || '-' }}</a-tag>
+                  <!-- <a-tag color="arcoblue">{{ item.paramsValue || '-' }}</a-tag> -->
+                  <GiCellTag :value="item.paramsValue || '-'" :dict="item.paramsType" />
                 </template>
                 <template v-else-if="item.paramsName.includes('密码')">
                   <GiCellPassword :value="item.paramsValue || '-'" />
@@ -80,7 +83,7 @@ withDefaults(defineProps<Props>(), {
   title: '参数配置',
 })
 
-const { status_type } = useDict('status_type')
+const { version_type, status_type } = useDict('version_type', 'status_type')
 
 interface KeyValueItem {
   paramsName: string

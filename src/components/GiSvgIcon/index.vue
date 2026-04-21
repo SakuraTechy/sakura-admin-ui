@@ -41,6 +41,10 @@ const svgClass = computed(() => {
 })
 </script>
 
+<script lang="ts">
+export default {}
+</script>
+
 <style scoped lang="scss">
 .svg-icon {
   width: auto;

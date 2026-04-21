@@ -33,11 +33,19 @@
         />
         <a-input-search v-model="queryForm.name" placeholder="请输入版本名称" allow-clear @search="search" />
         <a-select
+          v-model="queryForm.type"
+          :options="version_type"
+          placeholder="请选择版本类型"
+          allow-clear
+          style="width: 140px"
+          @change="search"
+        />
+        <a-select
           v-model="queryForm.status"
           :options="status_type.filter(item => item.value === '1' || item.value === '2')"
           placeholder="请选择状态"
           allow-clear
-          style="width: 150px"
+          style="width: 140px"
           @change="search"
         />
         <a-button @click="reset">
@@ -65,6 +73,9 @@
           <template #icon><icon-download /></template>
           <template #default>导出</template>
         </a-button>
+      </template>
+      <template #type="{ record }">
+        <GiCellTag :value="record.type" :dict="version_type" />
       </template>
       <template #status="{ record }">
         <!-- <GiCellStatus :status="record.status" /> -->
@@ -109,14 +120,15 @@ import type { LabelValueState } from '@/types/global'
 
 defineOptions({ name: 'ProjectVersionConfig' })
 
-const { status_type } = useDict('status_type')
+const { version_type, status_type } = useDict('version_type', 'status_type')
 
 const queryForm = reactive<ProjectVersionConfigQuery>({
   id: undefined,
   projectId: undefined,
   name: undefined,
+  type: undefined,
   status: undefined,
-  sort: ['createTime,desc'],
+  sort: ['projectId,desc', 'name,desc'],
 })
 
 const {
@@ -147,6 +159,7 @@ const columns: TableInstance['columns'] = [
   },
   { title: '版本名称', dataIndex: 'name', slotName: 'name', width: 120, ellipsis: true, tooltip: true },
   { title: '版本描述', dataIndex: 'description', slotName: 'description', width: 200, ellipsis: true, tooltip: true },
+  { title: '版本类型', dataIndex: 'type', slotName: 'type', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120, ellipsis: true, tooltip: true },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180, ellipsis: true, tooltip: true },
@@ -158,7 +171,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 200,
+    width: 210,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['project:projectVersionConfig:get', 'project:projectVersionConfig:update', 'project:projectVersionConfig:delete']),
@@ -192,6 +205,7 @@ const reset = () => {
   queryForm.id = undefined
   queryForm.projectId = undefined
   queryForm.name = undefined
+  queryForm.type = undefined
   queryForm.status = undefined
   search()
 }
