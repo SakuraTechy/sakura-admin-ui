@@ -49,12 +49,20 @@
       @refresh="refresh"
     >
       <template #table>
-        <AutomationUiScene :key="sceneKey" ref="automationUiSceneRef" @update-scene="addTab" @execute-scene="executeScene" />
+        <AutomationUiScene
+          :key="sceneKey"
+          ref="automationUiSceneRef"
+          @update-scene="addTab"
+          @execute-scene="executeScene"
+          @execute-scenes="executeScenes"
+          @execute-all-scenes="executeAllScenes"
+        />
       </template>
       <template #content>
         <AddOrEditForm ref="addOrEditFormRef" @add-tab="addTab" @remove-tab="removeTab" @update-tab="updateTab" />
       </template>
     </TabList>
+    <ExecuteSceneModal ref="executeSceneModalRef" @success="refresh" />
   </GiPageLayout>
 </template>
 
@@ -66,6 +74,7 @@ import Tree from './components/tree/index.vue'
 import TabList from './components/tab/tabList.vue'
 import AddOrEditForm from './components/AddOrEditForm.vue'
 import AutomationUiScene from './components/AutomationUiScene.vue'
+import ExecuteSceneModal from './components/ExecuteSceneModal.vue'
 import type { AutomationUiSceneQuery } from '@/apis/automation/automationUiScene'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
@@ -263,6 +272,17 @@ const removeTab = () => {
 }
 const updateTab = (record: any) => {
   tabListRef.value?.updateTab(record)
+}
+
+const executeSceneModalRef = ref()
+const executeScene = (record: any) => {
+  executeSceneModalRef.value?.onOpen([record])
+}
+const executeScenes = (records: any[]) => {
+  executeSceneModalRef.value?.onOpen(records, { mode: 'selected' })
+}
+const executeAllScenes = (records: any[], query: any) => {
+  executeSceneModalRef.value?.onOpen(records, { mode: 'all', query })
 }
 
 // const updateScene = async (record: any) => {

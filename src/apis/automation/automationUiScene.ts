@@ -133,6 +133,41 @@ export interface AutomationUiSceneQuery {
 }
 export interface AutomationUiScenePageQuery extends AutomationUiSceneQuery, PageQuery {}
 
+export interface AutomationUiSceneExecReq {
+  sceneIds: Array<string | number>
+  projectEnvironmentId: string | number
+  automationEnvironmentId: string | number
+  executeName?: string
+  executeEmail?: string
+  testPlanId?: string
+  testReportId?: string
+}
+
+export interface AutomationUiSceneExecAllReq {
+  projectId: string | number
+  versionId: string | number
+  moduleId?: string | number
+  level?: string
+  executeStatus?: string
+  executeResult?: string
+  status?: number
+  projectEnvironmentId: string | number
+  automationEnvironmentId: string | number
+  executeName?: string
+  executeEmail?: string
+}
+
+export interface AutomationUiSceneExecResp {
+  testReportId: string
+  buildNumber: number
+  consoleUrl: string
+  testReportUrl: string
+}
+
+export interface AutomationUiSceneClearReq {
+  sceneIds: Array<string | number>
+}
+
 /** @desc 分页查询自动化管理-UI自动化场景列表 */
 export function listAutomationUiScene(query?: AutomationUiScenePageQuery) {
   return http.get<PageRes<AutomationUiSceneResp[]>>(`${BASE_URL}`, query)
@@ -211,4 +246,34 @@ export function deleteStep(data: any, id: string) {
 /** @desc 拖拽自动化管理-UI自动化场景用例步骤 */
 export function dragStep(data: any, id: string) {
   return http.put(`${BASE_URL}/${id}/dragStep`, data)
+}
+
+/** @desc 执行 UI 自动化场景 */
+export function execAutomationUiScene(data: AutomationUiSceneExecReq) {
+  return http.post<AutomationUiSceneExecResp>(`${BASE_URL}/exec`, data)
+}
+
+/** @desc 执行当前查询范围内全部 UI 自动化场景 */
+export function execAllAutomationUiScene(data: AutomationUiSceneExecAllReq) {
+  return http.post<AutomationUiSceneExecResp>(`${BASE_URL}/execAll`, data)
+}
+
+/** @desc 根据 ID 集合查询场景 */
+export function getAutomationUiSceneSelected(ids: Array<string | number>) {
+  return http.post<AutomationUiSceneResp[]>(`${BASE_URL}/selected`, ids)
+}
+
+/** @desc 导出选中场景 XML */
+export function exportAutomationUiSceneXml(ids: string | Array<string>) {
+  return http.download(`${BASE_URL}/exportXml/${ids}`)
+}
+
+/** @desc 导出当前查询范围内全部场景 XML */
+export function exportAllAutomationUiSceneXml(query: AutomationUiSceneQuery) {
+  return http.download(`${BASE_URL}/exportXmlAll`, query)
+}
+
+/** @desc 娓呯┖ UI 鑷姩鍖栧満鏅墽琛岀粨鏋?*/
+export function clearAutomationUiSceneResults(data: AutomationUiSceneClearReq) {
+  return http.put(`${BASE_URL}/clearResults`, data)
 }

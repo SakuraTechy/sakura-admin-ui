@@ -8,6 +8,7 @@ export interface AutomationProjectConfigResp {
   name: string
   url: string
   description: string
+  scriptPath: string
   status: number
   createUser: string
   createTime: string
@@ -25,6 +26,7 @@ export interface AutomationProjectConfigDetailResp {
   name: string
   url: string
   description: string
+  scriptPath: string
   status: number
   createUser: string
   createTime: string

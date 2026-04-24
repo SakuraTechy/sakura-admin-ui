@@ -137,6 +137,7 @@ const columns: TableInstance['columns'] = [
   { title: '项目类型', dataIndex: 'type', slotName: 'type', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   { title: '项目名称', dataIndex: 'name', slotName: 'name', width: 250, ellipsis: true, tooltip: true },
   { title: '项目地址', dataIndex: 'url', slotName: 'url', width: 460, ellipsis: true, tooltip: true },
+  { title: '脚本路径', dataIndex: 'scriptPath', slotName: 'scriptPath', width: 320, ellipsis: true, tooltip: true },
   { title: '项目描述', dataIndex: 'description', slotName: 'description', width: 200, ellipsis: true, tooltip: true },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUser', width: 120, ellipsis: true, tooltip: true },

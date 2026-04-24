@@ -135,13 +135,13 @@ const {
 const columns: TableInstance['columns'] = [
   { title: '浏览器ID', dataIndex: 'id', slotName: 'id', width: 185, ellipsis: true, tooltip: true },
   { title: '浏览器类型', dataIndex: 'type', slotName: 'type', width: 120, ellipsis: true, tooltip: true, align: 'center' },
-  { title: '浏览器版本', dataIndex: 'version', slotName: 'version', width: 160, ellipsis: true, tooltip: true },
+  { title: '浏览器版本', dataIndex: 'version', slotName: 'version', width: 150, ellipsis: true, tooltip: true },
   { title: '浏览器名称', dataIndex: 'name', slotName: 'name', width: 120, ellipsis: true, tooltip: true },
   {
     title: '浏览器配置',
     dataIndex: 'description',
     slotName: 'description',
-    width: 110,
+    width: 120,
     align: 'center',
     render: ({ record }) => {
       const map = [

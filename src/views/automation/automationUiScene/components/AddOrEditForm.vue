@@ -47,7 +47,7 @@
         <a-space style="font-weight: 700;">步骤总数：{{ stepList.length }}</a-space>
         <div style="display: flex; margin-right: auto;">
           <a-checkbox v-model="perChecked" :disabled="isReadonly"> 性能模式 </a-checkbox>
-          <a-select v-model="webValue" :disabled="isReadonly" :style="{ width: '120px', marginLeft: '20px' }" placeholder="Please select ...">
+          <a-select v-model="webValue" :disabled="isReadonly" :style="{ width: '120px', marginLeft: '20px' }" placeholder="请选择">
             <a-option v-for="item of browser_type" :key="item.value" :value="item.value" :label="item.label" />
           </a-select>
           <a-dropdown-button :disabled="isReadonly" :style="{ marginLeft: '20px' }" @select="handleSelect">

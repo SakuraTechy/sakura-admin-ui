@@ -20,7 +20,6 @@ declare module 'vue' {
     DayForm: typeof import('./../components/GenCron/CronForm/component/day-form.vue')['default']
     FilePreview: typeof import('./../components/FilePreview/index.vue')['default']
     GiCellAvatar: typeof import('./../components/GiCell/GiCellAvatar.vue')['default']
-    GiCellConfigParams: typeof import('./../components/GiCell/GiCellConfigParams.vue')['default']
     GiCellGender: typeof import('./../components/GiCell/GiCellGender.vue')['default']
     GiCellKeyValue: typeof import('./../components/GiCell/GiCellKeyValue.vue')['default']
     GiCellPassword: typeof import('./../components/GiCell/GiCellPassword.vue')['default']
@@ -63,7 +62,6 @@ declare module 'vue' {
     MinuteForm: typeof import('./../components/GenCron/CronForm/component/minute-form.vue')['default']
     MonthForm: typeof import('./../components/GenCron/CronForm/component/month-form.vue')['default']
     ParentView: typeof import('./../components/ParentView/index.vue')['default']
-    PasswordToggle: typeof import('./../components/PasswordToggle/index.vue')['default']
     QuillEditor: typeof import('./../components/GiEditor/QuillEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
@@ -77,7 +75,6 @@ declare module 'vue' {
     VerifyPoints: typeof import('./../components/Verify/Verify/VerifyPoints.vue')['default']
     VerifySlide: typeof import('./../components/Verify/Verify/VerifySlide.vue')['default']
     WeekForm: typeof import('./../components/GenCron/CronForm/component/week-form.vue')['default']
-    XmlJsonConverter: typeof import('./../components/XmlJsonConverter/index.vue')['default']
     YearForm: typeof import('./../components/GenCron/CronForm/component/year-form.vue')['default']
   }
 }

@@ -36,7 +36,7 @@ import { useWindowSize } from '@vueuse/core'
 import { type AutomationJenkinsConfigDetailResp, getAutomationJenkinsConfig as getDetail } from '@/apis/automation/automationJenkinsConfig'
 import { useDict } from '@/hooks/app'
 
-const { status_type } = useDict('status_type')
+const { status_type, automation_type } = useDict('status_type', 'automation_type')
 
 const { width } = useWindowSize()
 
@@ -45,6 +45,13 @@ const dataDetail = ref<AutomationJenkinsConfigDetailResp>()
 const visible = ref(false)
 
 let jobList = [{ paramsName: '', paramsValue: '' }]
+
+const resolveStatusLabel = (status: string | number | null | undefined) => {
+  const matched = status_type.value?.find(item =>
+    String(item.value) === String(status) || item.label === status,
+  )
+  return matched?.label || status || '-'
+}
 // 查询详情
 const getDataDetail = async () => {
   const { data } = await getDetail(dataId.value)
@@ -55,11 +62,12 @@ const getDataDetail = async () => {
     : [data.jobList]
   jobList = jobData.flatMap((item: any) => [
     { paramsName: '项目ID', paramsValue: item?.id ?? '' },
-    { paramsName: '项目类型', paramsValue: item?.type ?? '' },
+    { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type?.value },
     { paramsName: '项目名称', paramsValue: item?.name ?? '' },
-    { paramsName: '项目地址', paramsValue: item?.url ?? '' },
+    { paramsName: '项目地址1', paramsValue: item?.url ?? '' },
+    { paramsName: '脚本路径', paramsValue: item?.scriptPath ?? '' },
     { paramsName: '项目描述', paramsValue: item?.description ?? '' },
-    { paramsName: '项目状态', paramsValue: item?.status ?? '' },
+    { paramsName: '项目状态', paramsValue: resolveStatusLabel(item?.status) },
   ])
 }
 

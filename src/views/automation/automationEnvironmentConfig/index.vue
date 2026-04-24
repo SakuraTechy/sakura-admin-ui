@@ -151,6 +151,7 @@ const columns: TableInstance['columns'] = [
         { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
         { paramsName: '项目名称', paramsValue: item?.name ?? '' },
         { paramsName: '项目地址', paramsValue: item?.url ?? '' },
+        { paramsName: '脚本路径', paramsValue: item?.scriptPath ?? '' },
         { paramsName: '项目描述', paramsValue: item?.description ?? '' },
         { paramsName: '项目状态', paramsValue: item?.status ?? '' },
       ])
@@ -177,6 +178,7 @@ const columns: TableInstance['columns'] = [
         { paramsName: '项目类型', paramsValue: item?.type ?? '', paramsType: automation_type.value },
         { paramsName: '项目名称', paramsValue: item?.name ?? '' },
         { paramsName: '项目地址', paramsValue: item?.url ?? '' },
+        { paramsName: '脚本路径', paramsValue: item?.scriptPath ?? '' },
         { paramsName: '项目描述', paramsValue: item?.description ?? '' },
         { paramsName: '项目状态', paramsValue: item?.status ?? '' },
       ])

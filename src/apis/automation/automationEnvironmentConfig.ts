@@ -72,6 +72,13 @@ export interface AutomationEnvironmentConfigQuery {
 }
 export interface AutomationEnvironmentConfigPageQuery extends AutomationEnvironmentConfigQuery, PageQuery {}
 
+export interface AutomationEnvironmentRuntimeStatusResp {
+  environmentId: string
+  nodeName: string
+  onlineStatus: number | string
+  useStatus: number | string
+}
+
 /** @desc 分页查询自动化管理-环境配置列表 */
 export function listAutomationEnvironmentConfig(query?: AutomationEnvironmentConfigPageQuery) {
   return http.get<PageRes<AutomationEnvironmentConfigResp[]>>(`${BASE_URL}`, query)
@@ -85,6 +92,11 @@ export function getAutomationEnvironmentConfigList(query?: AutomationEnvironment
 /** @desc 查询自动化管理-环境配置详情 */
 export function getAutomationEnvironmentConfig(id: string) {
   return http.get<AutomationEnvironmentConfigDetailResp>(`${BASE_URL}/${id}`)
+}
+
+/** @desc 查询自动化环境实时状态 */
+export function getAutomationEnvironmentRuntimeStatus(id: string | number) {
+  return http.get<AutomationEnvironmentRuntimeStatusResp>(`${BASE_URL}/${id}/runtime-status`)
 }
 
 /** @desc 新增自动化管理-环境配置 */

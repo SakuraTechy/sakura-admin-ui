@@ -77,6 +77,18 @@ const columns = computed<ColumnItem[]>(() => [
     },
   },
   {
+    label: '脚本路径',
+    field: 'scriptPath',
+    span: 24,
+    required: true,
+    type: 'input',
+    props: {
+      maxLength: 500,
+      allowClear: true,
+      placeholder: '请输入脚本根路径',
+    },
+  },
+  {
     label: '项目描述',
     field: 'description',
     span: 24,

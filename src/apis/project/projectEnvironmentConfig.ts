@@ -59,6 +59,12 @@ export interface ProjectEnvironmentConfigQuery {
 }
 export interface ProjectEnvironmentConfigPageQuery extends ProjectEnvironmentConfigQuery, PageQuery {}
 
+export interface ProjectEnvironmentRuntimeStatusResp {
+  environmentId: string
+  serverIp: string
+  onlineStatus: number | string
+}
+
 /** @desc 分页查询项目管理-环境配置列表 */
 export function listProjectEnvironmentConfig(query: ProjectEnvironmentConfigPageQuery) {
   return http.get<PageRes<ProjectEnvironmentConfigResp[]>>(`${BASE_URL}`, query)
@@ -72,6 +78,11 @@ export function getProjectEnvironmentConfigList(query?: ProjectEnvironmentConfig
 /** @desc 查询项目管理-环境配置详情 */
 export function getProjectEnvironmentConfig(id: string) {
   return http.get<ProjectEnvironmentConfigDetailResp>(`${BASE_URL}/${id}`)
+}
+
+/** @desc 查询项目环境实时状态 */
+export function getProjectEnvironmentRuntimeStatus(id: string | number) {
+  return http.get<ProjectEnvironmentRuntimeStatusResp>(`${BASE_URL}/${id}/runtime-status`)
 }
 
 /** @desc 新增项目管理-环境配置 */

@@ -11,6 +11,7 @@
       <a-descriptions-item label="项目地址">
         <GiCellKeyValue :data="[{ paramsName: '地址', paramsValue: dataDetail?.url ?? '' }]" title="项目地址" />
       </a-descriptions-item>
+      <a-descriptions-item label="脚本路径" :span="2">{{ dataDetail?.scriptPath || '-' }}</a-descriptions-item>
       <a-descriptions-item label="项目描述">{{ dataDetail?.description }}</a-descriptions-item>
       <a-descriptions-item label="状态">
         <GiCellTag :value="dataDetail?.status" :dict="status_type" />
