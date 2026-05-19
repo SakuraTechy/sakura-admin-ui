@@ -99,7 +99,7 @@ import UserImportDrawer from './UserImportDrawer.vue'
 import UserDetailDrawer from './UserDetailDrawer.vue'
 import UserResetPwdModal from './UserResetPwdModal.vue'
 import UserUpdateRoleModal from './UserUpdateRoleModal.vue'
-import { type UserResp, deleteUser, exportUser, listUser } from '@/apis/system/user'
+import { type UserResp, deleteUser, exportUser, pageUser } from '@/apis/system/user'
 import type { TableInstanceColumns } from '@/components/GiTable/type'
 import { DisEnableStatusList } from '@/constant/common'
 import { useDownload, useResetReactive, useTable } from '@/hooks'
@@ -149,7 +149,7 @@ const {
   selectAll,
   selectedKeys,
   handleDelete,
-} = useTable((page) => listUser({ ...queryForm, ...page }), { immediate: false })
+} = useTable((page) => pageUser({ ...queryForm, ...page }), { immediate: false })
 const columns: TableInstanceColumns[] = [
   {
     title: '序号',

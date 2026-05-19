@@ -23,13 +23,13 @@
     >
       <template #top>
         <GiForm v-model="queryForm" :columns="queryFormColumns" size="medium" search @search="search" @reset="reset" />
-        <a-divider style="margin: 15px 0 20px 0;" />
+        <a-divider style="margin: 15px 0 15px 0;" />
       </template>
       <template #toolbar-right>
-        <a-button v-permission="['automation:automationUiScene:create']" type="primary" @click="onAdd">
+        <!-- <a-button v-permission="['automation:automationUiScene:create']" type="primary" @click="onAdd">
           <template #icon><icon-plus /></template>
           <template #default>新增</template>
-        </a-button>
+        </a-button> -->
         <a-button
           v-permission="['automation:automationUiScene:delete']"
           type="primary"
@@ -39,13 +39,13 @@
           @click="() => onDelete()"
         >
           <template #icon><icon-delete /></template>
-          <template #default>删除</template>
+          <template #default>批量删除</template>
         </a-button>
         <a-button v-permission="['automation:automationUiScene:export']" @click="onExport">
           <template #icon><icon-download /></template>
-          <template #default>导出</template>
+          <template #default>批量导出</template>
         </a-button>
-        <a-button
+        <!-- <a-button
           v-permission="['automation:automationUiScene:export']"
           :disabled="!selectedKeys.length"
           :title="!selectedKeys.length ? '请选择数据' : ''"
@@ -57,7 +57,7 @@
         <a-button v-permission="['automation:automationUiScene:export']" @click="onExportAllXml">
           <template #icon><icon-download /></template>
           <template #default>导出全部 XML</template>
-        </a-button>
+        </a-button> -->
         <a-button
           v-permission="['automation:automationUiScene:execute']"
           type="primary"
@@ -65,6 +65,7 @@
           :title="!selectedKeys.length ? '请选择数据' : ''"
           @click="onBatchExecute"
         >
+          <template #icon><icon-select-all /></template>
           <template #default>批量执行</template>
         </a-button>
         <a-button
@@ -73,6 +74,7 @@
           status="success"
           @click="onExecuteAll"
         >
+          <template #icon><icon-play-arrow /></template>
           <template #default>执行全部</template>
         </a-button>
         <a-button
@@ -82,6 +84,7 @@
           :title="!selectedKeys.length ? '请选择数据' : ''"
           @click="onClearResults"
         >
+          <template #icon><icon-sync /></template>
           <template #default>清空结果</template>
         </a-button>
       </template>
@@ -144,6 +147,7 @@ import { GiCellTag, GiCellTags } from '@/components/GiCell'
 import type { ColumnItem } from '@/components/GiForm'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { formatDuration } from '@/utils/sakura'
+import { filterSceneResultOptions, filterSceneStatusOptions, pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 
 defineOptions({ name: 'AutomationUiScene' })
 
@@ -189,21 +193,21 @@ const {
 const queryFormColumns = computed<ColumnItem[]>(() => [
   { type: 'input', label: '场景 ID', field: 'sceneId', span: { xs: 24, sm: 8, xxl: 8 }, props: {} },
   { type: 'input', label: '场景名称', field: 'name', span: { xs: 24, sm: 8, xxl: 8 }, props: {} },
-  { type: 'select', label: '版本', field: 'versionId', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: uiStore.versionList } },
-  { type: 'select', label: '等级', field: 'level', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: scene_level.value } },
+  { type: 'select', label: '场景版本', field: 'versionId', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: uiStore.versionList } },
+  { type: 'select', label: '场景等级', field: 'level', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: scene_level.value } },
   {
     type: 'select',
     label: '执行状态',
     field: 'executeStatus',
     span: { xs: 24, sm: 8, xxl: 8 },
-    props: { options: status_type.value.filter((item) => ['10', '11', '12'].includes(item.value)) },
+    props: { options: filterSceneStatusOptions(status_type.value) },
   },
   {
     type: 'select',
     label: '执行结果',
     field: 'executeResult',
     span: { xs: 24, sm: 8, xxl: 8 },
-    props: { options: status_type.value.filter((item) => ['13', '14', '15'].includes(item.value)) },
+    props: { options: filterSceneResultOptions(status_type.value) },
   },
   {
     type: 'select',
@@ -223,12 +227,6 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
   },
   { type: 'range-picker', label: '创建时间', field: 'createTime', span: { xs: 24, sm: 18, xxl: 8 }, show: ({ collapsed }) => !collapsed },
 ])
-
-const toStatusValue = (label?: string) => {
-  if (!label)
-    return undefined
-  return status_type.value.find((item) => item.label === label)?.value
-}
 
 const columns: TableInstance['columns'] = [
   { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
@@ -250,7 +248,7 @@ const columns: TableInstance['columns'] = [
     width: 110,
     align: 'center',
     render: ({ record }) => {
-      const value = Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? toStatusValue(record.debugRecord[0].executeStatus) : undefined
+      const value = pickSceneExecuteField(record, 'executeStatus', status_type.value)
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -261,7 +259,7 @@ const columns: TableInstance['columns'] = [
     width: 110,
     align: 'center',
     render: ({ record }) => {
-      const value = Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? toStatusValue(record.debugRecord[0].executeResult) : undefined
+      const value = pickSceneExecuteField(record, 'executeResult', status_type.value)
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -383,7 +381,7 @@ const onExecuteAll = async () => {
     projectId: uiStore.projectId,
     versionId: queryForm.versionId || uiStore.versionId,
   }
-  const { data } = await listAutomationUiScene({ ...targetQuery, page: 1, size: 10000 } as any)
+  const { data } = await listAutomationUiScene({ ...targetQuery, page: 1, size: 1000 } as any)
   const records = Array.isArray(data?.list) ? data.list : []
   emit('execute-all-scenes', records, targetQuery)
 }
@@ -393,6 +391,7 @@ const onClearResults = async () => {
     sceneIds: selectedKeys.value.map(id => String(id)),
   }), {
     content: '确认清空所选场景的执行结果吗？',
+    successTip: '清空成功',
     showModal: true,
     multiple: true,
   })
@@ -451,4 +450,5 @@ export default {}
   padding: 0;
   color: var(--color-text-3);
 }
+
 </style>

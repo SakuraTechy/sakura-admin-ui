@@ -91,6 +91,7 @@
         <a-table
           ref="tableRef"
           v-bind="tableProps"
+          :loading="false"
           :stripe="stripe"
           :size="size"
           :bordered="{ cell: isBordered }"
@@ -107,7 +108,7 @@
           }"
           @change="handleTableChange"
         >
-          <template v-for="key in Object.keys(slots)" :key="key" #[key]="scope">
+          <template v-for="key in forwardedSlotKeys" :key="key" #[key]="scope">
             <slot :key="key" :name="key" v-bind="scope" />
           </template>
           <!-- 自定义分页左侧的选中提示 -->
@@ -118,6 +119,11 @@
             </div>
           </template>
         </a-table>
+        <GiLoading :loading="tableLoading.loading" :tip="tableLoading.tip">
+          <template v-if="slots['loading-icon']" #icon>
+            <slot name="loading-icon" />
+          </template>
+        </GiLoading>
       </div>
     </div>
   </div>
@@ -129,12 +135,14 @@ import type { DropdownInstance, TableColumnData, TableData, TableInstance } from
 import { omit } from 'lodash-es'
 import type { TableProps } from './type'
 import type ColumnSetting from './components/ColumnSetting.vue'
+import GiLoading from '@/components/GiLoading/index.vue'
 
 defineOptions({ name: 'GiTable' })
 
 // Props 默认值
 const props = withDefaults(defineProps<Props>(), {
   title: '',
+  loadingTip: '加载中...',
   disabledColumnKeys: () => [],
   disabledTools: () => [],
   data: () => [],
@@ -172,6 +180,7 @@ defineSlots<{
   'toolbar-left': () => void
   'toolbar-right': () => void
   'toolbar-bottom': () => void
+  'loading-icon': () => void
   [propsName: string]: (props: { key: string, record: T, column: TableColumnData, rowIndex: number }) => void
 }>()
 
@@ -188,6 +197,8 @@ interface Props extends TableProps {
   data: T[]
   /** 表格标识，用于存储列设置 */
   tableId?: string
+  /** 加载提示文案 */
+  loadingTip?: string
   /** 是否显示选中项提示 */
   showSelectionAlert?: boolean
   /** 提示类型 */
@@ -200,6 +211,7 @@ interface Props extends TableProps {
 
 const slots = useSlots()
 const attrs = useAttrs()
+const forwardedSlotKeys = computed(() => Object.keys(slots).filter(key => key !== 'loading-icon'))
 
 /** 组件状态 */
 const tableRef = useTemplateRef('tableRef')
@@ -274,9 +286,24 @@ const handleVisibleColumnsChange = (columns: TableColumnData[]) => {
 
 /** 表格属性计算 */
 const tableProps = computed(() => ({
-  ...omit(props, ['title', 'disabledColumnKeys', 'disabledTools', 'showSelectionAlert', 'selectionAlertType', 'selectionMessage', 'noSelectionMessage']),
+  ...omit(props, ['title', 'loading', 'loadingTip', 'disabledColumnKeys', 'disabledTools', 'showSelectionAlert', 'selectionAlertType', 'selectionMessage', 'noSelectionMessage']),
   ...attrs,
 }))
+
+const tableLoading = computed<{ loading: boolean, tip?: string }>(() => {
+  const loading = props.loading
+  if (typeof loading === 'boolean') {
+    return { loading, tip: props.loadingTip }
+  }
+  if (!loading) {
+    return { loading: false, tip: props.loadingTip }
+  }
+  return {
+    loading: Boolean((loading as any).loading),
+    tip: props.loadingTip,
+    ...(loading || {}),
+  }
+})
 
 /** 获取绑定的selectedKeys */
 const selectedKeys = computed(() => tableProps.value.selectedKeys)
@@ -475,6 +502,7 @@ defineExpose({
   }
 
   &__toolbar {
+    padding: 0px 0 10px 0;
     :deep(.arco-form-item-layout-inline) {
       margin-right: 8px;
 
@@ -499,6 +527,7 @@ defineExpose({
     overflow: hidden;
     overflow-y: auto;
   }
+
 }
 
 .drag-item {

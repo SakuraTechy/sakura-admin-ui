@@ -97,8 +97,8 @@
                       <div class="option-tags">
                         <!-- <a-tag :color="item.onlineStatusColor">{{ item.onlineStatusLabel }}</a-tag> -->
                         <!-- <a-tag :color="item.useStatusColor">{{ item.useStatusLabel }}</a-tag> -->
-                        <GiCellTag :value="item.useStatusLabel" :dict="status_type" />
                         <GiCellTag :value="item.onlineStatusLabel" :dict="status_type" />
+                        <GiCellTag :value="item.useStatusLabel" :dict="status_type" />
                       </div>
                     </div>
                   </a-option>
@@ -278,8 +278,13 @@ const normalizeTagColor = (status: string) => {
       return 'green'
     case '离线':
       return 'red'
+    case '10':
+    case '未开始':
+      return 'gray'
+    case '11':
     case '进行中':
       return 'arcoblue'
+    case '12':
     case '已完成':
       return 'green'
     default:
@@ -465,11 +470,11 @@ const getSceneBuildNumber = (record: SceneRow) => {
 
 const getSceneResultTagColor = (record: SceneRow) => {
   const result = getSceneLastResult(record)
-  if (['全部通过', '通过', '成功'].includes(result))
+  if (['14', 'PASSED', '全部通过', '通过', '成功'].includes(result))
     return 'green'
-  if (['不通过', '失败'].includes(result))
+  if (['15', 'FAILED', '不通过', '失败'].includes(result))
     return 'red'
-  if (['未执行', '-', '跳过'].includes(result))
+  if (['13', '16', 'NOT_EXECUTED', 'SKIPPED', '未执行', '-', '跳过'].includes(result))
     return 'gray'
   return 'arcoblue'
 }
@@ -537,6 +542,26 @@ const handleOk = async () => {
   }
   if (!form.automationEnvironmentId) {
     Message.warning('请选择自动化环境')
+    return false
+  }
+
+  // 执行前刷新一次环境状态，避免使用过期状态继续执行
+  try {
+    await Promise.all([
+      fetchProjectEnvironmentRuntimeStatus(form.projectEnvironmentId),
+      fetchAutomationEnvironmentRuntimeStatus(form.automationEnvironmentId),
+    ])
+  } catch (error) {
+    console.error('refresh runtime status error', error)
+  }
+
+  if (selectedProjectEnvironment.value?.statusLabel !== '在线') {
+    Message.warning('当前产品环境，服务器非在线状态不可用，请切换为在线环境后再执行！')
+    return false
+  }
+
+  if (selectedAutomationEnvironment.value?.useStatusLabel !== '空闲') {
+    Message.warning('当前自动化环境，执行节点非空闲状态不可用，请切换为空闲节点后再执行！')
     return false
   }
 

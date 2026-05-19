@@ -208,6 +208,16 @@ export function exportAutomationUiScene(query: AutomationUiSceneQuery) {
   return http.download(`${BASE_URL}/export`, query)
 }
 
+/** @desc 导出选中场景 XML */
+export function exportAutomationUiSceneXml(ids: string | Array<string>) {
+  return http.download(`${BASE_URL}/exportXml/${ids}`)
+}
+
+/** @desc 导出当前查询范围内全部场景 XML */
+export function exportAllAutomationUiSceneXml(query: AutomationUiSceneQuery) {
+  return http.download(`${BASE_URL}/exportXmlAll`, query)
+}
+
 /** @desc 添加自动化管理-UI自动化场景用例 */
 export function addCase(data: any, id: string) {
   return http.put(`${BASE_URL}/${id}/addCase`, data)
@@ -263,17 +273,7 @@ export function getAutomationUiSceneSelected(ids: Array<string | number>) {
   return http.post<AutomationUiSceneResp[]>(`${BASE_URL}/selected`, ids)
 }
 
-/** @desc 导出选中场景 XML */
-export function exportAutomationUiSceneXml(ids: string | Array<string>) {
-  return http.download(`${BASE_URL}/exportXml/${ids}`)
-}
-
-/** @desc 导出当前查询范围内全部场景 XML */
-export function exportAllAutomationUiSceneXml(query: AutomationUiSceneQuery) {
-  return http.download(`${BASE_URL}/exportXmlAll`, query)
-}
-
-/** @desc 娓呯┖ UI 鑷姩鍖栧満鏅墽琛岀粨鏋?*/
+/** @desc 清空 UI 自动化场景执行结果 */
 export function clearAutomationUiSceneResults(data: AutomationUiSceneClearReq) {
   return http.put(`${BASE_URL}/clearResults`, data)
 }

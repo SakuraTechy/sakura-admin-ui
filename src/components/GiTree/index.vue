@@ -89,9 +89,7 @@
             </a-trigger>
           </template>
         </a-tree>
-        <div v-if="loading" class="gi-tree__loading">
-          <a-spin />
-        </div>
+        <GiLoading :loading="loading" tip="加载中..." />
       </a-scrollbar>
     </div>
   </div>
@@ -102,6 +100,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
 import { debounce } from 'lodash-es'
 import GiMenu from '@/components/GiMenu/index.vue'
+import GiLoading from '@/components/GiLoading/index.vue'
 
 const props = defineProps({
   title: { type: String, default: '树形结构' },
@@ -598,15 +597,6 @@ export default {}
       overflow: hidden;
       background-color: var(--color-bg-1);
       position: relative;
-    }
-    &__loading {
-      position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background-color: rgba(255,255,255,0.7);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 10;
     }
   }
   :deep(.arco-tree-node-title-text) {

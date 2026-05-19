@@ -2,91 +2,69 @@ import http from '@/utils/http'
 
 const BASE_URL = '/project/projectConfig'
 
-export interface ProjectConfigResp {
-  id: string
-  name: string
-  abbreviate: string
-  member: Array<string>
-  memberNames: Array<string>
-  description: string
-  lastDomain: string
-  lastVersion: string
-  status: number
-  createUser: string
-  deptId: string
-  createTime: string
-  updateUser: string
-  updateTime: string
-  updateIp: string
-  remark: string
-  version: string
-  delFlag: string
-  createUserString: string
-  updateUserString: string
-  disabled: boolean
-}
-export interface ProjectConfigDetailResp {
-  id: string
-  name: string
-  abbreviate: string
-  member: Array<string>
-  memberNames: Array<string>
-  description: string
-  lastDomain: string
-  lastVersion: string
-  status: number
-  createUser: string
-  deptId: string
-  createTime: string
-  updateUser: string
-  updateTime: string
-  updateIp: string
-  remark: string
-  version: string
-  delFlag: string
-  createUserString: string
-  updateUserString: string
-}
 export interface ProjectConfigQuery {
-  id?: string | undefined
-  name?: string | undefined
-  abbreviate?: string | undefined
-  status?: number | undefined
-  sort?: Array<string>
+  id?: string
+  name?: string
+  abbreviate?: string
+  status?: number | string
+  sort?: string[]
 }
+
 export interface ProjectConfigPageQuery extends ProjectConfigQuery, PageQuery {}
 
-/** @desc 分页查询项目配置列表 */
+export interface ProjectConfigResp {
+  id: string
+  name?: string
+  abbreviate?: string
+  description?: string
+  member?: string[]
+  memberNames?: string[]
+  status?: number
+  lastVersion?: string
+  lastDomain?: string
+  createUserString?: string
+  createTime?: string
+  updateUserString?: string
+  updateTime?: string
+  updateIp?: string
+  remark?: string
+  version?: string
+  delFlag?: number
+  disabled?: boolean
+}
+
+export type ProjectConfigDetailResp = ProjectConfigResp
+
+/** 分页查询（项目配置管理 GiTable） */
 export function listProjectConfig(query?: ProjectConfigPageQuery) {
   return http.get<PageRes<ProjectConfigResp[]>>(`${BASE_URL}`, query)
 }
 
-/** @desc 全部查询项目配置列表 */
-export function getProjectConfigList(query?: ProjectConfigQuery) {
-  return http.get<ProjectConfigResp[]>(`${BASE_URL}/list`, query)
+/** 全量列表（下拉、筛选等，GET `/list`） */
+export function getProjectConfigList(params?: Partial<ProjectConfigQuery> & { sort?: string[] }) {
+  return http.get<ProjectConfigResp[]>(`${BASE_URL}/list`, {
+    sort: ['createTime,desc'],
+    ...params,
+  })
 }
 
-/** @desc 查询项目配置详情 */
+/** 详情 */
 export function getProjectConfig(id: string) {
   return http.get<ProjectConfigDetailResp>(`${BASE_URL}/${id}`)
 }
 
-/** @desc 新增项目配置 */
 export function addProjectConfig(data: any) {
   return http.post(`${BASE_URL}`, data)
 }
 
-/** @desc 修改项目配置 */
 export function updateProjectConfig(data: any, id: string) {
   return http.put(`${BASE_URL}/${id}`, data)
 }
 
-/** @desc 删除项目配置 */
 export function deleteProjectConfig(ids: string | Array<string>) {
   return http.del(`${BASE_URL}/${ids}`)
 }
 
-/** @desc 导出项目配置 */
 export function exportProjectConfig(query: ProjectConfigQuery) {
   return http.download(`${BASE_URL}/export`, query)
 }

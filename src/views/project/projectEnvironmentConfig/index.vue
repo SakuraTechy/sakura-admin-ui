@@ -102,7 +102,7 @@ import { useDict } from '@/hooks/app'
 import { isMobile } from '@/utils'
 import has from '@/utils/has'
 import type { LabelValueState } from '@/types/global'
-import { listProjectConfig } from '@/apis/project/projectConfig'
+import { getProjectConfigList } from '@/apis/project/projectConfig'
 import { GiCellKeyValue, GiCellPassword, GiCellTags, GiCellVersion } from '@/components/GiCell'
 
 defineOptions({ name: 'ProjectEnvironmentConfig' })
@@ -148,7 +148,7 @@ const columns: TableInstance['columns'] = [
     title: '版本配置',
     dataIndex: 'versionConfig',
     slotName: 'versionConfig',
-    width: 120,
+    width: 130,
     align: 'center',
     render: ({ record }) => {
       const versionData = Array.isArray(record.versionConfig)
@@ -250,8 +250,8 @@ const projectList = ref<LabelValueState[]>([])
 
 const getProjectConfig = async () => {
   try {
-    const res = await listProjectConfig()
-    projectList.value = res.data.list.map((item) => ({
+    const res = await getProjectConfigList()
+    projectList.value = (res.data || []).map((item) => ({
       label: item.name,
       value: item.id,
     }))

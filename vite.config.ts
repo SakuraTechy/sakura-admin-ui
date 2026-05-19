@@ -29,6 +29,10 @@ export default defineConfig(({ command, mode }) => {
       include: ['vue-draggable-plus'],
     },
     server: {
+      // 开发端口由 .env.development 的 VITE_DEV_PORT 指定；未设 strictPort，占用时 Vite 自动换端口
+      port: Number.parseInt(env.VITE_DEV_PORT || '5173', 10),
+       // 是否严格检查端口是否被占用，默认false，占用时Vite 自动换端口
+      strictPort: false,
       // 服务启动时是否自动打开浏览器
       open: true,
       // 本地跨域代理 -> 代理到服务器的接口地址

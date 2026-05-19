@@ -56,7 +56,7 @@
               <icon-down />
             </template>
             <template #content>
-              <a-doption v-for="item in debug_type" :key="item.value">{{ item.label }}</a-doption>
+              <a-doption v-for="item in debug_type" :key="item.value" :value="item.value">{{ item.label }}</a-doption>
             </template>
           </a-dropdown-button>
         </div>
@@ -110,6 +110,7 @@
       <a-button v-if="!uiStore.activeId" type="secondary" @click="handleOk">保存并继续创建</a-button>
       <a-button type="primary" @click="handleSubmit">保存</a-button>
     </a-grid>
+    <ExecuteSceneModal ref="executeSceneModalRef" @success="getSceneInfo" />
   </GiPageLayout>
 </template>
 
@@ -121,6 +122,7 @@ import { Message } from '@arco-design/web-vue'
 import { string } from 'sql-formatter/dist/cjs/lexer/regexFactory'
 
 import AutomationUiSceneAddCase from './AutomationUiSceneAddCase.vue'
+import ExecuteSceneModal from './ExecuteSceneModal.vue'
 // import { AiEditor } from '@/components/GiEditor/AiEditor.vue'
 // import QuillEditor from '@/components/GiEditor/QuillEditor.vue'
 
@@ -130,6 +132,7 @@ import type { ProjectModuleConfigResp } from '@/apis/project/projectModuleConfig
 import mittBus from '@/utils/mitt'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
+import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
 import { type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { findNodePath } from '@/utils/sakura'
 
@@ -153,7 +156,7 @@ const [form, resetForm] = useResetReactive({
   description: '',
   tags: [],
   level: 'P0',
-  exeStatus: '10',
+  executeStatus: '10',
   status: 1,
 })
 
@@ -276,12 +279,12 @@ const columns = computed<ColumnItem[]>(() => [
   },
   {
     label: '执行状态',
-    field: 'exeStatus',
+    field: 'executeStatus',
     span: 23,
     type: 'select',
     required: true,
     props: {
-      options: status_type.value.filter((item) => ['10', '11', '12'].includes(item.value)),
+      options: filterSceneStatusOptions(status_type.value),
     },
   },
   {
@@ -321,8 +324,100 @@ const columns = computed<ColumnItem[]>(() => [
   },
 ])
 
-const handleSelect = (value: string) => {
-  debugText.value = value
+const executeSceneModalRef = ref()
+
+const normalizeRecordList = (record: unknown) => {
+  if (Array.isArray(record))
+    return record
+  if (typeof record === 'string' && record) {
+    try {
+      const parsed = JSON.parse(record)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+const getLatestDebugRecord = () => {
+  const records = normalizeRecordList((form as any).debugRecord)
+  return records[0] || {}
+}
+
+const openUrl = (url: string | undefined, emptyMessage: string) => {
+  if (!url) {
+    Message.warning(emptyMessage)
+    return
+  }
+  window.open(url)
+}
+
+const openExecuteModal = async () => {
+  if (!uiStore.activeId) {
+    Message.warning('请先保存基础信息，再执行调试')
+    activeKey.value = '1'
+    return
+  }
+  const { data } = await getAutomationUiScene(uiStore.activeId)
+  executeSceneModalRef.value?.onOpen([data])
+}
+
+const openDebugLog = async () => {
+  if (!uiStore.activeId) {
+    Message.warning('请先保存基础信息')
+    return
+  }
+  const { data } = await getAutomationUiScene(uiStore.activeId)
+  const record = normalizeRecordList(data.debugRecord)[0] || data
+  openUrl(record.consoleUrl || data.consoleUrl, '获取运行日志失败，请先执行场景')
+}
+
+const openDebugReport = async () => {
+  if (!uiStore.activeId) {
+    Message.warning('请先保存基础信息')
+    return
+  }
+  const { data } = await getAutomationUiScene(uiStore.activeId)
+  const record = normalizeRecordList(data.debugRecord)[0] || data
+  openUrl(record.testReportUrl || data.testReportUrl, '获取测试报告失败，请先执行场景')
+}
+
+const openDebugVideo = async () => {
+  if (!uiStore.activeId) {
+    Message.warning('请先保存基础信息')
+    return
+  }
+  const { data } = await getAutomationUiScene(uiStore.activeId)
+  const record = normalizeRecordList(data.debugRecord)[0] || data
+  const reportUrl = record.testReportUrl || data.testReportUrl
+  const videoUrl = reportUrl?.includes('/index.html')
+    ? reportUrl.replace('/index.html', `/video/${data.sceneId}.mp4`)
+    : reportUrl
+      ? `${reportUrl.replace(/\/$/, '')}/video/${data.sceneId}.mp4`
+      : ''
+  openUrl(videoUrl, '获取测试回放失败，请先执行场景')
+}
+
+const handleSelect = async (value: string) => {
+  const selected = debug_type.value.find(item => item.value === value || item.label === value)
+  const label = selected?.label || value
+  debugText.value = label
+  if (label === '本地调试' || label === '远程调试') {
+    await openExecuteModal()
+    return
+  }
+  if (label === '查看日志') {
+    await openDebugLog()
+    return
+  }
+  if (label === '查看报告') {
+    await openDebugReport()
+    return
+  }
+  if (label === '查看回放') {
+    await openDebugVideo()
+  }
 }
 
 const handleCancel = () => {
@@ -396,6 +491,7 @@ const stepList = ref([])
 const getSceneInfo = async (data1?: any) => {
   const { data } = await getAutomationUiScene(uiStore.activeId)
   Object.assign(form, data)
+  form.executeStatus = resolveSceneStatusValue(data.executeStatus, status_type.value) ?? '10'
   // 先清空数组，再添加新元素
   caseList.value.splice(0)
   Object.assign(caseList.value, data.caseList ?? [])

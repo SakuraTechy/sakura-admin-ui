@@ -115,7 +115,7 @@ import { isMobile } from '@/utils'
 import has from '@/utils/has'
 import GiCellTags from '@/components/GiCell/GiCellTags.vue'
 
-import { type ProjectConfigPageQuery, listProjectConfig } from '@/apis/project/projectConfig'
+import { getProjectConfigList } from '@/apis/project/projectConfig'
 import type { LabelValueState } from '@/types/global'
 
 defineOptions({ name: 'ProjectVersionConfig' })
@@ -157,7 +157,7 @@ const columns: TableInstance['columns'] = [
       )
     },
   },
-  { title: '版本名称', dataIndex: 'name', slotName: 'name', width: 120, ellipsis: true, tooltip: true },
+  { title: '版本名称', dataIndex: 'name', slotName: 'name', width: 130, ellipsis: true, tooltip: true },
   { title: '版本描述', dataIndex: 'description', slotName: 'description', width: 200, ellipsis: true, tooltip: true },
   { title: '版本类型', dataIndex: 'type', slotName: 'type', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 80, ellipsis: true, tooltip: true, align: 'center' },
@@ -182,8 +182,8 @@ const projectList = ref<LabelValueState[]>([])
 
 const getProjectConfig = async () => {
   try {
-    const res = await listProjectConfig()
-    projectList.value = res.data.list.map((item) => ({
+    const res = await getProjectConfigList()
+    projectList.value = (res.data || []).map((item) => ({
       label: item.name,
       value: item.id,
     }))

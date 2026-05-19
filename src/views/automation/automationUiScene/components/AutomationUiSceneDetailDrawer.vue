@@ -23,10 +23,19 @@
             <a-descriptions-item label="场景状态">
               <GiCellTag :value="dataDetail?.status" :dict="status_type" />
             </a-descriptions-item>
-            <a-descriptions-item label="执行状态">{{ dataDetail?.executeStatus || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="执行结果">{{ dataDetail?.executeResult || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="执行状态">
+              <GiCellTag v-if="executeStatusValue" :value="executeStatusValue" :dict="status_type" />
+              <span v-else>-</span>
+            </a-descriptions-item>
+            <a-descriptions-item label="执行结果">
+              <GiCellTag v-if="executeResultValue" :value="executeResultValue" :dict="status_type" />
+              <span v-else>-</span>
+            </a-descriptions-item>
             <a-descriptions-item label="通过率">{{ dataDetail?.passRate || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="最新结果">{{ dataDetail?.lastResult || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="最新结果">
+              <GiCellTag v-if="lastResultValue" :value="lastResultValue" :dict="status_type" />
+              <span v-else>-</span>
+            </a-descriptions-item>
             <a-descriptions-item label="关联测试计划">{{ formatList(dataDetail?.testPlanId) }}</a-descriptions-item>
             <a-descriptions-item label="所属测试报告 ID">{{ dataDetail?.reportId || '-' }}</a-descriptions-item>
             <a-descriptions-item label="控制台日志">
@@ -85,8 +94,13 @@ import { useWindowSize } from '@vueuse/core'
 import { useRouter } from 'vue-router'
 import { type AutomationUiSceneDetailResp, getAutomationUiScene as getDetail } from '@/apis/automation/automationUiScene'
 import { useDict } from '@/hooks/app'
+import { resolveSceneResultValue, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
 
 const { status_type } = useDict('status_type')
+
+const executeStatusValue = computed(() => resolveSceneStatusValue(dataDetail.value?.executeStatus, status_type.value))
+const executeResultValue = computed(() => resolveSceneResultValue(dataDetail.value?.executeResult, status_type.value))
+const lastResultValue = computed(() => resolveSceneResultValue(dataDetail.value?.lastResult, status_type.value))
 const { width } = useWindowSize()
 const router = useRouter()
 
