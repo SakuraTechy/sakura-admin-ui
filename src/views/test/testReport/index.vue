@@ -1,249 +1,192 @@
 <template>
-  <div class="gi_table_page">
-    <GiTable
-      v-model:selectedKeys="selectedKeys"
-      title="测试报告"
-      row-key="id"
-      :data="dataList"
-      :columns="columns"
-      :loading="loading"
-      :pagination="pagination"
-      :row-selection="{ type: 'checkbox', showCheckedAll: true }"
-      :show-selection-alert="true"
-      :scroll="{ x: true, y: '100%', minWidth: 1500 }"
-      @refresh="search"
-      @select="select"
-      @select-all="selectAll"
+  <div class="gi_table_page test-report-page">
+    <a-tabs
+      v-model:active-key="activeTab"
+      type="card-gutter"
+      size="medium"
+      class="test-report-tabs"
+      :class="{ 'test-report-tabs--detail': isDetailTabActive }"
+      editable
+      :show-add-button="false"
+      destroy-on-hide
+      @delete="onTabDelete"
     >
-      <template #toolbar-left>
-        <a-button v-if="queryForm.testPlanId" @click="goBackToPlan">
-          <template #icon><icon-left /></template>
-          返回计划
-        </a-button>
-        <a-input-search v-model="queryForm.name" placeholder="报告名称" allow-clear @search="search" />
-        <a-input-search v-model="queryForm.projectId" placeholder="项目 ID" allow-clear @search="search" />
-        <a-input-search v-model="queryForm.testPlanId" placeholder="计划 ID" allow-clear @search="search" />
-        <a-select
-          v-model="queryForm.status"
-          :options="statusOptions"
-          placeholder="报告状态"
-          allow-clear
-          style="width: 160px"
-          @change="search"
-        />
-        <a-button @click="reset">
-          <template #icon><icon-refresh /></template>
-          重置
-        </a-button>
-      </template>
-      <template #toolbar-right>
-        <a-button type="primary" @click="openForm()">
-          <template #icon><icon-plus /></template>
-          新增
-        </a-button>
-        <a-button status="danger" :disabled="!selectedKeys.length" @click="onDelete()">
-          <template #icon><icon-delete /></template>
-          删除
-        </a-button>
-        <a-button @click="onExport">
-          <template #icon><icon-download /></template>
-          导出
-        </a-button>
-      </template>
-      <template #status="{ record }">
-        <GiCellTag :value="record.status" :dict="statusOptions" />
-      </template>
-      <template #link="{ record, column }">
-        <a-link v-if="record[column.dataIndex]" :href="record[column.dataIndex]" target="_blank">
-          打开
-        </a-link>
-        <span v-else>-</span>
-      </template>
-      <template #action="{ record }">
-        <a-space>
-          <a-link @click="openDetail(record)">详情</a-link>
-          <a-link @click="openForm(record)">修改</a-link>
-          <a-link status="danger" @click="onDelete(record)">删除</a-link>
-        </a-space>
-      </template>
-    </GiTable>
+      <a-tab-pane key="report-list" title="报告列表" :closable="false">
+        <GiTable
+          v-model:selectedKeys="selectedKeys"
+          row-key="id"
+          title=""
+          :data="dataList"
+          :columns="columns"
+          :loading="loading"
+          :pagination="pagination"
+          :row-selection="{ type: 'checkbox', showCheckedAll: true }"
+          :show-selection-alert="true"
+          :scroll="{ x: 1680, y: '100%' }"
+          @refresh="search"
+          @select="select"
+          @select-all="selectAll"
+        >
+          <template #top>
+            <div class="report-query-top-slot">
+              <GiForm
+                v-model="queryForm"
+                :columns="queryFormColumns"
+                size="medium"
+                search
+                :search-card="true"
+                :search-columns-per-row="3"
+                :search-control-min-width="200"
+                :search-label-width="70"
+                search-btn-text="查询"
+                :search-on-change="true"
+                :grid-props="planQueryGridProps"
+                hide-fold-btn
+                class="query-form report-query-form"
+                @search="search"
+                @reset="reset"
+              />
+            </div>
+          </template>
+
+          <template #toolbar-left>
+            <a-button v-if="route.query.testPlanId" @click="goBackToPlan">
+              <template #icon><icon-left /></template>
+              返回计划
+            </a-button>
+          </template>
+
+          <template #toolbar-right>
+            <a-button @click="onExport">
+              <template #icon><icon-download /></template>
+              批量导出
+            </a-button>
+            <a-button status="danger" :disabled="!selectedKeys.length" @click="onDelete()">
+              <template #icon><icon-delete /></template>
+              批量删除
+            </a-button>
+          </template>
+          <template #triggerMode="{ record }">
+            {{ getDictLabel(triggerOptions, record.triggerMode) }}
+          </template>
+          <template #executeMode="{ record }">
+            {{ getDictLabel(executeOptions, record.executeMode) }}
+          </template>
+          <template #status="{ record }">
+            <GiCellTag v-if="record.status" :value="record.status" :dict="test_report_status" />
+            <span v-else>-</span>
+          </template>
+          <template #action="{ record }">
+            <a-space>
+              <a-link @click="openForm(record)">修改</a-link>
+              <a-link status="danger" @click="onDelete(record)">删除</a-link>
+              <a-dropdown trigger="click">
+                <a-link class="more-link">
+                  详情
+                  <icon-down class="more-link__caret" />
+                </a-link>
+                <template #content>
+                  <a-doption @click="openFuncDetail(record)">功能测试报告</a-doption>
+                  <a-doption @click="openUiDetail(record)">UI自动化测试报告</a-doption>
+                </template>
+              </a-dropdown>
+            </a-space>
+          </template>
+        </GiTable>
+      </a-tab-pane>
+
+      <a-tab-pane
+        v-for="tab in detailTabs"
+        :key="tab.key"
+        :title="tab.title"
+        :closable="true"
+      >
+          <TestReportFuncDetail
+            v-if="tab.type === 'func'"
+            :detail-data="tab.detailData"
+          />
+          <TestReportUiDetail
+            v-else-if="tab.type === 'ui'"
+            :detail-data="tab.detailData"
+          />
+      </a-tab-pane>
+    </a-tabs>
 
     <a-modal
       v-model:visible="formVisible"
       :title="formState.id ? '修改测试报告' : '新增测试报告'"
       width="720px"
-      @ok="submitForm"
+      :body-style="{ padding: '20px' }"
+      @before-ok="submitForm"
     >
-      <a-form :model="formState" layout="vertical">
+      <a-form
+        ref="formRef"
+        :model="formState"
+        layout="horizontal"
+        auto-label-width
+        scroll-to-first-error
+        :label-col-props="{ flex: '100px' }"
+        :wrapper-col-props="{ flex: '1' }"
+      >
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="项目 ID">
-              <a-input-number v-model="formState.projectId" style="width: 100%" />
+            <a-form-item field="projectId" label="项目 ID" required>
+              <a-input v-model="formState.projectId" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="项目名称">
-              <a-input v-model="formState.projectName" />
+            <a-form-item field="projectName" label="项目名称" required>
+              <a-input v-model="formState.projectName" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="计划 ID">
-              <a-input-number v-model="formState.testPlanId" style="width: 100%" />
+            <a-form-item field="testPlanId" label="计划 ID">
+              <a-input v-model="formState.testPlanId" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="计划名称">
-              <a-input v-model="formState.testPlanName" />
+            <a-form-item field="testPlanName" label="计划名称">
+              <a-input v-model="formState.testPlanName" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="报告名称">
-              <a-input v-model="formState.name" />
+            <a-form-item field="name" label="报告名称" required>
+              <a-input v-model="formState.name" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="版本名称">
-              <a-input v-model="formState.versionName" />
+            <a-form-item field="versionName" label="版本名称">
+              <a-input v-model="formState.versionName" placeholder="请输入" allow-clear />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="触发方式">
-              <a-select v-model="formState.triggerMode" :options="triggerOptions" />
+            <a-form-item field="triggerMode" label="触发方式" required>
+              <a-select v-model="formState.triggerMode" :options="triggerOptions" placeholder="请选择" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="执行方式">
-              <a-select v-model="formState.executeMode" :options="executeOptions" />
+            <a-form-item field="executeMode" label="执行方式" required>
+              <a-select v-model="formState.executeMode" :options="executeOptions" placeholder="请选择" />
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="状态">
-              <a-select v-model="formState.status" :options="statusOptions" />
+            <a-form-item field="status" label="状态" required>
+              <a-select v-model="formState.status" :options="statusOptions" placeholder="请选择" />
             </a-form-item>
           </a-col>
           <a-col :span="24">
-            <a-form-item label="描述">
-              <a-textarea v-model="formState.description" :auto-size="{ minRows: 3, maxRows: 5 }" />
+            <a-form-item field="description" label="描述">
+              <a-textarea v-model="formState.description" :auto-size="{ minRows: 3, maxRows: 6 }" allow-clear />
             </a-form-item>
           </a-col>
         </a-row>
       </a-form>
     </a-modal>
-
-    <a-drawer v-model:visible="detailVisible" title="测试报告详情" :width="960" :footer="false">
-      <a-tabs>
-        <a-tab-pane key="basic" title="基础信息">
-          <a-descriptions :column="2" bordered>
-            <a-descriptions-item label="报告 ID">{{ detailData?.id || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="报告名称">{{ detailData?.name || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="项目名称">{{ detailData?.projectName || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="版本名称">{{ detailData?.versionName || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="测试计划">{{ detailData?.testPlanName || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="构建号">{{ detailData?.buildNumber || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="触发方式">{{ detailData?.triggerMode || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="执行方式">{{ detailData?.executeMode || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="状态">{{ detailData?.status || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="耗时(ms)">{{ detailData?.runTime ?? '-' }}</a-descriptions-item>
-            <a-descriptions-item label="控制台日志">
-              <a-link v-if="detailData?.consoleUrl || uiStatistic.consoleUrl" :href="detailData?.consoleUrl || uiStatistic.consoleUrl" target="_blank">
-                打开日志
-              </a-link>
-              <span v-else>-</span>
-            </a-descriptions-item>
-            <a-descriptions-item label="测试报告">
-              <a-link v-if="detailData?.reportUrl || uiStatistic.testReportUrl" :href="detailData?.reportUrl || uiStatistic.testReportUrl" target="_blank">
-                打开报告
-              </a-link>
-              <span v-else>-</span>
-            </a-descriptions-item>
-            <a-descriptions-item label="视频回放" :span="2">
-              <a-link v-if="detailData?.videoUrl || uiStatistic.videoUrl" :href="detailData?.videoUrl || uiStatistic.videoUrl" target="_blank">
-                打开视频
-              </a-link>
-              <span v-else>-</span>
-            </a-descriptions-item>
-            <a-descriptions-item label="描述" :span="2">{{ detailData?.description || '-' }}</a-descriptions-item>
-          </a-descriptions>
-        </a-tab-pane>
-        <a-tab-pane key="stat" title="统计分析">
-          <a-row :gutter="[16, 16]">
-            <a-col :span="8">
-              <a-card><a-statistic title="场景总数" :value="toNumber(uiStatistic.sceneTotal)" /></a-card>
-            </a-col>
-            <a-col :span="8">
-              <a-card><a-statistic title="场景通过" :value="toNumber(uiStatistic.scenePass)" /></a-card>
-            </a-col>
-            <a-col :span="8">
-              <a-card><a-statistic title="场景通过率" :value="uiStatistic.scenePassRate || '0%'" /></a-card>
-            </a-col>
-            <a-col :span="24">
-              <a-descriptions :column="3" bordered size="small">
-                <a-descriptions-item label="执行人">{{ uiStatistic.executeName || '-' }}</a-descriptions-item>
-                <a-descriptions-item label="执行状态">{{ uiStatistic.executeStatus || '-' }}</a-descriptions-item>
-                <a-descriptions-item label="执行结果">{{ uiStatistic.executeResult || '-' }}</a-descriptions-item>
-                <a-descriptions-item label="开始时间">{{ uiStatistic.durationStartTime || '-' }}</a-descriptions-item>
-                <a-descriptions-item label="结束时间">{{ uiStatistic.durationEndTime || '-' }}</a-descriptions-item>
-                <a-descriptions-item label="持续时长(ms)">{{ uiStatistic.duration || '-' }}</a-descriptions-item>
-              </a-descriptions>
-            </a-col>
-            <a-col :span="12">
-              <a-card title="场景统计">
-                <a-descriptions :column="2" bordered size="small">
-                  <a-descriptions-item label="总数">{{ toNumber(uiStatistic.sceneTotal) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过">{{ toNumber(uiStatistic.scenePass) }}</a-descriptions-item>
-                  <a-descriptions-item label="失败">{{ toNumber(uiStatistic.sceneFail) }}</a-descriptions-item>
-                  <a-descriptions-item label="跳过">{{ toNumber(uiStatistic.sceneSkip) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过率" :span="2">{{ uiStatistic.scenePassRate || '0%' }}</a-descriptions-item>
-                </a-descriptions>
-              </a-card>
-            </a-col>
-            <a-col :span="12">
-              <a-card title="用例统计">
-                <a-descriptions :column="2" bordered size="small">
-                  <a-descriptions-item label="总数">{{ toNumber(uiStatistic.caseTotal) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过">{{ toNumber(uiStatistic.casePass) }}</a-descriptions-item>
-                  <a-descriptions-item label="失败">{{ toNumber(uiStatistic.caseFail) }}</a-descriptions-item>
-                  <a-descriptions-item label="跳过">{{ toNumber(uiStatistic.caseSkip) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过率" :span="2">{{ uiStatistic.casePassRate || '0%' }}</a-descriptions-item>
-                </a-descriptions>
-              </a-card>
-            </a-col>
-            <a-col :span="24">
-              <a-card title="步骤统计">
-                <a-descriptions :column="3" bordered size="small">
-                  <a-descriptions-item label="总数">{{ toNumber(uiStatistic.stepTotal) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过">{{ toNumber(uiStatistic.stepPass) }}</a-descriptions-item>
-                  <a-descriptions-item label="失败">{{ toNumber(uiStatistic.stepFail) }}</a-descriptions-item>
-                  <a-descriptions-item label="跳过">{{ toNumber(uiStatistic.stepSkip) }}</a-descriptions-item>
-                  <a-descriptions-item label="通过率" :span="2">{{ uiStatistic.stepPassRate || '0%' }}</a-descriptions-item>
-                </a-descriptions>
-              </a-card>
-            </a-col>
-            <a-col :span="24">
-              <a-card title="原始统计 JSON" :bordered="false">
-                <pre class="json-block">{{ formatJson(detailData?.statisticAnalysis) }}</pre>
-              </a-card>
-            </a-col>
-          </a-row>
-        </a-tab-pane>
-        <a-tab-pane key="runtime" title="运行配置">
-          <a-card :bordered="false" title="项目配置">
-            <pre class="json-block">{{ formatJson(detailData?.projectConfig) }}</pre>
-          </a-card>
-          <a-card :bordered="false" title="自动化配置" class="mt-4">
-            <pre class="json-block">{{ formatJson(detailData?.automationConfig) }}</pre>
-          </a-card>
-          <a-card :bordered="false" title="运行环境" class="mt-4">
-            <pre class="json-block">{{ formatJson(detailData?.runtimeEnvironment) }}</pre>
-          </a-card>
-        </a-tab-pane>
-      </a-tabs>
-    </a-drawer>
   </div>
 </template>
 
-<script setup lang="ts">
-import { Message, Modal, type TableInstance } from '@arco-design/web-vue'
+<script setup lang="tsx">
+import { Message, Modal, type FormInstance, type TableInstance } from '@arco-design/web-vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   addTestReport,
@@ -254,15 +197,24 @@ import {
   type TestReportDetailResp,
   type TestReportQuery,
   type TestReportResp,
-  type TestReportUiStatistic,
   updateTestReport,
 } from '@/apis/test/testReport'
+import { getProjectConfigList, type ProjectConfigResp } from '@/apis/project/projectConfig'
+import { listTestPlan, type TestPlanResp } from '@/apis/test/testPlan'
+import TestReportFuncDetail from './components/TestReportFuncDetail.vue'
+import TestReportUiDetail from './components/TestReportUiDetail.vue'
 import { useTable } from '@/hooks'
+import type { ColumnItem } from '@/components/GiForm'
+import { toIdString } from '@/utils/id'
+import { formatDuration } from '@/utils/sakura.js'
+import { useDict } from '@/hooks/app/useDict.js'
 
 defineOptions({ name: 'TestTestReport' })
 
 const route = useRoute()
 const router = useRouter()
+
+const { test_report_status } = useDict('test_report_status')
 
 const statusOptions = [
   { label: '执行中', value: 'RUNNING' },
@@ -278,11 +230,18 @@ const executeOptions = [
   { label: '计划执行', value: 'PLAN' },
 ]
 
+const getDictLabel = (options: { label: string; value: string }[], value?: string) => {
+  if (!value) return '-'
+  return options.find(o => o.value === value)?.label || value
+}
+
 const queryForm = reactive<TestReportQuery>({
   name: undefined,
   projectId: undefined,
   testPlanId: undefined,
   status: undefined,
+  triggerMode: undefined,
+  executeMode: undefined,
   sort: ['createTime,desc'],
 })
 
@@ -296,43 +255,202 @@ const {
   selectAll,
 } = useTable((page) => listTestReport({ ...queryForm, ...page }), { immediate: true })
 
+const projectConfigList = ref<ProjectConfigResp[]>([])
+const testPlanList = ref<TestPlanResp[]>([])
+
+const loadProjectConfigOptions = async () => {
+  try {
+    const { data } = await getProjectConfigList()
+    projectConfigList.value = Array.isArray(data) ? data : []
+  } catch {
+    projectConfigList.value = []
+  }
+}
+
+const loadTestPlanOptions = async () => {
+  try {
+    const { data } = await listTestPlan({ sort: ['createTime,desc'] })
+    testPlanList.value = data?.list || []
+  } catch {
+    testPlanList.value = []
+  }
+}
+
+onMounted(() => {
+  void loadProjectConfigOptions()
+  void loadTestPlanOptions()
+})
+
+const projectSelectOptions = computed(() => {
+  return projectConfigList.value.map((item) => ({
+    label: item.name || String(item.id),
+    value: item.id,
+  })).sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
+
+const testPlanSelectOptions = computed(() => {
+  return testPlanList.value.map((item) => ({
+    label: item.name || String(item.id),
+    value: item.id,
+  })).sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))
+})
+
+const planQueryGridProps = { cols: 24, colGap: 16, rowGap: 0 }
+const planQueryFieldSpan = { xs: 24, sm: 8, xxl: 8 }
+
+const queryFormColumns = computed<ColumnItem[]>(() => [
+  {
+    type: 'select',
+    label: '所属项目',
+    field: 'projectId',
+    span: planQueryFieldSpan,
+    props: {
+      options: projectSelectOptions.value,
+      placeholder: '请选择',
+      allowClear: true,
+      allowSearch: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '所属计划',
+    field: 'testPlanId',
+    span: planQueryFieldSpan,
+    props: {
+      options: testPlanSelectOptions.value,
+      placeholder: '请选择',
+      allowClear: true,
+      allowSearch: true,
+    },
+  },
+  {
+    type: 'input',
+    label: '报告名称',
+    field: 'name',
+    span: planQueryFieldSpan,
+    props: {
+      placeholder: '请输入报告名称',
+      allowClear: true,
+      showWordLimit: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '触发方式',
+    field: 'triggerMode',
+    span: planQueryFieldSpan,
+    props: {
+      options: triggerOptions,
+      placeholder: '请选择',
+      allowClear: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '执行方式',
+    field: 'executeMode',
+    span: planQueryFieldSpan,
+    props: {
+      options: executeOptions,
+      placeholder: '请选择',
+      allowClear: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '报告状态',
+    field: 'status',
+    span: planQueryFieldSpan,
+    props: {
+      options: statusOptions,
+      placeholder: '请选择',
+      allowClear: true,
+    },
+  },
+])
+
 const columns: TableInstance['columns'] = [
-  { title: 'ID', dataIndex: 'id', width: 170 },
-  { title: '报告名称', dataIndex: 'name', width: 220, ellipsis: true, tooltip: true },
-  { title: '项目名称', dataIndex: 'projectName', width: 160 },
-  { title: '测试计划', dataIndex: 'testPlanName', width: 180, ellipsis: true, tooltip: true },
-  { title: '触发方式', dataIndex: 'triggerMode', width: 120 },
-  { title: '执行方式', dataIndex: 'executeMode', width: 120 },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '构建号', dataIndex: 'buildNumber', width: 120 },
-  { title: '日志', dataIndex: 'consoleUrl', slotName: 'link', width: 100 },
-  { title: '报告', dataIndex: 'reportUrl', slotName: 'link', width: 100 },
-  { title: '视频', dataIndex: 'videoUrl', slotName: 'link', width: 100 },
-  { title: '创建时间', dataIndex: 'createTime', width: 180 },
-  { title: '操作', dataIndex: 'action', slotName: 'action', width: 180, align: 'center', fixed: 'right' },
+  { title: '所属项目', dataIndex: 'projectName', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '所属计划', dataIndex: 'testPlanName', width: 240, ellipsis: true, tooltip: true },
+  { title: '报告名称', dataIndex: 'name', width: 340, ellipsis: true, tooltip: true },
+  { title: '触发方式', dataIndex: 'triggerMode', slotName: 'triggerMode', width: 90, align: 'center' },
+  { title: '执行方式', dataIndex: 'executeMode', slotName: 'executeMode', width: 90, align: 'center' },
+  {
+    title: '运行耗时',
+    dataIndex: 'runTime',
+    width: 90,
+    align: 'center',
+    render: ({ record }) => formatDuration(record.runTime ?? '-'),
+  },
+  { title: '报告状态', dataIndex: 'status', slotName: 'status', width: 90, align: 'center' },
+  { title: '创建人', dataIndex: 'createUserString', width: 110, align: 'center' },
+  { title: '创建时间', dataIndex: 'createTime', width: 180, render: ({ record }) => formatDateTime(record.createTime) },
+  { title: '更新时间', dataIndex: 'updateTime', width: 180, render: ({ record }) => formatDateTime(record.updateTime) },
+  { title: '操作', dataIndex: 'action', slotName: 'action', width: 190, align: 'center', fixed: 'right' },
 ]
 
+const activeTab = ref('report-list')
+const isDetailTabActive = computed(() => activeTab.value !== 'report-list')
+
+interface DetailTab {
+  key: string
+  title: string
+  type: 'func' | 'ui'
+  reportId: string
+  detailData?: TestReportDetailResp
+}
+
+const detailTabs = ref<DetailTab[]>([])
 const formVisible = ref(false)
 const detailVisible = ref(false)
 const detailData = ref<TestReportDetailResp>()
-const uiStatistic = computed<TestReportUiStatistic>(() => {
-  const statistic = detailData.value?.statisticAnalysis
-  if (!statistic) return {}
-  if (statistic.ui && typeof statistic.ui === 'object') return statistic.ui as TestReportUiStatistic
-  if (Array.isArray(statistic.uiList) && statistic.uiList[0] && typeof statistic.uiList[0] === 'object') {
-    return statistic.uiList[0] as TestReportUiStatistic
+const formRef = ref<FormInstance>()
+
+const openFuncDetail = async (record: TestReportResp) => {
+  const key = `func-${record.id}`
+  let tab = detailTabs.value.find(item => item.key === key)
+  if (!tab) {
+    const { data } = await getTestReport(record.id)
+    tab = { key, title: `${record.name}`, type: 'func', reportId: record.id, detailData: data }
+    detailTabs.value.push(tab)
+  } else {
+    const { data } = await getTestReport(record.id)
+    tab.detailData = data
   }
-  return {}
-})
+  activeTab.value = key
+}
+
+const openUiDetail = async (record: TestReportResp) => {
+  const key = `ui-${record.id}`
+  let tab = detailTabs.value.find(item => item.key === key)
+  if (!tab) {
+    const { data } = await getTestReport(record.id)
+    tab = { key, title: `${record.name}`, type: 'ui', reportId: record.id, detailData: data }
+    detailTabs.value.push(tab)
+  } else {
+    const { data } = await getTestReport(record.id)
+    tab.detailData = data
+  }
+  activeTab.value = key
+}
+
+const onTabDelete = (key: string) => {
+  closeTab(String(key))
+}
+
+const closeTab = (key: string) => {
+  detailTabs.value = detailTabs.value.filter(item => item.key !== key)
+  if (activeTab.value === key) activeTab.value = 'report-list'
+}
 
 const formState = reactive<any>({
   id: '',
   projectId: undefined,
   projectName: '',
-  versionName: '',
   testPlanId: undefined,
   testPlanName: '',
   name: '',
+  versionName: '',
   description: '',
   triggerMode: 'MANUAL',
   executeMode: 'PLAN',
@@ -347,20 +465,20 @@ const goBackToPlan = async () => {
   })
 }
 
-const reset = async () => {
+const reset = () => {
   queryForm.name = undefined
   queryForm.projectId = undefined
   queryForm.testPlanId = undefined
   queryForm.status = undefined
-  await router.replace({ path: '/test/testReport', query: {} })
+  queryForm.triggerMode = undefined
+  queryForm.executeMode = undefined
+  void router.replace({ path: '/test/testReport', query: {} })
   search()
 }
 
 const syncRouteQuery = async () => {
-  queryForm.testPlanId = route.query.testPlanId ? Number(route.query.testPlanId) : undefined
-  if (route.query.id) {
-    await openDetail({ id: String(route.query.id) } as TestReportResp)
-  }
+  const planId = toIdString(route.query.testPlanId as string | undefined)
+  queryForm.testPlanId = planId || undefined
 }
 
 watch(
@@ -369,17 +487,16 @@ watch(
     syncRouteQuery()
     search()
   },
-  { immediate: true }
 )
 
 const openForm = (record?: TestReportResp) => {
   formState.id = record?.id || ''
-  formState.projectId = record?.projectId
+  formState.projectId = toIdString(record?.projectId) || undefined
   formState.projectName = record?.projectName || ''
-  formState.versionName = record?.versionName || ''
-  formState.testPlanId = record?.testPlanId
+  formState.testPlanId = toIdString(record?.testPlanId) || undefined
   formState.testPlanName = record?.testPlanName || ''
   formState.name = record?.name || ''
+  formState.versionName = record?.versionName || ''
   formState.description = record?.description || ''
   formState.triggerMode = record?.triggerMode || 'MANUAL'
   formState.executeMode = record?.executeMode || 'PLAN'
@@ -387,48 +504,34 @@ const openForm = (record?: TestReportResp) => {
   formVisible.value = true
 }
 
-const openDetail = async (record: TestReportResp) => {
-  const { data } = await getTestReport(record.id)
-  detailData.value = data
-  detailVisible.value = true
-  await router.replace({
-    path: '/test/testReport',
-    query: {
-      ...(queryForm.testPlanId ? { testPlanId: String(queryForm.testPlanId) } : {}),
-      id: record.id,
-    },
-  })
-}
-
-watch(detailVisible, async (visible) => {
-  if (!visible && route.query.id) {
-    await router.replace({
-      path: '/test/testReport',
-      query: {
-        ...(queryForm.testPlanId ? { testPlanId: String(queryForm.testPlanId) } : {}),
-      },
-    })
+const submitForm = async (): Promise<boolean> => {
+  if (await formRef.value?.validate()) {
+    Message.warning('请检查必填项')
+    return false
   }
-})
-
-const submitForm = async () => {
+  const projectId = toIdString(formState.projectId)
+  const testPlanId = toIdString(formState.testPlanId)
   const payload = {
-    projectId: Number(formState.projectId),
+    projectId,
     projectName: formState.projectName,
-    versionName: formState.versionName,
-    testPlanId: formState.testPlanId ? Number(formState.testPlanId) : undefined,
+    testPlanId: testPlanId || undefined,
     testPlanName: formState.testPlanName,
-    name: formState.name,
-    description: formState.description,
+    name: formState.name?.trim(),
+    versionName: formState.versionName,
+    description: formState.description?.trim(),
     triggerMode: formState.triggerMode,
     executeMode: formState.executeMode,
     status: formState.status,
   }
-  if (formState.id) await updateTestReport(payload, formState.id)
-  else await addTestReport(payload)
+  try {
+    if (formState.id) await updateTestReport(payload, formState.id)
+    else await addTestReport(payload)
+  } catch {
+    return false
+  }
   Message.success('保存成功')
-  formVisible.value = false
   search()
+  return true
 }
 
 const onDelete = (record?: TestReportResp) => {
@@ -437,7 +540,7 @@ const onDelete = (record?: TestReportResp) => {
     title: '确认删除',
     content: selectedKeys.value.length
       ? '确认删除选中的测试报告吗？'
-      : `确认删除测试报告“${record?.name || ''}”吗？`,
+      : `确认删除测试报告"${record?.name || ''}"吗？`,
     hideCancel: false,
     onOk: async () => {
       await deleteTestReport(ids)
@@ -451,27 +554,138 @@ const onExport = async () => {
   await exportTestReport(selectedKeys.value.length ? { ...queryForm, id: selectedKeys.value.join(',') } : queryForm)
 }
 
-const formatJson = (value: unknown) => {
-  if (!value) return '-'
-  try {
-    return JSON.stringify(value, null, 2)
-  } catch {
-    return String(value)
-  }
-}
-
-const toNumber = (value: unknown) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
+const formatDateTime = (value?: string | null) => {
+  if (value == null || value === '') return '-'
+  const s = String(value).trim()
+  const normalized = s.includes('T') ? s.replace('T', ' ') : s
+  return normalized.length > 19 ? normalized.slice(0, 19) : normalized
 }
 </script>
 
 <style scoped lang="scss">
-.json-block {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
+.test-report-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 0;
+  background: var(--color-bg-1);
+}
+
+.test-report-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin-top: 5px;
+  background: transparent;
+
+  :deep(.arco-tabs) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  :deep(.arco-tabs-nav) {
+    flex: none;
+    margin-bottom: 0;
+  }
+
+  :deep(.arco-tabs-nav-tab) {
+    padding: 0 2px;
+  }
+
+  :deep(.arco-tabs-content) {
+    box-sizing: border-box;
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    height: calc(100% - 42px);
+    /* min-height: 480px; */
+    height: 100%;
+    padding: 16px;
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-border-2);
+    border-top: 0;
+    border-radius: 0 4px 4px 4px;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 4%);
+  }
+
+  :deep(.arco-tabs-content-list) {
+    height: 100%;
+  }
+
+  :deep(.arco-tabs-pane) {
+    /* height: 100%; */
+    overflow: visible;
+  }
+
+  &--detail {
+    :deep(.arco-tabs-content) {
+      padding: 0 15px 15px 15px;
+      background: var(--color-bg-2);
+      box-shadow: none;
+    }
+  }
+}
+
+.detail-tab-pane {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100vh - 220px);
+}
+
+.report-query-top-slot {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.query-form {
+  :deep(.arco-form-item) {
+    margin-bottom: 0;
+  }
+
+  :deep(.arco-input-wrapper),
+  :deep(.arco-select-view-single),
+  :deep(.arco-picker) {
+    background: var(--color-bg-1);
+  }
+}
+
+.report-query-form {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+
+  :deep(.arco-form-item) {
+    margin-bottom: 0;
+  }
+
+  :deep(.arco-input-wrapper),
+  :deep(.arco-select-view-single),
+  :deep(.arco-picker) {
+    background: var(--color-bg-1);
+  }
+}
+
+.more-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.more-link__caret {
+  margin-left: 2px;
   font-size: 12px;
-  line-height: 1.6;
 }
 </style>

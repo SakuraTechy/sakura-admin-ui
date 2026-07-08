@@ -209,6 +209,8 @@ export interface ColumnItem<F = any> {
   required?: boolean // 是否必填
   rules?: A.FormItemInstance['$props']['rules'] // 表单校验规则
   hide?: ColumnItemHide<F> // 是否隐藏
+  /** 搜索区收起时是否折叠隐藏（需配合 GiForm 收起按钮） */
+  foldable?: boolean
   show?: ColumnItemShow<F> // 是否显示（优先级比hide高）
   disabled?: ColumnItemDisabled<F> // 是否禁用
   request?: ColumnItemRequest<F> // 接口请求api

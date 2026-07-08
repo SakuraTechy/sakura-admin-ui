@@ -129,7 +129,15 @@ export interface AutomationUiSceneQuery {
   createUser?: string
   updateUser?: string
   createTime?: Array<string>
+  /** 排除的场景主键 ID（如测试计划已关联场景） */
+  excludeIds?: Array<string | number>
   sort?: Array<string>
+  /** 测试计划ID */
+  testPlanId?: string
+  /** 构建号 */
+  buildNumber?: number
+  /** 执行结果类型: report-计划执行, debug-调试 */
+  executeResultType?: 'report' | 'debug'
 }
 export interface AutomationUiScenePageQuery extends AutomationUiSceneQuery, PageQuery {}
 

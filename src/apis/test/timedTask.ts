@@ -4,7 +4,7 @@ const BASE_URL = '/test/timedTask'
 
 export interface TestTimedTaskResp {
   id: string
-  testPlanId: number
+  testPlanId: string
   testPlanName: string
   scheduleJobId?: number
   type: string
@@ -13,8 +13,8 @@ export interface TestTimedTaskResp {
   cronExpression: string
   misfirePolicy: string
   allowConcurrent: number
-  projectEnvironmentId: number
-  automationEnvironmentId: number
+  projectEnvironmentId: string
+  automationEnvironmentId: string
   executeName?: string
   executeEmail?: string
   nextExecuteTime?: string
@@ -36,7 +36,7 @@ export interface TestTimedTaskLogResp {
 
 export interface TestTimedTaskQuery {
   id?: string
-  testPlanId?: number
+  testPlanId?: string
   name?: string
   type?: string
   status?: string

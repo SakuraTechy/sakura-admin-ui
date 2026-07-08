@@ -22,7 +22,22 @@
       @refresh="search"
     >
       <template #top>
-        <GiForm v-model="queryForm" search :columns="queryFormColumns" size="medium" @search="search" @reset="reset"></GiForm>
+        <GiForm
+          v-model="queryForm"
+          :columns="queryFormColumns"
+          size="medium"
+          search
+          :search-card="true"
+          :search-columns-per-row="3"
+          :search-control-min-width="200"
+          :search-label-width="60"
+          :grid-props="queryGridProps"
+          hide-fold-btn
+          :search-on-change="true"
+          search-btn-text="查询"
+          @search="search"
+          @reset="reset"
+        />
       </template>
       <template #toolbar-left>
         <a-button v-permission="['system:user:create']" type="primary" @click="onAdd">
@@ -101,7 +116,7 @@ import UserResetPwdModal from './UserResetPwdModal.vue'
 import UserUpdateRoleModal from './UserUpdateRoleModal.vue'
 import { type UserResp, deleteUser, exportUser, pageUser } from '@/apis/system/user'
 import type { TableInstanceColumns } from '@/components/GiTable/type'
-import { DisEnableStatusList } from '@/constant/common'
+import { DisEnableStatusList, GenderList } from '@/constant/common'
 import { useDownload, useResetReactive, useTable } from '@/hooks'
 import { isMobile } from '@/utils'
 import has from '@/utils/has'
@@ -112,21 +127,54 @@ defineOptions({ name: 'SystemUser' })
 const [queryForm, resetForm] = useResetReactive({
   sort: ['t1.id,desc'],
 })
+
+const queryGridProps = { cols: 24, colGap: 16, rowGap: 0 }
+const queryFieldSpan = { xs: 24, sm: 8, xxl: 8 }
+
 const queryFormColumns: ColumnItem[] = reactive([
   {
     type: 'input',
     label: '用户名',
     field: 'description',
-    span: { xs: 24, sm: 8, xxl: 8 },
+    span: queryFieldSpan,
     props: {
       placeholder: '用户名/昵称/描述',
+    },
+  },
+  {
+    type: 'input',
+    label: '手机号',
+    field: 'phone',
+    span: queryFieldSpan,
+    props: {
+      placeholder: '手机号',
+    },
+  },
+  {
+    type: 'input',
+    label: '邮箱',
+    field: 'email',
+    span: queryFieldSpan,
+    props: {
+      placeholder: '邮箱',
+    },
+  },
+  {
+    type: 'select',
+    label: '性别',
+    field: 'gender',
+    span: queryFieldSpan,
+    props: {
+      options: GenderList,
+      placeholder: '全部性别',
+      allowClear: true,
     },
   },
   {
     type: 'select',
     label: '状态',
     field: 'status',
-    span: { xs: 24, sm: 6, xxl: 8 },
+    span: queryFieldSpan,
     props: {
       options: DisEnableStatusList,
       placeholder: '全部状态',
@@ -136,7 +184,11 @@ const queryFormColumns: ColumnItem[] = reactive([
     type: 'range-picker',
     label: '创建时间',
     field: 'createTime',
-    span: { xs: 24, sm: 10, xxl: 8 },
+    span: queryFieldSpan,
+    props: {
+      showTime: true,
+      format: 'YYYY-MM-DD HH:mm:ss',
+    },
   },
 ])
 
@@ -158,22 +210,20 @@ const columns: TableInstanceColumns[] = [
     render: ({ rowIndex }) => h('span', {}, rowIndex + 1 + (pagination.current - 1) * pagination.pageSize),
     fixed: !isMobile() ? 'left' : undefined,
   },
+  { title: '用户名', dataIndex: 'username', slotName: 'username', minWidth: 140, ellipsis: true, tooltip: true, fixed: !isMobile() ? 'left' : undefined },
   {
     title: '昵称',
     dataIndex: 'nickname',
     slotName: 'nickname',
     minWidth: 140,
     ellipsis: true,
-    tooltip: true,
-    fixed: !isMobile() ? 'left' : undefined,
+    tooltip: true
   },
-  { title: '用户名', dataIndex: 'username', slotName: 'username', minWidth: 140, ellipsis: true, tooltip: true },
-  { title: '状态', dataIndex: 'status', slotName: 'status', align: 'center' },
+  { title: '手机号', dataIndex: 'phone', minWidth: 170, ellipsis: true, tooltip: true },
+  { title: '邮箱', dataIndex: 'email', minWidth: 170, ellipsis: true, tooltip: true },
   { title: '性别', dataIndex: 'gender', slotName: 'gender', align: 'center' },
   { title: '所属部门', dataIndex: 'deptName', minWidth: 180, ellipsis: true, tooltip: true },
   { title: '角色', dataIndex: 'roleNames', slotName: 'roleNames', minWidth: 165 },
-  { title: '手机号', dataIndex: 'phone', minWidth: 170, ellipsis: true, tooltip: true },
-  { title: '邮箱', dataIndex: 'email', minWidth: 170, ellipsis: true, tooltip: true },
   { title: '系统内置', dataIndex: 'isSystem', slotName: 'isSystem', width: 100, align: 'center', show: false },
   { title: '描述', dataIndex: 'description', minWidth: 130, ellipsis: true, tooltip: true },
   { title: '创建人', dataIndex: 'createUserString', width: 140, ellipsis: true, tooltip: true, show: false },
@@ -265,9 +315,5 @@ const onUpdateRole = (record: UserResp) => {
 .page_content {
   flex: 1;
   overflow: auto;
-}
-:deep(.arco-form){
-  flex-direction: row;
-  flex-wrap: nowrap;
 }
 </style>

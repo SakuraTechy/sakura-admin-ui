@@ -1,116 +1,175 @@
 <template>
-  <a-form ref="formRef" v-bind="formProps" :model="modelValue" :size="props.size ?? 'large'" :layout="props.layout ?? (props.search ? 'inline' : 'horizontal')">
-    <a-grid class="w-full" :col-gap="8" :row-gap="0" v-bind="props.gridProps">
-      <template v-for="(item, index) in columns" :key="item.field">
-        <a-grid-item
-          v-if="item.show !== undefined ? isShow(item, index) : !isHide(item, index)"
-          v-bind="item.gridItemProps || defaultGridItemProps"
-          :span="item.span || item.gridItemProps?.span || defaultGridItemProps?.span"
+  <div
+    class="gi-form-root"
+    :class="[attrs.class, { 'gi-form-search-card': showSearchCard }]"
+    :style="rootStyle"
+    v-bind="rootBindAttrs"
+  >
+  <a-form
+    ref="formRef"
+    v-bind="formProps"
+    class="gi-form"
+    :class="{
+      'gi-form--search': props.search,
+      'gi-form--search-rows': props.search && !!props.searchColumnsPerRow,
+    }"
+    :model="modelValue"
+    :size="props.size ?? 'large'"
+    :layout="resolvedLayout"
+  >
+    <!-- 搜索模式：左侧按行字段 + 右侧纵向操作栏（查询/重置/收起，对齐原筛选区） -->
+    <div
+      v-if="props.search && props.searchColumnsPerRow"
+      class="gi-form__search-rows-layout"
+      :style="searchRowsLayoutStyle"
+    >
+      <div class="gi-form__search-fields">
+        <div
+          v-for="(rowColumns, rowIndex) in columnRows"
+          :key="rowIndex"
+          class="gi-form__search-row"
         >
-          <a-form-item
-            v-bind="item.formItemProps" :field="item.field" :rules="getFormItemRules(item)"
-            :disabled="isDisabled(item)" :style="item?.style"
+        <div
+          class="gi-form__search-row-fields"
+          :style="searchRowFieldsStyle"
+        >
+          <div
+            v-for="entry in rowColumns"
+            :key="entry.item.field"
+            class="gi-form__search-field"
           >
-            <template #label>
-              <template v-if="typeof item.label === 'string'">
-                <span :style="item?.style">{{ item.label }}</span>
-              </template>
-              <component :is="item.label" v-else :style="item.style"></component>
-            </template>
-            <slot
-              v-if="!['group-title'].includes(item.type || '')" :name="item.field"
-              v-bind="{ disabled: isDisabled(item) }"
+            <GiFormFieldItem
+              v-if="entry.visible"
+              :item="entry.item"
+              :model-value="modelValue"
+              :disabled="isDisabled(entry.item)"
+              :bind-props="getComponentBindProps(entry.item)"
+              :rules="getFormItemRules(entry.item)"
+              search-cell
+              @update:model-value="updateValue($event, entry.item.field)"
             >
-              <template v-if="item.type === 'range-picker'">
-                <DateRangePicker
-                  v-bind="(item.props as A.RangePickerInstance['$props'])"
-                  :model-value="modelValue[item.field as keyof typeof modelValue]"
-                  @update:model-value="updateValue($event, item.field)"
-                />
+              <template v-if="$slots[entry.item.field]" #[entry.item.field]="slotData">
+                <slot :name="entry.item.field" v-bind="slotData || {}" />
               </template>
-              <template v-else-if="item.type === 'custom' && item.slots?.default">
-                <component :is="item.slots.default"></component>
-              </template>
-              <component
-                :is="`a-${item.type}`" v-else v-bind="getComponentBindProps(item)"
-                :model-value="modelValue[item.field as keyof typeof modelValue]"
-                @update:model-value="updateValue($event, item.field)"
-              >
-                <template v-for="(slotValue, slotKey) in item?.slots" :key="slotKey" #[slotKey]="scope">
-                  <template v-if="typeof slotValue === 'string'">{{ slotValue }}</template>
-                  <template v-else-if="slotValue">
-                    <component :is="slotValue(scope)"></component>
-                  </template>
-                </template>
-              </component>
-            </slot>
-            <slot v-else name="group-title">
-              <a-alert v-bind="item.props">{{ item.label }}</a-alert>
-            </slot>
-            <template v-for="(slotValue, slotKey) in item?.formItemSlots" :key="slotKey" #[slotKey]>
-              <template v-if="typeof slotValue === 'string'">{{ slotValue }}</template>
-              <component :is="slotValue" v-else></component>
+            </GiFormFieldItem>
+          </div>
+        </div>
+        </div>
+      </div>
+      <div class="gi-form__search-actions-rail">
+        <div class="gi-form__search-actions-rail__btns">
+          <a-button type="primary" class="gi-form__search-rail-query" :size="buttonSize" @click="emit('search')">
+            <template #icon><icon-search /></template>
+            <template #default>{{ props.searchBtnText }}</template>
+          </a-button>
+          <a-button class="gi-form__search-rail-reset" :size="buttonSize" @click="emit('reset')">
+            <template #icon><icon-refresh /></template>
+            <template #default>重置</template>
+          </a-button>
+          <a-button
+            v-if="showFoldBtn"
+            class="gi-form__fold-btn gi-form__search-rail-fold"
+            type="text"
+            size="mini"
+            @click="collapsed = !collapsed"
+          >
+            <template #icon>
+              <icon-up v-if="!collapsed" />
+              <icon-down v-else />
             </template>
-          </a-form-item>
+            <template #default>{{ collapsed ? '展开' : '收起' }}</template>
+          </a-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 搜索模式：默认网格 + 右侧纵向按钮 -->
+    <template v-else-if="props.search">
+      <a-grid class="gi-form__search-grid w-full" :col-gap="8" :row-gap="0" v-bind="props.gridProps">
+        <template v-for="entry in visibleColumnEntries" :key="entry.item.field">
+          <a-grid-item
+            v-if="entry.visible"
+            v-bind="entry.item.gridItemProps || defaultGridItemProps"
+            :span="entry.item.span || entry.item.gridItemProps?.span || defaultGridItemProps?.span"
+          >
+            <GiFormFieldItem
+              :item="entry.item"
+              :model-value="modelValue"
+              :disabled="isDisabled(entry.item)"
+              :bind-props="getComponentBindProps(entry.item)"
+              :rules="getFormItemRules(entry.item)"
+              @update:model-value="updateValue($event, entry.item.field)"
+            >
+              <template v-if="$slots[entry.item.field]" #[entry.item.field]="slotData">
+                <slot :name="entry.item.field" v-bind="slotData || {}" />
+              </template>
+            </GiFormFieldItem>
+          </a-grid-item>
+        </template>
+      </a-grid>
+      <div class="gi-form__search-actions">
+        <a-button type="primary" :size="buttonSize" @click="emit('search')">
+          <template #icon><icon-search /></template>
+          <template #default>{{ props.searchBtnText }}</template>
+        </a-button>
+        <a-button :size="buttonSize" @click="emit('reset')">
+          <template #icon><icon-refresh /></template>
+          <template #default>重置</template>
+        </a-button>
+        <a-button
+          v-if="showFoldBtn"
+          class="gi-form__fold-btn"
+          type="text"
+          size="mini"
+          @click="collapsed = !collapsed"
+        >
+          <template #icon>
+            <icon-up v-if="!collapsed" />
+            <icon-down v-else />
+          </template>
+          <template #default>{{ collapsed ? '展开' : '收起' }}</template>
+        </a-button>
+      </div>
+    </template>
+
+    <!-- 普通表单 -->
+    <a-grid v-else class="w-full" :col-gap="8" :row-gap="0" v-bind="props.gridProps">
+      <template v-for="entry in visibleColumnEntries" :key="entry.item.field">
+        <a-grid-item
+          v-if="entry.visible"
+          v-bind="entry.item.gridItemProps || defaultGridItemProps"
+          :span="entry.item.span || entry.item.gridItemProps?.span || defaultGridItemProps?.span"
+        >
+          <GiFormFieldItem
+            :item="entry.item"
+            :model-value="modelValue"
+            :disabled="isDisabled(entry.item)"
+            :bind-props="getComponentBindProps(entry.item)"
+            :rules="getFormItemRules(entry.item)"
+            @update:model-value="updateValue($event, entry.item.field)"
+          >
+            <template v-if="$slots[entry.item.field]" #[entry.item.field]="slotData">
+              <slot :name="entry.item.field" v-bind="slotData || {}" />
+            </template>
+          </GiFormFieldItem>
         </a-grid-item>
       </template>
-      <!-- <a-grid-item
-        v-if="props.search" :key="!props.suffix ? String(collapsed) : undefined"
-        v-bind="defaultGridItemProps" :span="defaultGridItemProps?.span"
-        :suffix="props.search && (props.suffix || (!props.suffix && collapsed))"
-      >
-        <a-space wrap>
-          <slot name="suffix">
-            <a-button type="primary" @click="emit('search')">
-              <template #icon><icon-search /></template>
-              <template #default>{{ props.searchBtnText }}</template>
-            </a-button>
-            <a-button @click="emit('reset')">
-              <template #icon><icon-refresh /></template>
-              <template #default>重置</template>
-            </a-button>
-            <a-button
-              v-if="!props.hideFoldBtn" class="gi-form__fold-btn" type="text" size="mini"
-              @click="collapsed = !collapsed"
-            >
-              <template #icon>
-                <icon-up v-if="!collapsed" />
-                <icon-down v-else />
-              </template>
-              <template #default>{{ collapsed ? '展开' : '收起' }}</template>
-            </a-button>
-          </slot>
-        </a-space>
-      </a-grid-item> -->
     </a-grid>
-    <div v-if="props.search" style="display: flex; flex-direction: column; gap: 18px;">
-      <a-button type="primary" @click="emit('search')">
-        <template #icon><icon-search /></template>
-        <template #default>{{ props.searchBtnText }}</template>
-      </a-button>
-      <a-button @click="emit('reset')">
-        <template #icon><icon-refresh /></template>
-        <template #default>重置</template>
-      </a-button>
-      <a-button
-        v-if="!props.hideFoldBtn" class="gi-form__fold-btn" type="text" size="mini"
-        @click="collapsed = !collapsed"
-      >
-        <template #icon>
-          <icon-up v-if="!collapsed" />
-          <icon-down v-else />
-        </template>
-        <template #default>{{ collapsed ? '展开' : '收起' }}</template>
-      </a-button>
-    </div>
   </a-form>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { cloneDeep, omit } from 'lodash-es'
 import type { FormInstance, GridItemProps, GridProps } from '@arco-design/web-vue'
 import type { CSSProperties } from 'vue'
+import { computed, useAttrs } from 'vue'
+import GiFormFieldItem from './GiFormFieldItem.vue'
 import type { ColumnItem } from './type'
+
+defineOptions({ inheritAttrs: false })
+
+const attrs = useAttrs()
 
 interface Props {
   modelValue: any
@@ -125,15 +184,24 @@ interface Props {
   autoLabelWidth?: FormInstance['autoLabelWidth']
   id?: FormInstance['id']
   scrollToFirstError?: FormInstance['scrollToFirstError']
-  // 额外自定义属性
   columns: ColumnItem[]
   gridProps?: GridProps
   gridItemProps?: GridItemProps
-  search?: boolean // 搜索模式
-  defaultCollapsed?: boolean // 折叠按钮默认折叠
-  searchBtnText?: string // 搜索按钮文字
-  hideFoldBtn?: boolean // 隐藏展开收起按钮，在表单项少的时候手动隐藏
+  search?: boolean
+  /** 搜索区每行字段数；设置后首行右侧为查询、末行右侧为重置 */
+  searchColumnsPerRow?: number
+  /** 筛选值变化时是否自动触发 search（默认 false，仅按钮触发） */
+  searchOnChange?: boolean
+  defaultCollapsed?: boolean
+  searchBtnText?: string
+  hideFoldBtn?: boolean
   suffix?: boolean
+  /** search 模式下是否包裹边框卡片（GiTable #top 统一样式，默认开启） */
+  searchCard?: boolean
+  /** 双行搜索：控件区最小宽度，如 200 或 '12rem'，映射为 --gi-form-search-control-min-width */
+  searchControlMinWidth?: number | string
+  /** 双行搜索：标签列宽度，如 72，映射为 --gi-form-search-label-width */
+  searchLabelWidth?: number | string
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -141,10 +209,12 @@ const props = withDefaults(defineProps<Props>(), {
   scrollToFirstError: true,
   defaultCollapsed: false,
   search: false,
+  searchOnChange: true,
   gridItemProps: { span: { xs: 24, sm: 8, xxl: 8 } },
-  searchBtnText: '搜索',
+  searchBtnText: '查询',
   hideFoldBtn: false,
   suffix: true,
+  searchCard: true,
 })
 
 const emit = defineEmits<{
@@ -153,22 +223,64 @@ const emit = defineEmits<{
   (e: 'reset'): void
 }>()
 
+const showSearchCard = computed(() => Boolean(props.search) && props.searchCard)
+const buttonSize = computed(() => props.size ?? 'medium')
+const rootBindAttrs = computed(() => {
+  const { class: _cls, style: _style, ...rest } = attrs
+  return rest
+})
+
+const toCssSize = (value: number | string) => (typeof value === 'number' ? `${value}px` : value)
+
+const rootStyle = computed(() => {
+  const base = { ...(attrs.style as CSSProperties | undefined) }
+  if (props.searchControlMinWidth != null) {
+    base['--gi-form-search-control-min-width'] = toCssSize(props.searchControlMinWidth)
+  }
+  if (props.searchLabelWidth != null) {
+    base['--gi-form-search-label-width'] = toCssSize(props.searchLabelWidth)
+  }
+  return base
+})
+
+const resolvedLayout = computed(() => {
+  if (props.search && props.searchColumnsPerRow) return 'vertical'
+  if (props.layout) return props.layout
+  if (props.search) return 'inline'
+  return 'horizontal'
+})
+
+const searchRowFieldsStyle = computed(() => {
+  const gap = props.gridProps?.colGap
+  return typeof gap === 'number' ? { gap: `${gap}px` } : undefined
+})
+
 const formProps = computed(() => {
-  const baseProps = omit(props, ['columns', 'gridProps', 'gridItemProps', 'search', 'defaultCollapsed', 'searchBtnText', 'hideFoldBtn', 'suffix', 'layout'])
+  const baseProps = omit(props, [
+    'columns',
+    'gridProps',
+    'gridItemProps',
+    'search',
+    'searchColumnsPerRow',
+    'searchOnChange',
+    'defaultCollapsed',
+    'searchBtnText',
+    'hideFoldBtn',
+    'suffix',
+    'layout',
+    'searchCard',
+    'searchControlMinWidth',
+    'searchLabelWidth',
+  ])
   return { ...baseProps }
 })
 
-const defaultGridItemProps = computed(() => {
-  return props.gridItemProps
-})
+const defaultGridItemProps = computed(() => props.gridItemProps)
 
 const formRef = useTemplateRef('formRef')
-/** 是否折叠 */
 const collapsed = ref(props.defaultCollapsed)
-/** 数据字典 */
 const dicData: Record<string, any> = reactive({})
 
-/** 静态配置 */
 const STATIC_PROPS = new Map<ColumnItem['type'], Partial<ColumnItem['props']>>([
   ['input', { allowClear: true, maxLength: 255, showWordLimit: !props.search }],
   ['input-password', { allowClear: true, showWordLimit: !props.search }],
@@ -182,14 +294,19 @@ const STATIC_PROPS = new Map<ColumnItem['type'], Partial<ColumnItem['props']>>([
   ['time-picker', { allowClear: true }],
 ])
 
-/** 获取组件默认占位 */
+const labelPlain = (label: ColumnItem['label']) => {
+  if (typeof label !== 'string') return ''
+  return label.replace(/[：:]\s*$/, '')
+}
+
 const getPlaceholder = (item: ColumnItem) => {
   if (!item.type) return undefined
+  const name = labelPlain(item.label)
   if (['input', 'input-number', 'input-password', 'textarea', 'input-tag', 'mention'].includes(item.type)) {
-    return `请输入${item.label}`
+    return `请输入${name}`
   }
   if (['select', 'tree-select', 'cascader'].includes(item.type)) {
-    return `请选择${item.label}`
+    return `请选择${name}`
   }
   if (['date-picker'].includes(item.type)) {
     return '请选择日期'
@@ -200,10 +317,8 @@ const getPlaceholder = (item: ColumnItem) => {
   return undefined
 }
 
-/** 获取选项数据 */
 const getOptions = (item: ColumnItem): any[] | undefined => {
   if (!item.type) return undefined
-  /** 需要选项数据的组件类型 */
   const arr = ['select', 'tree-select', 'cascader', 'radio-group', 'checkbox-group']
   if (arr.includes(item.type)) {
     return dicData[item.field] || []
@@ -211,7 +326,6 @@ const getOptions = (item: ColumnItem): any[] | undefined => {
   return undefined
 }
 
-/** 获取组件绑定属性 */
 const getComponentBindProps = (item: ColumnItem) => {
   return {
     ...STATIC_PROPS.get(item.type) || {},
@@ -221,47 +335,16 @@ const getComponentBindProps = (item: ColumnItem) => {
   }
 }
 
-/** 表单数据更新  */
 const updateValue = (value: any, field: string) => {
   emit('update:modelValue', Object.assign(props.modelValue, { [field]: value }))
 }
 
-/** 表单项校验规则 */
 const getFormItemRules = (item: ColumnItem) => {
   if (item.required) {
     const defaultProps = getComponentBindProps(item)
-    return [{ required: true, message: defaultProps.placeholder || `请输入${item.label}` }, ...(Array.isArray(item.rules) ? item.rules : [])]
+    return [{ required: true, message: defaultProps.placeholder || `请输入${labelPlain(item.label)}` }, ...(Array.isArray(item.rules) ? item.rules : [])]
   }
   return item.rules
-}
-
-/** 显示表单项 */
-const isShow1 = (item: ColumnItem) => {
-  if (typeof item.show === 'boolean') return item.show
-  if (typeof item.show === 'function') {
-    return item.show(props.modelValue)
-  }
-}
-
-const isShow2 = (item: ColumnItem, index: number) => {
-  if (item.show !== undefined) {
-    if (typeof item.show === 'function') {
-      return item.show({ ...props.modelValue, collapsed: collapsed.value })
-    }
-    return item.show
-  }
-
-  if (index < 3) return true
-  return !collapsed.value
-}
-
-/** 隐藏表单项 */
-const isHide1 = (item: ColumnItem) => {
-  if (item.hide === undefined) return false
-  if (typeof item.hide === 'boolean') return item.hide
-  if (typeof item.hide === 'function') {
-    return item.hide(props.modelValue)
-  }
 }
 
 const isHide = (item: ColumnItem, index?: number) => {
@@ -288,40 +371,59 @@ const isShow = (item: ColumnItem, index?: number) => {
       })
     }
   }
-
-  // 仅当未设置 show 时才参考 hide
   return !isHide(item, index)
 }
 
-const shouldRender1 = (item: ColumnItem, index: number) => {
-  // 前6个字段始终显示
-  if (index < 6) return true
-
-  // 后续字段受控于 show/hide + collapsed
-  if (item.show !== undefined) {
-    if (typeof item.show === 'boolean') return item.show
-    if (typeof item.show === 'function') {
-      return item.show({
-        ...props.modelValue,
-        collapsed: collapsed.value,
-        index,
-      })
-    }
-  }
-
-  return !isHide(item, index)
+const isColumnVisible = (item: ColumnItem, index: number) => {
+  if (item.foldable === true && collapsed.value) return false
+  return item.show !== undefined ? isShow(item, index) : !isHide(item, index)
 }
 
-const shouldRender = (item: ColumnItem) => {
-  console.log(item)
+type ColumnEntry = { item: ColumnItem; index: number; visible: boolean }
 
-  if (item.foldable === true) {
-    return !collapsed.value
+const visibleColumnEntries = computed<ColumnEntry[]>(() =>
+  props.columns.map((item, index) => ({
+    item,
+    index,
+    visible: isColumnVisible(item, index),
+  })).filter((entry) => entry.visible),
+)
+
+const columnRows = computed<ColumnEntry[][]>(() => {
+  const per = props.searchColumnsPerRow
+  const entries = visibleColumnEntries.value
+  if (!per || per < 1) return [entries]
+  const rows: ColumnEntry[][] = []
+  for (let i = 0; i < entries.length; i += per) {
+    rows.push(entries.slice(i, i + per))
   }
+  return rows
+})
+
+/** 是否存在可被收起的字段 */
+const hasFoldableColumn = computed(() => props.columns.some((item) => item.foldable === true))
+
+/**
+ * 是否展示收起/展开：存在 foldable 字段；双行布局且未收起时超过 2 行才显示（收起后仍保留按钮以便展开）
+ */
+const showFoldBtn = computed(() => {
+  if (props.hideFoldBtn || !props.search) return false
+  if (!hasFoldableColumn.value) return false
+  if (collapsed.value) return true
+  if (props.searchColumnsPerRow && columnRows.value.length <= 2) return false
   return true
-}
+})
 
-/** 禁用表单项 */
+/** 双行搜索：左侧行数 + 右侧操作栏行数（查询/重置/收起各占一行） */
+const searchRowsLayoutStyle = computed(() => {
+  const fieldRows = columnRows.value.length
+  const railRows = showFoldBtn.value ? Math.max(fieldRows, 3) : Math.max(fieldRows, 2)
+  return {
+    '--search-row-count': fieldRows,
+    '--search-rail-row-count': railRows,
+  }
+})
+
 const isDisabled = (item: ColumnItem) => {
   if (item.disabled === undefined) return false
   if (typeof item.disabled === 'boolean') return item.disabled
@@ -334,13 +436,10 @@ props.columns.forEach((item) => {
   if (item.request && typeof item.request === 'function' && item?.init) {
     item.request(props.modelValue).then((res) => {
       dicData[item.field] = item.resultFormat ? item.resultFormat(res) : res.data
-      // console.log('dicData', dicData)
     })
   }
 })
 
-// 先找出有级联的项
-// 如果这个字段改变了值，那么就找出它的cascader属性对应的字段项，去请求里面的request
 const hasCascaderColumns: ColumnItem[] = []
 props.columns.forEach((item) => {
   const arr = hasCascaderColumns.map((i) => i.field)
@@ -349,14 +448,11 @@ props.columns.forEach((item) => {
   }
 })
 
-// 要深克隆，否则无法监听新旧值变化
 const cloneForm = computed(() => cloneDeep(props.modelValue))
 watch(cloneForm as any, (newVal, oldVal) => {
   hasCascaderColumns.forEach((item) => {
     if (newVal[item.field] !== oldVal[item.field]) {
-      const arr = props.columns.filter((a) => {
-        return item?.cascader?.includes(a.field)
-      })
+      const arr = props.columns.filter((a) => item?.cascader?.includes(a.field))
       arr.forEach((i) => {
         if (i.request && Boolean(newVal[item.field])) {
           i.request(props.modelValue).then((res) => {
@@ -372,21 +468,188 @@ watch(cloneForm as any, (newVal, oldVal) => {
       })
     }
   })
-  emit('search')
+  if (props.searchOnChange) {
+    emit('search')
+  }
 })
 
 defineExpose({ formRef })
 </script>
 
 <style lang="scss" scoped>
+.gi-form-root {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .gi-form__fold-btn {
   padding: 0 5px;
 }
-:deep(.arco-space){
+
+.gi-form--search:not(.gi-form--search-rows) {
   display: flex;
-  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+
+  .gi-form__search-grid {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .gi-form__search-actions {
+    display: flex;
+    flex: 0 0 100px;
+    flex-direction: column;
+    flex-shrink: 0;
+    gap: 16px;
+    align-items: stretch;
+    justify-content: flex-start;
+    min-width: 100px;
+
+    :deep(.arco-btn) {
+      width: 100%;
+    }
+  }
 }
+
+.gi-form--search-rows {
+  --gi-form-search-control-min-width: 180px;
+  --gi-form-search-cell-gap: 8px;
+  display: block;
+  width: 100%;
+
+  :deep(.arco-form-item) {
+    margin-bottom: 0;
+  }
+
+  :deep(.arco-input-wrapper),
+  :deep(.arco-select-view-single),
+  :deep(.arco-picker) {
+    background: var(--color-bg-1);
+  }
+
+  .gi-form__search-rows-layout {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 28px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .gi-form__search-fields {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .gi-form__search-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .gi-form__search-row-fields {
+    display: flex;
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    gap: 16px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .gi-form__search-field {
+    flex: 1 1 0;
+    min-width: max(
+      0px,
+      calc(
+        var(--gi-form-search-label-width, 80px) + var(--gi-form-search-cell-gap, 8px)
+          + var(--gi-form-search-control-min-width, 180px)
+      )
+    );
+  }
+
+  .gi-form__search-field :deep(.arco-form-item) {
+    width: 100%;
+    margin-bottom: 0;
+  }
+
+  .gi-form__search-actions-rail {
+    display: flex;
+    flex: 0 0 100px;
+    flex-shrink: 0;
+    align-items: stretch;
+    min-width: 100px;
+  }
+
+  .gi-form__search-actions-rail__btns {
+    display: grid;
+    grid-template-rows: repeat(var(--search-rail-row-count, 2), minmax(32px, auto));
+    row-gap: 16px;
+    width: 100%;
+    align-content: start;
+  }
+
+  .gi-form__search-rail-query {
+    grid-row: 1;
+    align-self: center;
+    width: 100%;
+  }
+
+  .gi-form__search-rail-reset {
+    grid-row: 2;
+    align-self: center;
+    width: 100%;
+  }
+
+  .gi-form__search-rail-fold {
+    grid-row: 3;
+    align-self: center;
+    justify-self: center;
+    width: auto;
+    padding: 10px;
+    white-space: nowrap;
+  }
+}
+
 :deep(.arco-col) {
   overflow: revert !important;
+}
+</style>
+
+<!-- 筛选卡片边框：非 scoped，避免动态 class 在部分场景下未命中 -->
+<style lang="scss">
+.gi-form-search-card {
+  --gi-form-search-label-width: 80px;
+  --gi-form-search-control-min-width: 180px;
+  --gi-form-search-cell-gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 16px;
+  background: var(--color-bg-1);
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+
+  .gi-form--search-rows,
+  .gi-form--search {
+    :deep(.arco-form-item) {
+      margin-bottom: 0;
+    }
+
+    :deep(.arco-form-item-content) {
+      margin-left: 0 !important;
+    }
+  }
 }
 </style>

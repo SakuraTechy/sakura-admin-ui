@@ -39,8 +39,8 @@ export interface MetricExecution {
 }
 
 export interface TestMetricResp {
-  projectId: number
-  versionId: number
+  projectId: string
+  versionId: string
   testPlanCount: number
   testReportCount: number
   timedTaskCount: number
@@ -52,6 +52,6 @@ export interface TestMetricResp {
   executionMetric: MetricExecution
 }
 
-export function getTestMetricOverview(query?: { projectId?: number; versionId?: number }) {
+export function getTestMetricOverview(query?: { projectId?: string; versionId?: string }) {
   return http.get<TestMetricResp>(`${BASE_URL}/overview`, query)
 }

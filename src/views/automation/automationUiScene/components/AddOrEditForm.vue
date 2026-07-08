@@ -277,16 +277,16 @@ const columns = computed<ColumnItem[]>(() => [
       options: scene_level.value,
     },
   },
-  {
-    label: '执行状态',
-    field: 'executeStatus',
-    span: 23,
-    type: 'select',
-    required: true,
-    props: {
-      options: filterSceneStatusOptions(status_type.value),
-    },
-  },
+  // {
+  //   label: '执行状态',
+  //   field: 'executeStatus',
+  //   span: 23,
+  //   type: 'select',
+  //   required: true,
+  //   props: {
+  //     options: filterSceneStatusOptions(status_type.value),
+  //   },
+  // },
   {
     label: '场景标签',
     field: 'tags',
@@ -360,7 +360,7 @@ const openExecuteModal = async () => {
     return
   }
   const { data } = await getAutomationUiScene(uiStore.activeId)
-  executeSceneModalRef.value?.onOpen([data])
+  executeSceneModalRef.value?.onOpen([data], { source: 'ui' })
 }
 
 const openDebugLog = async () => {

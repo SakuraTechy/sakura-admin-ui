@@ -1,15 +1,15 @@
 ﻿<template>
-  <div class="gi_table_page">
+  <div style="padding: 20px;">
     <GiTable
       ref="tableRef"
       v-model:selected-keys="selectedKeys"
-      size="small"
+      size="medium"
       title=""
       row-key="id"
       :data="tableData"
       :columns="columns"
       :loading="loading"
-      :scroll="{ x: '100%', y: '100%', minWidth: 1000 }"
+      :scroll="{ x: '100%', y: '100%' }"
       :pagination="pagination"
       :disabled-tools="['']"
       :disabled-column-keys="['name']"
@@ -22,8 +22,21 @@
       @refresh="search"
     >
       <template #top>
-        <GiForm v-model="queryForm" :columns="queryFormColumns" size="medium" search @search="search" @reset="reset" />
-        <a-divider style="margin: 15px 0 15px 0;" />
+        <GiForm
+          v-model="queryForm"
+          :columns="queryFormColumns"
+          size="medium"
+          search
+          :search-card="true"
+          :search-columns-per-row="3"
+          :search-control-min-width="210"
+          :search-label-width="60"
+          :grid-props="queryGridProps"
+          search-btn-text="查询"
+          :search-on-change="true"
+          @search="search"
+          @reset="reset"
+        />
       </template>
       <template #toolbar-right>
         <!-- <a-button v-permission="['automation:automationUiScene:create']" type="primary" @click="onAdd">
@@ -49,10 +62,10 @@
           v-permission="['automation:automationUiScene:export']"
           :disabled="!selectedKeys.length"
           :title="!selectedKeys.length ? '请选择数据' : ''"
-          @click="onExportXml"
+          @click="() => onExportXml()"
         >
           <template #icon><icon-download /></template>
-          <template #default>导出 XML</template>
+          <template #default>批量导出 XML</template>
         </a-button>
         <a-button v-permission="['automation:automationUiScene:export']" @click="onExportAllXml">
           <template #icon><icon-download /></template>
@@ -105,13 +118,37 @@
             </a-button>
             <template #content>
               <a-doption
-                v-permission="['automation:automationUiScene:delete']"
-                status="danger"
-                :disabled="record.disabled"
-                :title="record.disabled ? '不可删除' : '删除'"
-                @click="onDelete(record)"
+                  v-permission="['automation:automationUiScene:delete']"
+                  status="danger"
+                  :disabled="record.disabled"
+                  :title="record.disabled ? '不可删除' : '删除'"
+                  @click="onDelete(record)"
               >
                 删除
+              </a-doption>
+              <a-doption
+                v-permission="['automation:automationUiScene:export']"
+                @click="onExportXml(record)"
+              >
+                导出
+              </a-doption>
+              <a-doption
+                v-permission="['automation:automationUiScene:exec']"
+                @click="openUrl(record.debugRecord[0]?.consoleUrl, '获取运行日志失败，请先执行场景')"
+              >
+                日志
+              </a-doption>
+              <a-doption
+                v-permission="['automation:automationUiScene:exec']"
+                @click="openUrl(record.debugRecord[0]?.testReportUrl, '获取测试报告失败，请先执行场景')"
+              >
+                报告
+              </a-doption>
+              <a-doption
+                v-permission="['automation:automationUiScene:exec']"
+                @click="openVideo(record.debugRecord[0]?.testReportUrl, record.sceneId, '获取测试视频失败，请先执行场景')"
+              >
+                回放
               </a-doption>
             </template>
           </a-dropdown>
@@ -126,6 +163,7 @@
 
 <script setup lang="tsx">
 import type { TableInstance } from '@arco-design/web-vue'
+import { Message } from '@arco-design/web-vue'
 import AutomationUiSceneAddModal from './AutomationUiSceneAddModal.vue'
 import AutomationUiSceneDetailDrawer from './AutomationUiSceneDetailDrawer.vue'
 import {
@@ -188,56 +226,69 @@ const {
   selectedKeys,
   handleDelete,
   handleExport,
-} = useTable((page) => listAutomationUiScene({ ...queryForm, ...page }))
+} = useTable((page) => listAutomationUiScene({ ...queryForm, ...page, executeResultType: 'debug' }))
+
+const queryGridProps = { cols: 24, colGap: 16, rowGap: 0 }
+const queryFieldSpan = { xs: 24, sm: 8, xxl: 8 }
 
 const queryFormColumns = computed<ColumnItem[]>(() => [
-  { type: 'input', label: '场景 ID', field: 'sceneId', span: { xs: 24, sm: 8, xxl: 8 }, props: {} },
-  { type: 'input', label: '场景名称', field: 'name', span: { xs: 24, sm: 8, xxl: 8 }, props: {} },
-  { type: 'select', label: '场景版本', field: 'versionId', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: uiStore.versionList } },
-  { type: 'select', label: '场景等级', field: 'level', span: { xs: 24, sm: 8, xxl: 8 }, props: { options: scene_level.value } },
+  { type: 'input', label: '场景 ID', field: 'sceneId', span: queryFieldSpan, props: {} },
+  { type: 'input', label: '场景名称', field: 'name', span: queryFieldSpan, props: {} },
+  { type: 'select', label: '场景版本', field: 'versionId', span: queryFieldSpan, props: { options: uiStore.versionList } },
+  { type: 'select', label: '场景等级', field: 'level', span: queryFieldSpan, props: { options: scene_level.value } },
   {
     type: 'select',
     label: '执行状态',
     field: 'executeStatus',
-    span: { xs: 24, sm: 8, xxl: 8 },
+    span: queryFieldSpan,
     props: { options: filterSceneStatusOptions(status_type.value) },
   },
   {
     type: 'select',
     label: '执行结果',
     field: 'executeResult',
-    span: { xs: 24, sm: 8, xxl: 8 },
+    span: queryFieldSpan,
     props: { options: filterSceneResultOptions(status_type.value) },
   },
   {
     type: 'select',
     label: '创建人',
     field: 'createUser',
-    span: { xs: 24, sm: 8, xxl: 8 },
-    show: ({ collapsed }) => !collapsed,
+    span: queryFieldSpan,
+    foldable: true,
     props: { options: uiStore.userList },
   },
   {
     type: 'select',
     label: '更新人',
     field: 'updateUser',
-    span: { xs: 24, sm: 8, xxl: 8 },
-    show: ({ collapsed }) => !collapsed,
+    span: queryFieldSpan,
+    foldable: true,
     props: { options: uiStore.userList },
   },
-  { type: 'range-picker', label: '创建时间', field: 'createTime', span: { xs: 24, sm: 18, xxl: 8 }, show: ({ collapsed }) => !collapsed },
+  {
+    type: 'range-picker',
+    label: '创建时间',
+    field: 'createTime',
+    span: queryFieldSpan,
+    foldable: true,
+    props: {
+      showTime: true,
+      format: 'YYYY-MM-DD HH:mm:ss',
+    },
+  },
 ])
 
 const columns: TableInstance['columns'] = [
   { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
-  { title: '场景名称', dataIndex: 'name', slotName: 'name', width: 360, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '场景名称', dataIndex: 'name', slotName: 'name', width: 360, ellipsis: true, tooltip: true },
   { title: '版本', dataIndex: 'versionName', slotName: 'versionName', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   { title: '等级', dataIndex: 'level', slotName: 'level', width: 100, ellipsis: true, tooltip: true, align: 'center' },
   {
     title: '标签',
     dataIndex: 'tags',
     slotName: 'tags',
-    width: 120,
+    width: 100,
     align: 'center',
     render: ({ record }) => Array.isArray(record.tags) ? <GiCellTags data={record.tags} /> : '-',
   },
@@ -245,10 +296,10 @@ const columns: TableInstance['columns'] = [
     title: '执行状态',
     dataIndex: 'debugRecord[0].executeStatus',
     slotName: 'executeStatus',
-    width: 110,
+    width: 100,
     align: 'center',
     render: ({ record }) => {
-      const value = pickSceneExecuteField(record, 'executeStatus', status_type.value)
+      const value = pickSceneExecuteField(record, 'executeStatus', status_type.value, 'debug')
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -256,10 +307,10 @@ const columns: TableInstance['columns'] = [
     title: '执行结果',
     dataIndex: 'debugRecord[0].executeResult',
     slotName: 'executeResult',
-    width: 110,
+    width: 100,
     align: 'center',
     render: ({ record }) => {
-      const value = pickSceneExecuteField(record, 'executeResult', status_type.value)
+      const value = pickSceneExecuteField(record, 'executeResult', status_type.value, 'debug')
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -267,13 +318,13 @@ const columns: TableInstance['columns'] = [
     title: '通过率',
     dataIndex: 'debugRecord[0].scenePassRate',
     slotName: 'scenePassRate',
-    width: 100,
+    width: 80,
     align: 'center',
     render: ({ record }) => Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0].scenePassRate : '-',
   },
   {
     title: '耗时',
-    width: 100,
+    width: 90,
     dataIndex: 'debugRecord[0].duration',
     slotName: 'duration',
     align: 'center',
@@ -289,7 +340,8 @@ const columns: TableInstance['columns'] = [
   { title: '步骤跳过', width: 90, dataIndex: 'debugRecord[0].stepSkip', slotName: 'stepSkip', align: 'center', render: ({ record }) => Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0].stepSkip : '-' },
   { title: '场景状态', dataIndex: 'status', slotName: 'status', width: 100, ellipsis: true, tooltip: true, align: 'center' },
   { title: '创建人', dataIndex: 'createUserString', slotName: 'createUserString', width: 120 },
-  { title: '执行人', dataIndex: 'debugRecord[0].executeName', slotName: 'executeName', width: 120 },
+  { title: '更新人', dataIndex: 'updateUserString', slotName: 'updateUserString', width: 120 },
+  // { title: '执行人', dataIndex: 'debugRecord[0].executeName', slotName: 'executeName', width: 120 },
   { title: '创建时间', dataIndex: 'createTime', slotName: 'createTime', width: 180, ellipsis: true },
   { title: '更新时间', dataIndex: 'updateTime', slotName: 'updateTime', width: 180, ellipsis: true },
   {
@@ -351,11 +403,11 @@ const onExport = async () => {
   })
 }
 
-const onExportXml = async () => {
-  return handleExport(() => exportAutomationUiSceneXml(selectedKeys.value.map(id => String(id))), {
-    content: '确认导出所选场景的 XML 文件吗？',
+const onExportXml = async (record?: AutomationUiSceneResp) => {
+  return handleExport(() => exportAutomationUiSceneXml(record ? [record.id] : selectedKeys.value.map(id => String(id))), {
+    content: record ? `确认导出场景“${record.name}”的 XML 文件吗？` : '确认导出所选场景的 XML 文件吗？',
     showModal: true,
-    multiple: true,
+    multiple: record ? false : true,
   })
 }
 
@@ -395,6 +447,28 @@ const onClearResults = async () => {
     showModal: true,
     multiple: true,
   })
+}
+
+const openUrl = (url: string, errorMsg: string) => {
+  if (url) {
+    Message.success('获取成功，正在跳转')
+    setTimeout(() => {
+      window.open(url)
+    }, 500)
+  } else {
+    Message.error(errorMsg)
+  }
+}
+
+const openVideo = (testReportUrl: string, sceneId: string, errorMsg: string) => {
+  if (testReportUrl) {
+    Message.success('获取测试视频成功')
+    setTimeout(() => {
+      window.open(testReportUrl.replace('/index.html', `/video/${sceneId}.mp4`))
+    }, 500)
+  } else {
+    Message.error(errorMsg)
+  }
 }
 
 interface AutomationUiSceneAddModalType {
@@ -450,5 +524,4 @@ export default {}
   padding: 0;
   color: var(--color-text-3);
 }
-
 </style>

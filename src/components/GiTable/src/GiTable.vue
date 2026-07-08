@@ -103,7 +103,7 @@
             ...props.pagination,
             showJumper: true,
             showMore: true,
-            pageSizeOptions: [10, 20, 30, 40, 50, 100],
+            pageSizeOptions: props.pagination?.pageSizeOptions ?? [10, 20, 30, 40, 50, 100],
             size: 'small',
           }"
           @change="handleTableChange"

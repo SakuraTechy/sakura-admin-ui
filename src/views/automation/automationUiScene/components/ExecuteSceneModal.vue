@@ -94,6 +94,7 @@
                   >
                     <div class="option-row">
                       <span class="option-main">{{ item.label }}</span>
+                      <span class="option-main">{{ item.description?.name || '-' }}</span>
                       <div class="option-tags">
                         <!-- <a-tag :color="item.onlineStatusColor">{{ item.onlineStatusLabel }}</a-tag> -->
                         <!-- <a-tag :color="item.useStatusColor">{{ item.useStatusLabel }}</a-tag> -->
@@ -138,16 +139,23 @@
           <template #columns>
             <a-table-column title="场景 ID" data-index="sceneId" :width="180" />
             <a-table-column title="场景名称" data-index="name" />
-            <a-table-column title="上次结果" :width="120" align="center">
-              <template #cell="{ record }">
-                <a-tag :color="getSceneResultTagColor(record)">{{ getSceneLastResult(record) }}</a-tag>
-              </template>
-            </a-table-column>
             <a-table-column title="执行状态" :width="120" align="center">
               <template #cell="{ record }">
-                <a-tag :color="getSceneStatusTagColor(record)">{{ getSceneLastStatus(record) }}</a-tag>
+                <GiCellTag v-if="getSceneExecuteFieldValue(record, 'executeStatus')" :value="getSceneExecuteFieldValue(record, 'executeStatus')" :dict="status_type" />
+                <span v-else>-</span>
               </template>
             </a-table-column>
+            <a-table-column title="上次结果" :width="120" align="center">
+              <template #cell="{ record }">
+                <GiCellTag v-if="getSceneExecuteFieldValue(record, 'executeResult')" :value="getSceneExecuteFieldValue(record, 'executeResult')" :dict="status_type" />
+                <span v-else>-</span>
+              </template>
+            </a-table-column>
+            <!-- <a-table-column title="通过率" :width="100" align="center">
+              <template #cell="{ record }">
+                {{ getScenePassRate(record) }}
+              </template>
+            </a-table-column> -->
             <a-table-column title="运行耗时" :width="120" align="center">
               <template #cell="{ record }">
                 {{ getSceneDuration(record) }}
@@ -176,6 +184,9 @@ import { getProjectVersionConfig } from '@/apis/project/projectVersionConfig'
 import { useUserStore } from '@/stores'
 import { formatDuration } from '@/utils/sakura'
 import { useDict } from '@/hooks/app'
+import { pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
+import GiCellTag from '@/components/GiCell/GiCellTag.vue'
+import type { LabelValueState } from '@/types/global'
 
 const { server_type, status_type } = useDict('server_type', 'status_type')
 
@@ -183,7 +194,13 @@ interface SceneDebugRecord {
   executeStatus?: string
   executeResult?: string
   duration?: number | string
-  buildNumber?: number | string
+  buildNumber?: string | number
+  consoleUrl?: string
+  testReportUrl?: string
+}
+
+interface SceneTestRecord extends SceneDebugRecord {
+  testPlanId?: string | number
 }
 
 interface SceneRow {
@@ -196,12 +213,15 @@ interface SceneRow {
   name?: string
   lastResult?: string
   executeStatus?: string
+  passRate?: string
   debugRecord?: SceneDebugRecord[]
+  testRecord?: SceneTestRecord[]
 }
 
 interface OpenOptions {
   mode?: 'selected' | 'all'
   query?: Record<string, any>
+  source?: 'ui' | 'plan'
 }
 
 interface ProjectEnvironmentOption {
@@ -224,6 +244,13 @@ interface AutomationEnvironmentOption {
   onlineStatusColor: string
   useStatusLabel: string
   useStatusColor: string
+  description?: {
+    name: string
+    systemType: string
+    userName: string
+    passWord: string
+    credentialsId: string
+  }
 }
 
 type SelectChangeValue = string | number | boolean | Record<string, any> | (string | number | boolean | Record<string, any>)[]
@@ -238,6 +265,7 @@ const userStore = useUserStore()
 const visible = ref(false)
 const sceneList = ref<SceneRow[]>([])
 const openMode = ref<'selected' | 'all'>('selected')
+const sceneSource = ref<'ui' | 'plan'>('ui')
 const sceneQuery = ref<Record<string, any>>({})
 const projectName = ref('-')
 const versionName = ref('-')
@@ -406,6 +434,20 @@ const loadAutomationEnvironments = async () => {
     const node = getPrimaryNode(item)
     const onlineMeta = getAutomationOnlineMeta(node?.active?.offline?.status)
     const useMeta = getAutomationUseMeta(node?.active?.idle?.status)
+
+    let descObj: AutomationEnvironmentOption['description']
+    const descRaw = node?.description || item.description
+    if (descRaw) {
+      if (typeof descRaw === 'string') {
+        try {
+          descObj = JSON.parse(descRaw)
+        } catch {
+          descObj = undefined
+        }
+      } else if (typeof descRaw === 'object') {
+        descObj = descRaw
+      }
+    }
     return {
       value: String(item.id),
       label: node?.name || item.name || '-',
@@ -415,6 +457,7 @@ const loadAutomationEnvironments = async () => {
       onlineStatusColor: onlineMeta.onlineStatusColor,
       useStatusLabel: useMeta.useStatusLabel,
       useStatusColor: useMeta.useStatusColor,
+      description: descObj,
     }
   })
 
@@ -446,15 +489,24 @@ const handleAutomationEnvironmentChange = async (value: SelectChangeValue) => {
 }
 
 const getLastDebugRecord = (record: SceneRow) => {
-  return Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0] : undefined
+  if (sceneSource.value === 'plan') {
+    if (Array.isArray(record.testRecord) && record.testRecord.length > 0)
+      return record.testRecord[0]
+    if (Array.isArray(record.debugRecord) && record.debugRecord.length > 0)
+      return record.debugRecord[0]
+  } else {
+    if (Array.isArray(record.debugRecord) && record.debugRecord.length > 0)
+      return record.debugRecord[0]
+    if (Array.isArray(record.testRecord) && record.testRecord.length > 0)
+      return record.testRecord[0]
+  }
+  return undefined
 }
 
-const getSceneLastResult = (record: SceneRow) => {
-  return getLastDebugRecord(record)?.executeResult || record.lastResult || '未执行'
-}
-
-const getSceneLastStatus = (record: SceneRow) => {
-  return getLastDebugRecord(record)?.executeStatus || record.executeStatus || '-'
+const getSceneExecuteFieldValue = (record: SceneRow, field: 'executeStatus' | 'executeResult') => {
+  const lastRecord = getLastDebugRecord(record)
+  const recordForPick = lastRecord ? { ...record, debugRecord: [lastRecord] } : record
+  return pickSceneExecuteField(recordForPick, field, status_type.value)
 }
 
 const getSceneDuration = (record: SceneRow) => {
@@ -468,19 +520,10 @@ const getSceneBuildNumber = (record: SceneRow) => {
   return getLastDebugRecord(record)?.buildNumber || '-'
 }
 
-const getSceneResultTagColor = (record: SceneRow) => {
-  const result = getSceneLastResult(record)
-  if (['14', 'PASSED', '全部通过', '通过', '成功'].includes(result))
-    return 'green'
-  if (['15', 'FAILED', '不通过', '失败'].includes(result))
-    return 'red'
-  if (['13', '16', 'NOT_EXECUTED', 'SKIPPED', '未执行', '-', '跳过'].includes(result))
-    return 'gray'
-  return 'arcoblue'
-}
-
-const getSceneStatusTagColor = (record: SceneRow) => {
-  return normalizeTagColor(getSceneLastStatus(record))
+const getScenePassRate = (record: SceneRow) => {
+  const passRate = record.passRate
+  if (passRate === undefined || passRate === null || passRate === '-' || passRate === '') return '-'
+  return `${passRate}%`
 }
 
 const goProjectEnvironmentConfig = async () => {
@@ -521,6 +564,7 @@ const loadSceneMeta = async (row?: SceneRow) => {
 const onOpen = async (rows: SceneRow[], options: OpenOptions = {}) => {
   sceneList.value = rows
   openMode.value = options.mode ?? 'selected'
+  sceneSource.value = options.source ?? 'ui'
   sceneQuery.value = options.query ?? {}
   form.sceneIds = rows.map(item => item.id)
   form.executeName = userStore.userInfo.nickname || userStore.userInfo.username
@@ -599,6 +643,7 @@ const handleOk = async () => {
 const handleClose = () => {
   sceneList.value = []
   openMode.value = 'selected'
+  sceneSource.value = 'ui'
   sceneQuery.value = {}
   projectName.value = '-'
   versionName.value = '-'

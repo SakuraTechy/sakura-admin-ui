@@ -33,6 +33,9 @@ export interface UserImportResp {
 }
 export interface UserQuery {
   description?: string
+  phone?: string
+  email?: string
+  gender?: number
   status?: number
   createTime?: Array<string>
   deptId?: string

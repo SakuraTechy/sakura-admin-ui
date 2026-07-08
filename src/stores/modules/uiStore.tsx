@@ -38,7 +38,7 @@ export const useUiStore = defineStore('ui', {
   actions: {
     async fetchProjects() {
       const res = await getProjectConfigList({ status: 1, sort: ['name,desc'] })
-      this.projectList = res.data.map((item) => ({ label: item.name, value: item.id }))
+      this.projectList = res.data.map((item) => ({ label: item.name, value: `${item.id}` }))
       // const uiStoreStr = localStorage.getItem('ui-store')
       // if (uiStoreStr) {
       //   const uiStore = JSON.parse(uiStoreStr)
@@ -55,10 +55,11 @@ export const useUiStore = defineStore('ui', {
       })
       this.versionList = res.data.map((item) => ({
         label: item.name,
-        value: item.id,
+        value: `${item.id}`,
         extra: item.type,
       }))
-      this.versionId = this.versionList.find((item) => item.extra === '1')?.value
+      const preferred = this.versionList.find((item) => item.extra === 1 || item.extra === '1')
+      this.versionId = preferred?.value ?? this.versionList[0]?.value
       // this.fetchTrees()
     },
 
@@ -75,7 +76,12 @@ export const useUiStore = defineStore('ui', {
           versionId: versionId ?? this.versionId,
           status: 1,
         })
-        this.treeList = mapTree([res.data[0]], (i) => ({
+        const data = Array.isArray(res.data) ? res.data : []
+        if (!data.length) {
+          this.treeList = []
+          return
+        }
+        this.treeList = mapTree(data, (i) => ({
           ...i,
           popupVisible: false,
           isEdit: false,

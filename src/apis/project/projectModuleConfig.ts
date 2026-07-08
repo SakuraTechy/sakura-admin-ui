@@ -29,7 +29,7 @@ export interface ProjectModuleConfigDetailResp {
   projectId: string
   versionId: string
   versionName: string
-  parentId: number
+  parentId: string
   parentName: string
   name: string
   description: string

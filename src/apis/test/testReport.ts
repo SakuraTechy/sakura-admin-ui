@@ -4,10 +4,10 @@ const BASE_URL = '/test/testReport'
 
 export interface TestReportResp {
   id: string
-  projectId: number
+  projectId: string
   projectName: string
   versionName?: string
-  testPlanId?: number
+  testPlanId?: string
   testPlanName?: string
   name: string
   description?: string
@@ -61,7 +61,7 @@ export interface TestReportUiStatistic {
 export interface TestReportQuery {
   id?: string
   projectId?: number
-  testPlanId?: number
+  testPlanId?: string
   name?: string
   triggerMode?: string
   executeMode?: string

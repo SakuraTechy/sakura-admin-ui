@@ -32,6 +32,8 @@ declare module 'vue' {
     GiEditTable: typeof import('./../components/GiEditTable/GiEditTable.vue')['default']
     GiFooter: typeof import('./../components/GiFooter/index.vue')['default']
     GiForm: typeof import('./../components/GiForm/src/GiForm.vue')['default']
+    GiFormFieldControl: typeof import('./../components/GiForm/src/GiFormFieldControl.vue')['default']
+    GiFormFieldItem: typeof import('./../components/GiForm/src/GiFormFieldItem.vue')['default']
     GiFormModal: typeof import('./../components/GiFormModal/index.vue')['default']
     GiIconBox: typeof import('./../components/GiIconBox/index.vue')['default']
     GiIconSelector: typeof import('./../components/GiIconSelector/index.vue')['default']

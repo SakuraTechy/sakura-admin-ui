@@ -1,8 +1,10 @@
 <template>
-  <div class="gi_table_page">
+  <div class="gi_table_page test-legacy-page">
+    <a-tabs class="legacy-tabs" default-active-key="task-list" type="card">
+      <a-tab-pane key="task-list" title="任务列表">
     <GiTable
       v-model:selectedKeys="selectedKeys"
-      title="测试定时任务"
+      title=""
       row-key="id"
       :data="dataList"
       :columns="columns"
@@ -15,27 +17,49 @@
       @select="select"
       @select-all="selectAll"
     >
+      <template #top>
+        <div class="legacy-search-card">
+          <a-form :model="queryForm" layout="inline" class="legacy-search-form">
+            <a-form-item label="所属计划">
+              <a-input v-model="queryForm.testPlanId" placeholder="计划 ID" allow-clear />
+            </a-form-item>
+            <a-form-item label="任务类型">
+              <a-input v-model="queryForm.type" placeholder="请输入任务类型" allow-clear />
+            </a-form-item>
+            <a-form-item label="任务名称">
+              <a-input v-model="queryForm.name" placeholder="请输入任务名称" allow-clear />
+            </a-form-item>
+            <a-form-item label="任务状态">
+              <a-select v-model="queryForm.status" :options="statusOptions" placeholder="请选择" allow-clear />
+            </a-form-item>
+            <a-space>
+              <a-button type="primary" @click="search">
+                <template #icon><icon-search /></template>
+                查询
+              </a-button>
+              <a-button @click="reset">
+                <template #icon><icon-refresh /></template>
+                重置
+              </a-button>
+            </a-space>
+          </a-form>
+        </div>
+        <a-divider class="legacy-divider" />
+      </template>
       <template #toolbar-left>
-        <a-input-search v-model="queryForm.name" placeholder="任务名称" allow-clear @search="search" />
-        <a-input-search v-model="queryForm.testPlanId" placeholder="计划ID" allow-clear @search="search" />
-        <a-select v-model="queryForm.status" :options="statusOptions" placeholder="任务状态" allow-clear style="width: 160px" @change="search" />
-        <a-button @click="reset">
-          <template #icon><icon-refresh /></template>
-          重置
+        <a-button type="primary" @click="openForm()">
+          <template #icon><icon-plus /></template>
+          新建任务
         </a-button>
       </template>
       <template #toolbar-right>
-        <a-button type="primary" @click="openForm()">
-          <template #icon><icon-plus /></template>
-          新增
+        <a-button @click="onExport">
+          <template #icon><icon-download /></template>
+          批量导出
         </a-button>
         <a-button status="danger" :disabled="!selectedKeys.length" @click="onDelete()">
           <template #icon><icon-delete /></template>
-          删除
-        </a-button>
-        <a-button @click="onExport">
-          <template #icon><icon-download /></template>
-          导出
+          批量删除
         </a-button>
       </template>
 
@@ -57,18 +81,20 @@
         </a-space>
       </template>
     </GiTable>
+      </a-tab-pane>
+    </a-tabs>
 
     <a-modal v-model:visible="formVisible" :title="formState.id ? '修改测试定时任务' : '新增测试定时任务'" width="820px" @ok="submitForm">
       <a-form :model="formState" layout="vertical">
         <a-row :gutter="16">
-          <a-col :span="12"><a-form-item label="计划ID"><a-input-number v-model="formState.testPlanId" style="width: 100%" /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="计划ID"><a-input v-model="formState.testPlanId" style="width: 100%" allow-clear /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="计划名称"><a-input v-model="formState.testPlanName" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="任务名称"><a-input v-model="formState.name" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="任务类型"><a-input v-model="formState.type" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="Cron"><a-input v-model="formState.cronExpression" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="Misfire"><a-input v-model="formState.misfirePolicy" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="项目环境ID"><a-input-number v-model="formState.projectEnvironmentId" style="width: 100%" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="自动化环境ID"><a-input-number v-model="formState.automationEnvironmentId" style="width: 100%" /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="项目环境ID"><a-input v-model="formState.projectEnvironmentId" style="width: 100%" allow-clear /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="自动化环境ID"><a-input v-model="formState.automationEnvironmentId" style="width: 100%" allow-clear /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="执行人"><a-input v-model="formState.executeName" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="执行邮箱"><a-input v-model="formState.executeEmail" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="允许并发"><a-switch v-model="formState.allowConcurrentBool" /></a-form-item></a-col>
@@ -100,6 +126,7 @@ import {
   updateTimedTaskStatus,
 } from '@/apis/test/timedTask'
 import { useTable } from '@/hooks'
+import { toIdString } from '@/utils/id'
 
 defineOptions({ name: 'TestTimedTask' })
 
@@ -182,7 +209,7 @@ const reset = () => {
 
 const openForm = (record?: TestTimedTaskResp) => {
   formState.id = record?.id || ''
-  formState.testPlanId = record?.testPlanId
+  formState.testPlanId = toIdString(record?.testPlanId) || undefined
   formState.testPlanName = record?.testPlanName || ''
   formState.name = record?.name || ''
   formState.type = record?.type || 'PLAN'
@@ -190,8 +217,8 @@ const openForm = (record?: TestTimedTaskResp) => {
   formState.cronExpression = record?.cronExpression || '0 0/30 * * * ?'
   formState.misfirePolicy = record?.misfirePolicy || 'DO_NOTHING'
   formState.allowConcurrentBool = record?.allowConcurrent === 1
-  formState.projectEnvironmentId = record?.projectEnvironmentId
-  formState.automationEnvironmentId = record?.automationEnvironmentId
+  formState.projectEnvironmentId = toIdString(record?.projectEnvironmentId) || undefined
+  formState.automationEnvironmentId = toIdString(record?.automationEnvironmentId) || undefined
   formState.executeName = record?.executeName || ''
   formState.executeEmail = record?.executeEmail || ''
   formState.status = record?.status || 'DISABLED'
@@ -199,8 +226,19 @@ const openForm = (record?: TestTimedTaskResp) => {
 }
 
 const submitForm = async () => {
+  const testPlanId = toIdString(formState.testPlanId)
+  const projectEnvironmentId = toIdString(formState.projectEnvironmentId)
+  const automationEnvironmentId = toIdString(formState.automationEnvironmentId)
+  if (!testPlanId) {
+    Message.warning('请填写计划 ID')
+    return
+  }
+  if (!projectEnvironmentId || !automationEnvironmentId) {
+    Message.warning('请填写项目环境与自动化环境 ID')
+    return
+  }
   const payload = {
-    testPlanId: Number(formState.testPlanId),
+    testPlanId,
     testPlanName: formState.testPlanName,
     name: formState.name,
     type: formState.type,
@@ -208,8 +246,8 @@ const submitForm = async () => {
     cronExpression: formState.cronExpression,
     misfirePolicy: formState.misfirePolicy,
     allowConcurrent: formState.allowConcurrentBool ? 1 : 0,
-    projectEnvironmentId: Number(formState.projectEnvironmentId),
-    automationEnvironmentId: Number(formState.automationEnvironmentId),
+    projectEnvironmentId,
+    automationEnvironmentId,
     executeName: formState.executeName,
     executeEmail: formState.executeEmail,
     status: formState.status,
@@ -256,3 +294,7 @@ const openLogs = async (record: TestTimedTaskResp) => {
   logVisible.value = true
 }
 </script>
+
+<style scoped lang="scss">
+@use '../legacy.scss';
+</style>

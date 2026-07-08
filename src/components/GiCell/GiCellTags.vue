@@ -1,21 +1,17 @@
 <template>
-  <a-overflow-list v-if="data && data.length">
-    <a-tag v-for="(item, index) in data" :key="index" size="small">
-      {{ item }}
-    </a-tag>
-    <template #overflow="{ number }">
-      <a-popover :content-style="{ maxWidth: '300px', padding: '8px 12px' }">
-        <a-tag color="arcoblue" size="small">+{{ number }}</a-tag>
-        <template #content>
-          <a-space wrap>
-            <a-tag v-for="tag in data.filter((i, n) => n >= data.length - number)" :key="tag" size="small">
-              {{ tag }}
-            </a-tag>
-          </a-space>
-        </template>
-      </a-popover>
-    </template>
-  </a-overflow-list>
+  <div v-if="data && data.length" class="gi-cell-tags">
+    <a-tag v-if="data.length === 1" size="small">{{ data[0] }}</a-tag>
+    <a-popover v-else :content-style="{ maxWidth: '300px', padding: '8px 12px' }">
+      <a-tag color="arcoblue" size="small">{{ data.length }}</a-tag>
+      <template #content>
+        <a-space wrap>
+          <a-tag v-for="(tag, index) in data" :key="index" size="small">
+            {{ tag }}
+          </a-tag>
+        </a-space>
+      </template>
+    </a-popover>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -34,4 +30,10 @@ interface Props {
 export default {}
 </script>
 
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+.gi-cell-tags {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+</style>

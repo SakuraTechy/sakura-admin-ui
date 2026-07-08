@@ -4,7 +4,10 @@ const BASE_URL = '/test/testPlan'
 
 export interface TestPlanResp {
   id: string
-  projectId: number
+  /** 创建人昵称（后端 BaseResp#createUserString） */
+  createUserString?: string
+  /** 雪花 ID，须用字符串避免 JS Number 精度丢失 */
+  projectId: string
   projectName: string
   type: string
   name: string
@@ -19,16 +22,23 @@ export interface TestPlanResp {
   testProgress: number
   runTime: number
   status: string
+  /** 计划开始/结束（后端 LocalDateTime，多为 `yyyy-MM-dd HH:mm:ss` 或带 T 的字符串） */
+  plannedStartTime?: string | null
+  plannedEndTime?: string | null
   createTime: string
   updateTime: string
 }
 
 export interface TestPlanQuery {
   id?: string
-  projectId?: number
+  projectId?: string
   name?: string
   type?: string
   status?: string
+  /** 创建人用户 ID，与后端 BaseDO#createUser 一致 */
+  createUser?: number
+  /** 创建时间范围：前端选 `YYYY-MM-DD`；请求为 `yyyy-MM-dd HH:mm:ss` 二元组（与后端 Jackson 一致） */
+  createTime?: string[]
   sort?: Array<string>
 }
 
@@ -69,11 +79,11 @@ export function exportTestPlan(query: TestPlanQuery) {
   return http.download(`${BASE_URL}/export`, query)
 }
 
-export function relateTestPlanScenes(id: string, sceneIds: number[]) {
+export function relateTestPlanScenes(id: string, sceneIds: string[]) {
   return http.post(`${BASE_URL}/${id}/relateScenes`, { sceneIds })
 }
 
-export function removeTestPlanScenes(id: string, sceneIds: number[]) {
+export function removeTestPlanScenes(id: string, sceneIds: string[]) {
   return http.post(`${BASE_URL}/${id}/removeScenes`, { sceneIds })
 }
 

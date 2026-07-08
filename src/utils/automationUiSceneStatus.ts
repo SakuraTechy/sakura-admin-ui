@@ -91,9 +91,11 @@ export function pickSceneExecuteField(
   record: Record<string, any>,
   field: 'executeStatus' | 'executeResult',
   dictItems: LabelValueState[] = [],
+  executeResultType?: 'debug' | 'report',
 ) {
-  const debug = Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0] : null
-  const raw = debug?.[field] ?? record[field]
+  const sourceArray = executeResultType === 'report' ? record.testRecord : record.debugRecord
+  const source = Array.isArray(sourceArray) && sourceArray.length > 0 ? sourceArray[0] : null
+  const raw = source?.[field]
   if (field === 'executeStatus')
     return resolveSceneStatusValue(raw, dictItems)
   return resolveSceneResultValue(raw, dictItems)

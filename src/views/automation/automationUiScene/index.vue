@@ -10,7 +10,6 @@
         allow-clear
         allow-search
       />
-      <!-- <Tree /> -->
       <GiTree
         ref="giTreeRef"
         title="功能模块"
@@ -67,18 +66,16 @@
 </template>
 
 <script setup lang="ts">
-import { defineEmits, defineProps, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { mapTree } from 'xe-utils'
-import Tree from './components/tree/index.vue'
 import TabList from './components/tab/tabList.vue'
 import AddOrEditForm from './components/AddOrEditForm.vue'
 import AutomationUiScene from './components/AutomationUiScene.vue'
 import ExecuteSceneModal from './components/ExecuteSceneModal.vue'
-import type { AutomationUiSceneQuery } from '@/apis/automation/automationUiScene'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
-import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, getProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
+import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
 
 defineOptions({ name: 'Ui' })
 
@@ -276,13 +273,13 @@ const updateTab = (record: any) => {
 
 const executeSceneModalRef = ref()
 const executeScene = (record: any) => {
-  executeSceneModalRef.value?.onOpen([record])
+  executeSceneModalRef.value?.onOpen([record], { source: 'ui' })
 }
 const executeScenes = (records: any[]) => {
-  executeSceneModalRef.value?.onOpen(records, { mode: 'selected' })
+  executeSceneModalRef.value?.onOpen(records, { mode: 'selected', source: 'ui' })
 }
 const executeAllScenes = (records: any[], query: any) => {
-  executeSceneModalRef.value?.onOpen(records, { mode: 'all', query })
+  executeSceneModalRef.value?.onOpen(records, { mode: 'all', query, source: 'ui' })
 }
 
 // const updateScene = async (record: any) => {
