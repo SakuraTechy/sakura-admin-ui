@@ -1,0 +1,73 @@
+import http from '@/utils/http'
+
+const BASE_URL = '/automation/automationUiScene/recordings'
+
+export interface RecordingSceneReq {
+  sceneId: string
+  name: string
+  description?: string
+  projectId: string | number
+  projectName?: string
+  versionId: string | number
+  versionName?: string
+  moduleId: string | number
+  modulePath?: string
+  level?: string
+  tags?: Array<unknown>
+}
+
+export interface PlaywrightRecordedStepReq {
+  id?: unknown
+  step_index?: number
+  action_type?: string
+  target_selector?: string
+  target_xpath?: string
+  locator_meta?: unknown
+  value?: unknown
+  value_masked?: unknown
+  url?: string
+  description?: string
+  wait_before?: unknown
+  is_overlay?: unknown
+  screenshot?: string
+  screenshot_focus?: unknown
+  screenshot_focus_rect?: unknown
+  [key: string]: unknown
+}
+
+export interface PlaywrightRecordedCaseReq {
+  id?: unknown
+  name: string
+  status?: string
+  start_url?: string
+  description?: string
+  screenshot_mode?: string
+  page_error_check_enabled?: number
+  window_size_mode?: string
+  viewport_width?: number
+  viewport_height?: number
+  steps: PlaywrightRecordedStepReq[]
+  [key: string]: unknown
+}
+
+export interface AutomationRecordingImportReq {
+  mode: 'createScene'
+  scene: RecordingSceneReq
+  recordedCase: PlaywrightRecordedCaseReq
+  persistScreenshots?: boolean
+  keepRawScreenshotInStep?: boolean
+}
+
+export interface AutomationRecordingImportResp {
+  sceneDbId: string | number
+  sceneId: string
+  caseId: string
+  recordingId: string
+  stepCount: number
+  mode: string
+}
+
+/** @desc 导入 Playwright 录制结果 */
+export function importRecording(data: AutomationRecordingImportReq) {
+  return http.post<AutomationRecordingImportResp>(`${BASE_URL}/import`, data)
+}
