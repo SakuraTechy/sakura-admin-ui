@@ -312,8 +312,6 @@ onMounted(async () => {
   await uiStore.fetchTrees()
   await uiStore.fetchUsers()
   // }
-  // uiStore.moduleId = uiStore.treeList[0].id
-  uiStore.moduleId = ''
   uiStore.activeKey = '0'
 })
 </script>

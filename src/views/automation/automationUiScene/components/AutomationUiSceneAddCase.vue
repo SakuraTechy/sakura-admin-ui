@@ -5,6 +5,7 @@
     style="flex-direction: column"
     :edit-method="editMethod"
     :tree-data="treeList"
+    :field-names="{ key: 'treeKey', title: 'name', children: 'children' }"
     :loading="loading"
     :selected-keys="selectedKeys"
     :multiple="multiple"
@@ -15,7 +16,16 @@
     @menu-click="onMenuClick"
     @tree-node-click="onTreeNodeClick"
     @focus="onTreeFocus"
-  />
+  >
+    <template #right-menu="{ node, treeData, onMenuItemClick, onTreeNodeClick }">
+      <GiMenu
+        :tree-data="treeData"
+        :recording-options="getRecordingMenuOptions(node)"
+        @on-menu-item-click="mode => onMenuItemClick(mode, node)"
+        @on-tree-node-click="onTreeNodeClick"
+      />
+    </template>
+  </GiTree>
   <GiFormModal
     max-body-height="80vh"
     v-model:visible="modalConfig.visible"
@@ -36,12 +46,12 @@
 <script setup lang="tsx">
 import { computed, defineEmits, defineProps, h, nextTick, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { mapTree } from 'xe-utils'
 import { M } from 'node_modules/vite/dist/node/types.d-aGj9QkWt'
 import Tree from './components/tree/index.vue'
 import TabList from './components/tab/tabList.vue'
 import AddOrEditForm from './components/AddOrEditForm.vue'
 import AutomationUiScene from './components/automationUiScene.vue'
+import GiMenu from '@/components/GiMenu/index.vue'
 import { type AutomationUiSceneResp, addCase, addStep, deleteCase, deleteStep, dragCase, dragStep, updateCase, updateStep } from '@/apis/automation/automationUiScene'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
@@ -61,6 +71,7 @@ const emit = defineEmits<{
   (e: 'get-scene-info', data?: any): void
   (e: 'get-case', data?: any): void
   (e: 'get-step', data?: any): void
+  (e: 'recording', data: { mode: string; node: any }): void
 }>()
 
 const { sort_type, status_type, automation_operation_type, automation_operation_method } = useDict('sort_type', 'status_type', 'automation_operation_type', 'automation_operation_method')
@@ -80,40 +91,48 @@ const onTreeFocus = () => {
 
 const loading = ref(false)
 type TreeCateItem = AutomationUiSceneResp['caseList'][number] & {
+  treeKey?: string
   switcherIcon?: (node: TreeCateItem) => VNode
   icon?: (node: TreeCateItem) => VNode
   popupVisible?: boolean
   isEdit?: boolean
 }
 const treeList = ref<TreeCateItem[]>([])
+const buildCaseTree = (caseList: any[]) => {
+  return (Array.isArray(caseList) ? caseList : []).map((caseItem: any, caseIndex: number) => {
+    const caseId = String(caseItem?.id ?? caseIndex)
+    const steps = Array.isArray(caseItem?.stepList) ? caseItem.stepList : []
+    return {
+      ...caseItem,
+      type: 'case',
+      treeKey: `case:${caseId}`,
+      key: `case:${caseId}`,
+      title: caseItem?.name,
+      children: steps.map((step: any, stepIndex: number) => {
+        const stepId = String(step?.id ?? stepIndex)
+        const stepOrder = String(step?.order ?? stepIndex + 1)
+        return {
+          ...step,
+          type: 'step',
+          pid: step?.pid || caseItem?.id,
+          treeKey: `step:${caseId}:${stepId}:${stepOrder}:${stepIndex}`,
+          key: `step:${caseId}:${stepId}:${stepOrder}:${stepIndex}`,
+          title: step?.name,
+          popupVisible: false,
+          isEdit: false,
+        }
+      }),
+      popupVisible: false,
+      isEdit: false,
+    }
+  })
+}
 const getTreeCaseList = async (data?: any) => {
   try {
     loading.value = true
     // const res = await getAutomationUiScene(uiStore.activeId)
-    // const data = JSON.parse(JSON.stringify(uiStore.treeList)) as ProjectModuleConfigResp[]
-    // treeList.value = mapTree(res.data.caseList as any, (i) => ({
     // console.log('caseList', props.caseList)
-    treeList.value = mapTree(props.caseList as any, (i) => ({
-      ...i as unknown as TreeCateItem,
-      key: i.id,
-      title: i.name,
-      children: i.stepList,
-      popupVisible: false,
-      isEdit: false,
-      // switcherIcon: (node: any) => {
-      //   if (node.expanded && !node.isLeaf) return <icon-tree-add />
-      //   if (!node.expanded && !node.isLeaf) return <icon-tree-reduce style={{ transform: 'none' }} />
-      //   if (node.expanded && !node.isLeaf) return <IconCaretDown />
-      //   if (!node.expanded && !node.isLeaf) return <IconCaretRight />
-      //   return null
-      // },
-      // icon: (node: any) => {
-      //   if (node.expanded && !node.isLeaf) return <GiSvgIcon name="file-open" size={16}></GiSvgIcon>
-      //   if (!node.expanded && !node.isLeaf) return <GiSvgIcon name="file-close" size={16}></GiSvgIcon>
-      //   // return <GiSvgIcon name="folder" size={16}></GiSvgIcon>
-      //   return <GiSvgIcon name="file" size={16}></GiSvgIcon>
-      // },
-    }))
+    treeList.value = buildCaseTree(props.caseList as any) as TreeCateItem[]
     onNodeClick(data)
     // this.moduleId = this.treeList[0].id
     // this.moduleId = JSON.parse(localStorage.getItem('ui-store') ?? '{}').moduleId ?? this.treeList[0]?.id
@@ -282,7 +301,21 @@ const modalConfig = reactive({
     },
   ]),
   stepColumns: computed<ColumnItem[]>(() => [
-    // { label: '步骤ID', field: 'id', type: 'input', required: true, props: { maxLength: 64 } },
+    {
+      label: '步骤ID',
+      field: 'id',
+      type: 'input',
+      required: true,
+      props: {
+        maxLength: 64,
+        onInput: (value: any) => {
+          modalConfig.form.id = value
+        },
+      },
+      disabled: () => {
+        return modalConfig.title === '修改步骤'
+      },
+    },
     {
       label: '步骤名称',
       field: 'name',
@@ -474,7 +507,6 @@ const handleSave = async (data: any) => {
   console.warn('handleSave', data)
   // console.log(modalData.value)
   try {
-    const stepId = ''
     if (modalConfig.title === '新增用例') {
       await addCase({ ...data, type: 'case' }, uiStore.activeId)
       Message.success('新增成功')
@@ -520,11 +552,12 @@ const handleClose = () => {
 
 const onNodeClick = (data?: any) => {
   // console.warn('onNodeClick', data)
-  selectedKeys.value = data ? [data.id || data.node?.id] : [treeList.value[0]?.id]
+  const node = data?.node || data
+  selectedKeys.value = node ? [node.treeKey || node.id] : [treeList.value[0]?.treeKey || treeList.value[0]?.id]
   if (data?.type === 'step' || data?.node?.type === 'step') {
     emit('get-step', data)
   } else if (data?.node?.type === 'case' || treeList.value[0]?.type === 'case') {
-    emit('get-case', selectedKeys.value[0])
+    emit('get-case', node?.id || treeList.value[0]?.id)
   }
 }
 const onNodeDrop = async (data?: any) => {
@@ -551,6 +584,30 @@ const onNodeDrop = async (data?: any) => {
 }
 
 const editMethod = ref('弹窗编辑')
+const getRecordingMenuOptions = (node: any) => {
+  const currentNode = node?.node || node?.data || node
+  const nodeKey = currentNode?.treeKey || currentNode?.key
+  const nodeType = (typeof nodeKey === 'string' && nodeKey.startsWith('step:') ? 'step' : '')
+    || (typeof nodeKey === 'string' && nodeKey.startsWith('case:') ? 'case' : '')
+    || currentNode?.type
+    || (Array.isArray(currentNode?.children) ? 'case' : currentNode?.pid ? 'step' : '')
+  if (nodeType === 'case') {
+    return [
+      { label: '追加用例', mode: 'recording:appendCase' },
+      { label: '替换用例', mode: 'recording:replaceCase' },
+      { label: '追加步骤', mode: 'recording:appendStep' },
+      { label: '替换步骤', mode: 'recording:replaceStep' },
+    ]
+  }
+  if (nodeType === 'step') {
+    return [
+      { label: '追加步骤', mode: 'recording:appendStep' },
+      { label: '替换步骤', mode: 'recording:replaceStep' },
+    ]
+  }
+  return []
+}
+
 const onMenuClick = async (data?: any) => {
   if (props.readonly) {
     Message.warning('当前为只读模式，无法修改')
@@ -558,6 +615,13 @@ const onMenuClick = async (data?: any) => {
   }
   console.warn('onMenuClick', data)
   try {
+    if (typeof data?.mode === 'string' && data.mode.startsWith('recording:')) {
+      emit('recording', {
+        mode: data.mode.slice('recording:'.length),
+        node: data.node,
+      })
+      return true
+    }
     switch (data.mode) {
       case 'add':
         if (data.node?.type === 'step') return Message.warning('当前节点不能添加步骤')
@@ -569,7 +633,7 @@ const onMenuClick = async (data?: any) => {
           ? {
               ...modalConfig.stepForm,
               pid: data.node.id,
-              id: `SCENE_STEP_`,
+              id: `CASE_STEP_`,
               order: data.node.stepList?.length + 1,
             }
           : {
@@ -598,7 +662,7 @@ const onMenuClick = async (data?: any) => {
           modalConfig.columns = data.node?.type === 'case' ? modalConfig.caseColumns : modalConfig.stepColumns
           modalConfig.visible = true
           modalConfig.form = { ...data.node, sortType: String(data.node.sortType ?? ''), order: data.node.stepList?.length + 1 || props.caseList.length + 1 }
-          modalConfig.form.id = data.node?.type === 'case' ? 'SCENE_CASE_' : data.node?.id
+          modalConfig.form.id = data.node?.type === 'case' ? 'SCENE_CASE_' : 'CASE_STEP_'
           modalConfig.form.sortType = ''
           modalData.value = data.node
         }

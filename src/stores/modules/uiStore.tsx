@@ -36,6 +36,17 @@ export const useUiStore = defineStore('ui', {
     // paths: ['projectId'], // 只对 projectId 字段进行持久化
   },
   actions: {
+    resolveDefaultModuleId(treeList: TreeCateItem[]) {
+      const exists = (items: TreeCateItem[], target?: string): boolean => {
+        if (!target)
+          return false
+        return items.some((item) => String(item.id) === String(target) || exists(item.children as TreeCateItem[] || [], target))
+      }
+      if (exists(treeList, this.moduleId))
+        return this.moduleId
+      return treeList[0]?.id ? String(treeList[0].id) : ''
+    },
+
     async fetchProjects() {
       const res = await getProjectConfigList({ status: 1, sort: ['name,desc'] })
       this.projectList = res.data.map((item) => ({ label: item.name, value: `${item.id}` }))
@@ -99,11 +110,9 @@ export const useUiStore = defineStore('ui', {
           //   return <GiSvgIcon name="file" size={16}></GiSvgIcon>
           // },
         }))
-        // this.moduleId = this.treeList[0].id
-        // this.moduleId = JSON.parse(localStorage.getItem('ui-store') ?? '{}').moduleId ?? this.treeList[0]?.id
+        this.moduleId = this.resolveDefaultModuleId(this.treeList)
       } finally {
         this.loading = false
-        this.moduleId = ''
       }
     },
 

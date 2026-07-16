@@ -27,6 +27,20 @@
                   </template>
                   <template #default>新增用例</template>
                 </a-doption>
+                <a-dsubmenu v-if="uiStore.activeId">
+                  <template #icon>
+                    <icon-play-arrow />
+                  </template>
+                  <template #default>录制用例</template>
+                  <template #content>
+                    <a-doption @click="openChromeRecording({ allowedModes: ['appendCase'], defaultMode: 'appendCase', fixedTargetScene: true })">
+                      追加用例
+                    </a-doption>
+                    <a-doption @click="openChromeRecording({ allowedModes: ['replaceCase'], defaultMode: 'replaceCase', fixedTargetScene: true })">
+                      替换用例
+                    </a-doption>
+                  </template>
+                </a-dsubmenu>
                 <a-doption @click="getSceneInfo()">
                   <template #icon>
                     <icon-refresh />
@@ -37,26 +51,39 @@
             </a-dropdown>
             <span v-else><icon-ordered-list /> 场景用例</span>
           </template>
-          <AutomationUiSceneAddCase v-if="uiStore.activeId" ref="caseListRef" :readonly="isReadonly" :case-list="caseList" @get-scene-info="getSceneInfo" @get-case="getCase" @get-step="getStep" />
+          <AutomationUiSceneAddCase v-if="uiStore.activeId" ref="caseListRef" :readonly="isReadonly" :case-list="caseList" @get-scene-info="getSceneInfo" @get-case="getCase" @get-step="getStep" @recording="openChromeRecordingFromNode" />
         </a-tab-pane>
       </a-tabs>
     </template>
-    <div :style="{ width: '100%' }">
+    <div class="detail-panel" :style="{ width: '100%' }">
       <a-card class="card">
         <a-space style="font-weight: 700;">用例总数：{{ caseList.length }}</a-space>
         <a-space style="font-weight: 700;">步骤总数：{{ stepList.length }}</a-space>
-        <div style="display: flex; margin-right: auto;">
-          <a-checkbox v-model="perChecked" :disabled="isReadonly"> 性能模式 </a-checkbox>
-          <a-select v-model="webValue" :disabled="isReadonly" :style="{ width: '120px', marginLeft: '20px' }" placeholder="请选择">
-            <a-option v-for="item of browser_type" :key="item.value" :value="item.value" :label="item.label" />
-          </a-select>
-          <a-dropdown-button :disabled="isReadonly" :style="{ marginLeft: '20px' }" @select="handleSelect">
-            {{ debugText }}
-            <template #icon>
-              <icon-down />
-            </template>
+        <div>
+        <!-- <div style="display: flex; margin-right: auto;">-->
+          <a-button
+            v-if="uiStore.activeId && !isReadonly"
+            v-permission="['automation:automationUiScene:create', 'automation:automationUiScene:update']"
+            type="primary"
+            @click="openChromeRecording"
+          >
+            <template #icon><icon-record /></template>
+            录制用例
+          </a-button>
+          <a-dropdown-button
+            v-permission="['automation:automationUiScene:execute']"
+            type="primary"
+            :disabled="!uiStore.activeId"
+            :style="{ marginLeft: '20px' }"
+            @click="openExecuteModal"
+            @select="handleUnifiedExecutionSelect"
+          >
+            <template #icon><icon-play-arrow /></template>
+            执行用例
             <template #content>
-              <a-doption v-for="item in debug_type" :key="item.value" :value="item.value">{{ item.label }}</a-doption>
+              <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-doption>
             </template>
           </a-dropdown-button>
         </div>
@@ -89,6 +116,83 @@
             </a-descriptions>
           </div>
         </a-tab-pane>
+        <a-tab-pane key="4" title="录制数据">
+          <a-empty v-if="!caseDetail && !isPlaywrightStep(stepDetail)" description="当前用例或步骤暂无 Playwright 录制数据" />
+          <a-space v-else-if="caseDetail" direction="vertical" fill class="recording-tab-content">
+            <a-descriptions :column="1" size="large" bordered>
+              <a-descriptions-item label="用例 ID">{{ caseDetail?.id || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="用例名称">{{ caseDetail?.name || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="用例备注">{{ caseDetail?.remark || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="录制步骤数">{{ selectedCaseRecordingSteps.length }}</a-descriptions-item>
+              <a-descriptions-item label="原始用例 ID">{{ getStepConfigValue(firstRecordingStep, 'original_case_id') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="录制 ID">{{ getStepConfigValue(firstRecordingStep, 'recording_id') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="起始地址">{{ getStepConfigValue(firstRecordingStep, 'start_url') || getStepConfigValue(firstRecordingStep, 'url') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="窗口模式">{{ getStepConfigValue(firstRecordingStep, 'window_size_mode') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="视口">{{ formatCaseViewport(firstRecordingStep) }}</a-descriptions-item>
+            </a-descriptions>
+            <a-tabs size="small" class="recording-json-tabs">
+              <a-tab-pane key="step_table" title="步骤列表">
+                <a-table
+                  row-key="id"
+                  size="small"
+                  :pagination="false"
+                  :data="selectedCaseRecordingSteps"
+                  :columns="recordingStepColumns"
+                />
+              </a-tab-pane>
+              <a-tab-pane key="current_case" title="当前用例">
+                <JsonPretty :json="formatJsonObject(selectedCaseAdminJson)" />
+              </a-tab-pane>
+              <a-tab-pane key="full_case" title="完整用例">
+                <JsonPretty :json="formatJsonObject(selectedCaseFullRecordingJson)" />
+              </a-tab-pane>
+              <a-tab-pane key="steps" title="步骤">
+                <JsonPretty :json="formatJsonObject(selectedCaseRecordingStepJsonList)" />
+              </a-tab-pane>
+            </a-tabs>
+          </a-space>
+          <a-space v-else direction="vertical" fill class="recording-tab-content">
+            <a-descriptions :column="1" size="large" bordered>
+              <a-descriptions-item label="Playwright 录制来源">
+                <a-space wrap>
+                  <a-tag color="arcoblue">{{ getStepConfigValue(stepDetail, 'action_type') || stepDetail?.operationValue || 'playwright' }}</a-tag>
+                  <a-tag v-if="getStepConfigValue(stepDetail, 'source')" color="green">{{ getStepConfigValue(stepDetail, 'source') }}</a-tag>
+                  <a-tag v-if="getStepConfigValue(stepDetail, 'recording_id')" color="gray">{{ getStepConfigValue(stepDetail, 'recording_id') }}</a-tag>
+                </a-space>
+              </a-descriptions-item>
+              <a-descriptions-item label="CSS 选择器">{{ getStepConfigValue(stepDetail, 'target_selector') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="XPath">{{ getStepConfigValue(stepDetail, 'target_xpath') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="页面地址">{{ getStepConfigValue(stepDetail, 'url') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="输入值">{{ formatStepValue(stepDetail) }}</a-descriptions-item>
+              <a-descriptions-item label="截图">
+                <a-space v-if="getStepConfigValue(stepDetail, 'screenshot_url')" direction="vertical" fill>
+                  <a-link @click="openScreenshot(getStepConfigValue(stepDetail, 'screenshot_url'))">
+                    打开截图
+                  </a-link>
+                  <div class="recording-path-line">
+                    <span class="muted">接口路径：</span>{{ getStepConfigValue(stepDetail, 'screenshot_url') }}
+                  </div>
+                  <div v-if="getStepConfigValue(stepDetail, 'screenshot_path')" class="recording-path-line">
+                    <span class="muted">本地相对路径：</span>{{ getStepConfigValue(stepDetail, 'screenshot_path') }}
+                  </div>
+                  <div v-if="getStepConfigValue(stepDetail, 'screenshot_file_id')" class="recording-path-line">
+                    <span class="muted">文件 ID：</span>{{ getStepConfigValue(stepDetail, 'screenshot_file_id') }}
+                  </div>
+                </a-space>
+                <span v-else-if="getStepConfigValue(stepDetail, 'screenshot_present')">已记录截图存在标记，未保存 artifact</span>
+                <span v-else>-</span>
+              </a-descriptions-item>
+            </a-descriptions>
+            <a-tabs size="small">
+              <a-tab-pane v-if="getStepConfigValue(stepDetail, 'playwright_step')" key="playwright_step" title="playwright_step">
+                <JsonPretty :json="formatStepConfigJson(stepDetail, 'playwright_step')" />
+              </a-tab-pane>
+              <a-tab-pane v-if="getStepConfigValue(stepDetail, 'locator_meta')" key="locator_meta" title="locator_meta">
+                <JsonPretty :json="formatStepConfigJson(stepDetail, 'locator_meta')" />
+              </a-tab-pane>
+            </a-tabs>
+          </a-space>
+        </a-tab-pane>
         <a-tab-pane key="2" title="描述信息">
           <div id="editor">
             <AiEditor
@@ -111,11 +215,17 @@
       <a-button type="primary" @click="handleSubmit">保存</a-button>
     </a-grid>
     <ExecuteSceneModal ref="executeSceneModalRef" @success="getSceneInfo" />
+    <ChromeRecordingModal
+      ref="chromeRecordingModalRef"
+      :scene-options="currentScene ? [currentScene] : []"
+      @recording-finished="handleRecordingFinished"
+    />
+    <AutomationExecutionCaseModal ref="executionCaseModalRef" @success="getSceneInfo" />
   </GiPageLayout>
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineEmits, defineProps, reactive, ref, watch } from 'vue'
 import { add, mapTree } from 'xe-utils'
 import TagsInput from 'vue3-tags-input'
 import { Message } from '@arco-design/web-vue'
@@ -123,6 +233,8 @@ import { string } from 'sql-formatter/dist/cjs/lexer/regexFactory'
 
 import AutomationUiSceneAddCase from './AutomationUiSceneAddCase.vue'
 import ExecuteSceneModal from './ExecuteSceneModal.vue'
+import ChromeRecordingModal from './ChromeRecordingModal.vue'
+import AutomationExecutionCaseModal from './AutomationExecutionCaseModal.vue'
 // import { AiEditor } from '@/components/GiEditor/AiEditor.vue'
 // import QuillEditor from '@/components/GiEditor/QuillEditor.vue'
 
@@ -135,8 +247,24 @@ import { useDict } from '@/hooks/app'
 import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
 import { type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { findNodePath } from '@/utils/sakura'
+import http from '@/utils/http'
+import { type ExecutionType, executionTypeOptions } from '../execution'
 
 defineOptions({ name: 'Ui' })
+
+type RecordingMode = 'appendCase' | 'replaceCase' | 'appendStep' | 'replaceStep'
+
+interface RecordingOpenOptions {
+  allowedModes?: RecordingMode[]
+  defaultMode?: RecordingMode
+  fixedTargetScene?: boolean
+  fixedTargetCase?: boolean
+  fixedTargetStep?: boolean
+  targetCaseId?: string
+  targetStepId?: string
+  appendAfterCaseId?: string
+  appendAfterStepId?: string
+}
 const emit = defineEmits<{
   (e: 'add-tab'): void
   (e: 'remove-tab'): void
@@ -145,7 +273,7 @@ const emit = defineEmits<{
 
 const uiStore = useUiStore()
 const formRef = ref<InstanceType<typeof GiForm>>()
-const { scene_level, browser_type, debug_type, status_type } = useDict('scene_level', 'browser_type', 'debug_type', 'status_type')
+const { scene_level, browser_type, status_type } = useDict('scene_level', 'browser_type', 'status_type')
 
 const [form, resetForm] = useResetReactive({
   projectId: uiStore.projectId ?? undefined,
@@ -163,7 +291,6 @@ const [form, resetForm] = useResetReactive({
 const activeKey = ref('1')
 const perChecked = ref(false)
 const webValue = ref('Chrome')
-const debugText = ref('本地调试')
 
 const moduleSelectTree = computed(() => {
   if (!form.projectId || !form.versionId) return []
@@ -326,31 +453,184 @@ const columns = computed<ColumnItem[]>(() => [
 
 const executeSceneModalRef = ref()
 
-const normalizeRecordList = (record: unknown) => {
-  if (Array.isArray(record))
-    return record
-  if (typeof record === 'string' && record) {
-    try {
-      const parsed = JSON.parse(record)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
+const selectedCaseRecordingSteps = computed(() => {
+  const stepList = Array.isArray(caseDetail.value?.stepList) ? caseDetail.value.stepList : []
+  return stepList.filter((step: any) => isPlaywrightStep(step))
+})
+
+const firstRecordingStep = computed(() => selectedCaseRecordingSteps.value[0])
+
+const selectedCaseRecordingStepJsonList = computed(() => {
+  return selectedCaseRecordingSteps.value.map((step: any, index: number) => {
+    const rawStep = parseStepConfigJson(step, 'playwright_step')
+    if (rawStep && typeof rawStep === 'object' && !Array.isArray(rawStep)) {
+      return rawStep.id == null ? { id: step?.order ?? index + 1, ...rawStep } : rawStep
     }
+    return {
+      id: step?.order ?? index + 1,
+      action_type: getStepConfigValue(step, 'action_type') || step?.operationValue,
+      target_selector: getStepConfigValue(step, 'target_selector'),
+      target_xpath: getStepConfigValue(step, 'target_xpath'),
+      value: getStepConfigValue(step, 'value'),
+      url: getStepConfigValue(step, 'url'),
+      description: step?.name || step?.remark,
+    }
+  })
+})
+
+const selectedCaseRecordingCaseJson = computed(() => {
+  const firstStep = firstRecordingStep.value
+  const caseId = getStepConfigValue(firstStep, 'original_case_id') || caseDetail.value?.id || ''
+  return {
+    id: caseId,
+    name: caseDetail.value?.name || '',
+    status: caseDetail.value?.status || '',
+    start_url: getStepConfigValue(firstStep, 'start_url') || getStepConfigValue(firstStep, 'url') || '',
+    description: caseDetail.value?.remark || '',
+    screenshot_mode: getStepConfigValue(firstStep, 'screenshot_mode') || 'standard',
+    window_size_mode: getStepConfigValue(firstStep, 'window_size_mode') || '',
+    viewport_width: formatCaseViewportNumber(firstStep, 'viewport_width'),
+    viewport_height: formatCaseViewportNumber(firstStep, 'viewport_height'),
+    steps: selectedCaseRecordingStepJsonList.value,
   }
-  return []
+})
+
+const selectedCaseAdminJson = computed(() => caseDetail.value || {})
+
+const selectedCaseFullRecordingJson = computed(() => {
+  const caseJson = selectedCaseRecordingCaseJson.value
+  const caseId = String(caseJson.id || caseDetail.value?.id || 'current')
+  return {
+    cases: {
+      [caseId]: caseJson,
+    },
+  }
+})
+
+const recordingStepColumns = [
+  {
+    title: '顺序',
+    dataIndex: 'order',
+    width: 80,
+  },
+  {
+    title: '步骤名称',
+    dataIndex: 'name',
+    ellipsis: true,
+    tooltip: true,
+  },
+  {
+    title: '动作',
+    dataIndex: 'action_type',
+    width: 120,
+    render: ({ record }: any) => getStepConfigValue(record, 'action_type') || record.operationValue || '-',
+  },
+  {
+    title: '目标',
+    dataIndex: 'target_selector',
+    ellipsis: true,
+    tooltip: true,
+    render: ({ record }: any) => getStepConfigValue(record, 'target_selector') || getStepConfigValue(record, 'target_xpath') || '-',
+  },
+]
+
+const getStepConfigValue = (step: any, name: string) => {
+  const configList = Array.isArray(step?.configList) ? step.configList : []
+  const config = configList.find((item: any) => item?.paramsName === name)
+  return config?.paramsValue == null ? '' : String(config.paramsValue)
 }
 
-const getLatestDebugRecord = () => {
-  const records = normalizeRecordList((form as any).debugRecord)
-  return records[0] || {}
+const isPlaywrightStep = (step: any) => {
+  if (!step) return false
+  return Boolean(
+    getStepConfigValue(step, 'playwright_step')
+    || getStepConfigValue(step, 'locator_meta')
+    || getStepConfigValue(step, 'screenshot_url')
+    || String(step?.operationValue || '').startsWith('pw-'),
+  )
 }
 
-const openUrl = (url: string | undefined, emptyMessage: string) => {
-  if (!url) {
-    Message.warning(emptyMessage)
+const parseStepConfigJson = (step: any, name: string) => {
+  const value = getStepConfigValue(step, name)
+  if (!value) return null
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
+const formatStepConfigJson = (step: any, name: string) => {
+  const value = getStepConfigValue(step, name)
+  if (!value) return '{}'
+  try {
+    const parsed = JSON.parse(value)
+    if (name === 'playwright_step' && parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.id == null) {
+      return JSON.stringify({ id: step?.order ?? step?.stepIndex ?? step?.step_index, ...parsed }, null, 2)
+    }
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return JSON.stringify({ raw: value }, null, 2)
+  }
+}
+
+const formatJsonObject = (value: any) => {
+  return JSON.stringify(value ?? {}, null, 2)
+}
+
+const formatNumberOrEmpty = (value: string) => {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && value !== '' ? numberValue : ''
+}
+
+const isMaximizedWindowMode = (step: any) => {
+  return getStepConfigValue(step, 'window_size_mode') === 'maximized'
+}
+
+const formatCaseViewportNumber = (step: any, name: 'viewport_width' | 'viewport_height') => {
+  if (isMaximizedWindowMode(step)) return ''
+  return formatNumberOrEmpty(getStepConfigValue(step, name))
+}
+
+const formatCaseViewport = (step: any) => {
+  if (isMaximizedWindowMode(step)) return '-'
+  const width = getStepConfigValue(step, 'viewport_width')
+  const height = getStepConfigValue(step, 'viewport_height')
+  return width && height ? `${width} x ${height}` : '-'
+}
+
+const formatStepValue = (step: any) => {
+  if (getStepConfigValue(step, 'value_masked') === '1') return '******'
+  return getStepConfigValue(step, 'value') || '-'
+}
+
+const resolveResourceUrl = (url: string) => {
+  const value = String(url || '').trim()
+  if (!value || /^(https?:)?\/\//i.test(value) || value.startsWith('data:')) return value
+  const apiPrefix = import.meta.env.VITE_API_PREFIX || ''
+  if (apiPrefix && value.startsWith(apiPrefix)) return value
+  if (apiPrefix && value.startsWith('/')) return `${apiPrefix}${value}`
+  return value
+}
+
+const openScreenshot = async (url: string) => {
+  const resolvedUrl = resolveResourceUrl(url)
+  if (!resolvedUrl) return
+  if (/^(https?:)?\/\//i.test(resolvedUrl)) {
+    window.open(resolvedUrl, '_blank')
     return
   }
-  window.open(url)
+  try {
+    const response = await http.requestNative({
+      method: 'get',
+      url: resolvedUrl,
+      responseType: 'blob',
+    })
+    const objectUrl = URL.createObjectURL(response.data)
+    window.open(objectUrl, '_blank')
+  } catch (e: any) {
+    Message.error(e?.message || '打开截图失败')
+  }
 }
 
 const openExecuteModal = async () => {
@@ -363,61 +643,22 @@ const openExecuteModal = async () => {
   executeSceneModalRef.value?.onOpen([data], { source: 'ui' })
 }
 
-const openDebugLog = async () => {
-  if (!uiStore.activeId) {
-    Message.warning('请先保存基础信息')
-    return
-  }
-  const { data } = await getAutomationUiScene(uiStore.activeId)
-  const record = normalizeRecordList(data.debugRecord)[0] || data
-  openUrl(record.consoleUrl || data.consoleUrl, '获取运行日志失败，请先执行场景')
-}
-
-const openDebugReport = async () => {
-  if (!uiStore.activeId) {
-    Message.warning('请先保存基础信息')
-    return
-  }
-  const { data } = await getAutomationUiScene(uiStore.activeId)
-  const record = normalizeRecordList(data.debugRecord)[0] || data
-  openUrl(record.testReportUrl || data.testReportUrl, '获取测试报告失败，请先执行场景')
-}
-
-const openDebugVideo = async () => {
-  if (!uiStore.activeId) {
-    Message.warning('请先保存基础信息')
-    return
-  }
-  const { data } = await getAutomationUiScene(uiStore.activeId)
-  const record = normalizeRecordList(data.debugRecord)[0] || data
-  const reportUrl = record.testReportUrl || data.testReportUrl
-  const videoUrl = reportUrl?.includes('/index.html')
-    ? reportUrl.replace('/index.html', `/video/${data.sceneId}.mp4`)
-    : reportUrl
-      ? `${reportUrl.replace(/\/$/, '')}/video/${data.sceneId}.mp4`
-      : ''
-  openUrl(videoUrl, '获取测试回放失败，请先执行场景')
-}
-
-const handleSelect = async (value: string) => {
-  const selected = debug_type.value.find(item => item.value === value || item.label === value)
-  const label = selected?.label || value
-  debugText.value = label
-  if (label === '本地调试' || label === '远程调试') {
+const executionCaseModalRef = ref<{
+  onOpen: (record: any, type: Exclude<ExecutionType, 'jenkins'>, options?: { caseId?: string }) => void
+}>()
+const handleUnifiedExecutionSelect = async (value: string) => {
+  const type = value as ExecutionType
+  if (type === 'jenkins') {
     await openExecuteModal()
     return
   }
-  if (label === '查看日志') {
-    await openDebugLog()
+  if (!currentScene.value) {
+    Message.warning('请先保存场景，再启动回放')
     return
   }
-  if (label === '查看报告') {
-    await openDebugReport()
-    return
-  }
-  if (label === '查看回放') {
-    await openDebugVideo()
-  }
+  executionCaseModalRef.value?.onOpen(currentScene.value, type, {
+    caseId: String(caseDetail.value?.id || ''),
+  })
 }
 
 const handleCancel = () => {
@@ -488,6 +729,28 @@ const handleSubmit = async () => {
 
 const caseList = ref([])
 const stepList = ref([])
+const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp, options?: RecordingOpenOptions) => void }>()
+
+const currentScene = computed<AutomationUiSceneResp | null>(() => {
+  if (!uiStore.activeId) return null
+  return {
+    id: String(uiStore.activeId),
+    sceneId: form.sceneId,
+    name: form.name,
+    description: form.description,
+    projectId: String(form.projectId || ''),
+    projectName: String((form as any).projectName || ''),
+    versionId: String(form.versionId || ''),
+    versionName: String((form as any).versionName || ''),
+    moduleId: String(form.moduleId || ''),
+    modulePath: String((form as any).modulePath || ''),
+    level: form.level,
+    status: form.status,
+    tags: Array.isArray(form.tags) ? form.tags : [],
+    caseList: caseList.value as AutomationUiSceneResp['caseList'],
+  } as AutomationUiSceneResp
+})
+
 const getSceneInfo = async (data1?: any) => {
   const { data } = await getAutomationUiScene(uiStore.activeId)
   Object.assign(form, data)
@@ -516,14 +779,54 @@ const stepDetail = ref()
 const getCase = async (id: string) => {
   console.log('getCase', id)
   caseDetail.value = caseList.value.find((item: any) => item.id === id)
+  stepDetail.value = undefined
 }
 
 const getStep = async (data: any) => {
   console.log('getStep', data)
-  caseDetail.value = caseList.value.find((item: any) => item.id === (data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid))
-  stepDetail.value = caseDetail.value.stepList.find((item: any) => item.id === (data?.id || data.node?.id))
+  const parentCase = caseList.value.find((item: any) => item.id === (data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid))
+  stepDetail.value = parentCase?.stepList?.find((item: any) => item.id === (data?.id || data.node?.id))
   // console.log('caseDetail', caseDetail.value, 'stepDetail', stepDetail.value)
-  caseDetail.value = []
+  caseDetail.value = undefined
+}
+
+const openChromeRecording = (options?: RecordingOpenOptions) => {
+  if (isReadonly.value) {
+    Message.warning('当前为只读模式，无法开始录制')
+    return
+  }
+  if (!uiStore.activeId) {
+    Message.warning('请先保存基础信息，再开始 Chrome 录制')
+    activeKey.value = '1'
+    return
+  }
+  chromeRecordingModalRef.value?.onOpen(currentScene.value || undefined, options)
+}
+
+const openChromeRecordingFromNode = (data: { mode: RecordingMode; node: any }) => {
+  const node = data.node || {}
+  const isCase = node.type === 'case'
+  const isStep = node.type === 'step'
+  const targetCaseId = isCase ? String(node.id || '') : String(node.pid || '')
+  const targetStepId = isStep ? String(node.id || '') : undefined
+  openChromeRecording({
+    allowedModes: [data.mode],
+    defaultMode: data.mode,
+    fixedTargetScene: true,
+    fixedTargetCase: data.mode !== 'appendCase',
+    fixedTargetStep: data.mode === 'replaceStep' && isStep,
+    targetCaseId: data.mode === 'appendCase' ? undefined : targetCaseId,
+    targetStepId,
+    appendAfterCaseId: data.mode === 'appendCase' && isCase ? String(node.id || '') : undefined,
+    appendAfterStepId: data.mode === 'appendStep' && isStep ? String(node.id || '') : undefined,
+  })
+}
+
+const handleRecordingFinished = async () => {
+  if (!uiStore.activeId) return
+  await getSceneInfo()
+  caseDetail.value = undefined
+  stepDetail.value = undefined
 }
 
 const addCase = () => {
@@ -603,6 +906,7 @@ export default {}
 }
 :deep(.arco-card-body) {
   display: flex;
+  justify-content: space-between;
   padding: 15px !important;
   gap: 200px;
 }
@@ -614,6 +918,36 @@ export default {}
   margin: 0 20px 20px 0;
   gap: 15px !important;
 }
+
+.detail-panel {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overflow-x: auto;
+  scrollbar-gutter: stable;
+}
+
+.recording-tab-content {
+  padding-bottom: 16px;
+}
+
+.recording-path-line {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.runner-output {
+  width: min(680px, 70vw);
+  max-height: 360px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12px/1.5 Consolas, 'Courier New', monospace;
+}
+
 :deep(.arco-tabs-tab-title) {
     display: flex;
     flex-direction: row-reverse;
@@ -626,5 +960,20 @@ export default {}
   :deep(.arco-tabs-nav-tab) {
     justify-content: left;
   }
+}
+
+:deep(.json_pretty_container) {
+  width: 100%;
+  max-height: 320px;
+  box-sizing: border-box;
+  padding: 12px 44px 12px 12px;
+  overflow: auto;
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+  background: var(--color-fill-1);
+}
+
+:deep(.json_pretty_container .copy_icon) {
+  right: 16px;
 }
 </style>

@@ -40,6 +40,7 @@ export interface PlaywrightRecordedCaseReq {
   name: string
   status?: string
   start_url?: string
+  end_url?: string
   description?: string
   screenshot_mode?: string
   page_error_check_enabled?: number
@@ -51,7 +52,14 @@ export interface PlaywrightRecordedCaseReq {
 }
 
 export interface AutomationRecordingImportReq {
-  mode: 'createScene'
+  mode: 'createScene' | 'appendCase' | 'replaceCase' | 'appendStep' | 'replaceStep'
+  targetSceneDbId?: string | number
+  targetCaseId?: string
+  targetStepId?: string
+  appendPosition?: 'FIRST' | 'LAST' | 'AFTER'
+  appendAfterCaseId?: string
+  stepAppendPosition?: 'FIRST' | 'LAST' | 'AFTER'
+  appendAfterStepId?: string
   scene: RecordingSceneReq
   recordedCase: PlaywrightRecordedCaseReq
   persistScreenshots?: boolean

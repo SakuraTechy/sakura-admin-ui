@@ -13,6 +13,26 @@
       <span>复制</span>
     </a-menu-item>
     <a-popover
+      v-if="props.recordingOptions.length"
+      position="right"
+      trigger="hover"
+      :content-style="{ padding: 0, overflow: 'hidden' }"
+      :unmount-on-close="true"
+    >
+      <a-menu-item>
+        <template #icon><icon-play-arrow :size="16" :stroke-width="3" /></template>
+        <a-row justify="space-between" align="center">
+          <span>{{ props.recordingLabel }}</span>
+          <icon-right class="arrow-icon" />
+        </a-row>
+      </a-menu-item>
+      <template #content>
+        <a-doption v-for="item in props.recordingOptions" :key="item.mode" @click="onClick(item.mode)">
+          {{ item.label }}
+        </a-doption>
+      </template>
+    </a-popover>
+    <a-popover
       v-model:popup-visible="popupVisible"
       position="right"
       trigger="hover"
@@ -80,6 +100,8 @@ defineOptions({ name: 'GiMenu' })
 
 const props = defineProps({
   treeData: { type: Array, default: () => [] },
+  recordingLabel: { type: String, default: '录制' },
+  recordingOptions: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([

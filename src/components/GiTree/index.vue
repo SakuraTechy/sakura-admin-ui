@@ -343,7 +343,7 @@ const onContextmenu = (node: any) => {
     contextmenuNode.value.isEdit = false
   }
   contextmenuNode.value = node
-  selectedKeys.value = [node.id]
+  selectedKeys.value = [node[props.fieldNames.key]]
 //   if (!multiple.value) emit('node-click', node)
 }
 
@@ -465,6 +465,9 @@ const onMenuItemClick = (mode?: any, node?: any) => {
     multiple.value = true
     // treeRef.value.selectAll(false)
     // emit('menu-click', { mode })
+  }
+  if (typeof mode === 'string' && mode.startsWith('recording:')) {
+    emit('menu-click', { mode, node: contextmenuNode.value })
   }
   if (mode !== 'move') {
     closeRightMenu()

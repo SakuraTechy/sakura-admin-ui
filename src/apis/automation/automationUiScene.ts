@@ -2,6 +2,22 @@ import http from '@/utils/http'
 
 const BASE_URL = '/automation/automationUiScene'
 
+export type ExecutionType = 'jenkins' | 'extension-cdp' | 'playwright-runner'
+export type ExecutionViewType = 'record' | 'log' | 'report' | 'video'
+
+export interface AutomationExecutionRecord {
+  executionType?: ExecutionType
+  executionId?: string
+  startedAt?: string
+  finishedAt?: string
+  artifactUrls?: Record<string, unknown>
+  executeName?: string
+  executeStatus?: string
+  executeResult?: string
+  duration?: string | number
+  [key: string]: unknown
+}
+
 export interface AutomationUiSceneResp {
   id: string
   sceneId: string
@@ -33,10 +49,10 @@ export interface AutomationUiSceneResp {
   ]
   testPlanId: Array<object>
   reportId: string
-  debugRecord: Array<object>
+  debugRecord: AutomationExecutionRecord[]
   executeStatus: string
   executeResult: string
-  testRecord: Array<object>
+  testRecord: AutomationExecutionRecord[]
   buildNumber: number
   consoleUrl: string
   testReportUrl: string
@@ -89,10 +105,10 @@ export interface AutomationUiSceneDetailResp {
   ]
   testPlanId: Array<object>
   reportId: string
-  debugRecord: Array<object>
+  debugRecord: AutomationExecutionRecord[]
   executeStatus: string
   executeResult: string
-  testRecord: Array<object>
+  testRecord: AutomationExecutionRecord[]
   buildNumber: number
   consoleUrl: string
   testReportUrl: string
@@ -145,6 +161,7 @@ export interface AutomationUiSceneExecReq {
   sceneIds: Array<string | number>
   projectEnvironmentId: string | number
   automationEnvironmentId: string | number
+  engine?: 'JENKINS' | 'PLAYWRIGHT'
   executeName?: string
   executeEmail?: string
   testPlanId?: string
@@ -161,6 +178,7 @@ export interface AutomationUiSceneExecAllReq {
   status?: number
   projectEnvironmentId: string | number
   automationEnvironmentId: string | number
+  engine?: 'JENKINS' | 'PLAYWRIGHT'
   executeName?: string
   executeEmail?: string
 }

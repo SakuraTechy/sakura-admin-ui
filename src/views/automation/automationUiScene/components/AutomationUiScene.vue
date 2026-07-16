@@ -44,6 +44,14 @@
           <template #default>新增</template>
         </a-button> -->
         <a-button
+          v-permission="['automation:automationUiScene:create']"
+          type="primary"
+          @click="onChromeRecord()"
+        >
+          <template #icon><icon-play-arrow /></template>
+          <template #default>Chrome录制</template>
+        </a-button>
+        <a-button
           v-permission="['automation:automationUiScene:delete']"
           type="primary"
           status="danger"
@@ -109,7 +117,17 @@
           <a-link v-permission="['automation:automationUiScene:get']" title="详情" @click="onDetail(record)">详情</a-link>
           <a-link v-permission="['automation:automationUiScene:update']" title="编辑" @click="onUpdate(record)">编辑</a-link>
           <a-link v-permission="['automation:automationUiScene:copy']" title="复制" @click="onCopy(record)">复制</a-link>
-          <a-link v-permission="['automation:automationUiScene:execute']" title="执行" @click="onExecute(record)">执行</a-link>
+          <a-dropdown trigger="click" @select="value => onExecutionSelect(record, value)">
+            <a-link v-permission="['automation:automationUiScene:execute']" title="选择执行方式">
+              执行
+              <!-- <icon-down /> -->
+            </a-link>
+            <template #content>
+              <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-doption>
+            </template>
+          </a-dropdown>
           <a-dropdown>
             <a-button v-if="has.hasPermOr(['automation:automationUiScene:delete'])" type="text" size="mini" title="更多">
               <template #icon>
@@ -117,6 +135,12 @@
               </template>
             </a-button>
             <template #content>
+              <a-doption
+                v-permission="['automation:automationUiScene:update']"
+                @click="onChromeRecord(record)"
+              >
+                录制
+              </a-doption>
               <a-doption
                   v-permission="['automation:automationUiScene:delete']"
                   status="danger"
@@ -132,24 +156,22 @@
               >
                 导出
               </a-doption>
-              <a-doption
-                v-permission="['automation:automationUiScene:exec']"
-                @click="openUrl(record.debugRecord[0]?.consoleUrl, '获取运行日志失败，请先执行场景')"
+              <a-dsubmenu
+                v-for="view in executionViewOptions"
+                :key="view.value"
+                v-permission="['automation:automationUiScene:get']"
               >
-                日志
-              </a-doption>
-              <a-doption
-                v-permission="['automation:automationUiScene:exec']"
-                @click="openUrl(record.debugRecord[0]?.testReportUrl, '获取测试报告失败，请先执行场景')"
-              >
-                报告
-              </a-doption>
-              <a-doption
-                v-permission="['automation:automationUiScene:exec']"
-                @click="openVideo(record.debugRecord[0]?.testReportUrl, record.sceneId, '获取测试视频失败，请先执行场景')"
-              >
-                回放
-              </a-doption>
+                <template #default>{{ view.label }}</template>
+                <template #content>
+                  <a-doption
+                    v-for="item in executionTypeOptions"
+                    :key="`${view.value}-${item.value}`"
+                    @click="openExecutionResult(record, item.value, view.value)"
+                  >
+                    {{ item.label }}
+                  </a-doption>
+                </template>
+              </a-dsubmenu>
             </template>
           </a-dropdown>
         </a-space>
@@ -157,15 +179,18 @@
     </GiTable>
 
     <AutomationUiSceneAddModal ref="AutomationUiSceneAddModalRef" @save-success="search" />
-    <AutomationUiSceneDetailDrawer ref="AutomationUiSceneDetailDrawerRef" />
+    <ChromeRecordingModal ref="chromeRecordingModalRef" :scene-options="tableData" @recording-finished="search" />
+    <AutomationExecutionCaseModal ref="executionCaseModalRef" @success="search" />
+    <AutomationExecutionResultDrawer ref="executionResultDrawerRef" />
   </div>
 </template>
 
 <script setup lang="tsx">
 import type { TableInstance } from '@arco-design/web-vue'
-import { Message } from '@arco-design/web-vue'
 import AutomationUiSceneAddModal from './AutomationUiSceneAddModal.vue'
-import AutomationUiSceneDetailDrawer from './AutomationUiSceneDetailDrawer.vue'
+import ChromeRecordingModal from './ChromeRecordingModal.vue'
+import AutomationExecutionCaseModal from './AutomationExecutionCaseModal.vue'
+import AutomationExecutionResultDrawer from './AutomationExecutionResultDrawer.vue'
 import {
   type AutomationUiSceneQuery,
   type AutomationUiSceneResp,
@@ -186,6 +211,12 @@ import type { ColumnItem } from '@/components/GiForm'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { formatDuration } from '@/utils/sakura'
 import { filterSceneResultOptions, filterSceneStatusOptions, pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
+import {
+  type ExecutionType,
+  type ExecutionViewType,
+  executionTypeOptions,
+  executionViewLabels,
+} from '../execution'
 
 defineOptions({ name: 'AutomationUiScene' })
 
@@ -279,6 +310,22 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
   },
 ])
 
+const isPlaywrightRecordingScene = (record: any) => {
+  const caseList = Array.isArray(record?.caseList) ? record.caseList : []
+  return caseList.some((caseItem: any) => {
+    const stepList = Array.isArray(caseItem?.stepList) ? caseItem.stepList : []
+    return stepList.some((step: any) => {
+      const configList = Array.isArray(step?.configList) ? step.configList : []
+      return configList.some((config: any) => {
+        const name = String(config?.paramsName || '')
+        const value = String(config?.paramsValue || '')
+        return name === 'playwright_step'
+          || (name === 'source' && ['sakura-playwright', 'sakura-cuecast'].includes(value))
+      })
+    })
+  })
+}
+
 const columns: TableInstance['columns'] = [
   { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景名称', dataIndex: 'name', slotName: 'name', width: 360, ellipsis: true, tooltip: true },
@@ -291,6 +338,13 @@ const columns: TableInstance['columns'] = [
     width: 100,
     align: 'center',
     render: ({ record }) => Array.isArray(record.tags) ? <GiCellTags data={record.tags} /> : '-',
+  },
+  {
+    title: '来源',
+    dataIndex: 'recordingSource',
+    width: 110,
+    align: 'center',
+    render: ({ record }) => isPlaywrightRecordingScene(record) ? <a-tag color="arcoblue">Playwright</a-tag> : '-',
   },
   {
     title: '执行状态',
@@ -320,7 +374,10 @@ const columns: TableInstance['columns'] = [
     slotName: 'scenePassRate',
     width: 80,
     align: 'center',
-    render: ({ record }) => Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0].scenePassRate : '-',
+    render: ({ record }) => {
+      const latest = Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0] : {}
+      return latest.scenePassRate || latest.casePassRate || record.passRate || '-'
+    },
   },
   {
     title: '耗时',
@@ -361,7 +418,7 @@ const reset = () => {
   resetForm()
   queryForm.projectId = uiStore.projectId
   queryForm.versionId = uiStore.versionId
-  uiStore.moduleId = ''
+  uiStore.moduleId = uiStore.resolveDefaultModuleId(uiStore.treeList)
 }
 
 watch(() => uiStore.versionId, async (newVersionId) => {
@@ -449,37 +506,11 @@ const onClearResults = async () => {
   })
 }
 
-const openUrl = (url: string, errorMsg: string) => {
-  if (url) {
-    Message.success('获取成功，正在跳转')
-    setTimeout(() => {
-      window.open(url)
-    }, 500)
-  } else {
-    Message.error(errorMsg)
-  }
-}
-
-const openVideo = (testReportUrl: string, sceneId: string, errorMsg: string) => {
-  if (testReportUrl) {
-    Message.success('获取测试视频成功')
-    setTimeout(() => {
-      window.open(testReportUrl.replace('/index.html', `/video/${sceneId}.mp4`))
-    }, 500)
-  } else {
-    Message.error(errorMsg)
-  }
-}
-
 interface AutomationUiSceneAddModalType {
   onAdd: () => void
   onUpdate: (id: string) => void
   onCopy: (id: string) => void
 }
-interface AutomationUiSceneDetailDrawerType {
-  onOpen: (id: string) => void
-}
-
 const AutomationUiSceneAddModalRef = ref<AutomationUiSceneAddModalType>()
 const onAdd = () => {
   AutomationUiSceneAddModalRef.value?.onAdd()
@@ -497,7 +528,33 @@ const onExecute = (record: AutomationUiSceneResp) => {
   emit('execute-scene', record)
 }
 
-const AutomationUiSceneDetailDrawerRef = ref<AutomationUiSceneDetailDrawerType>()
+const executionViewOptions = (Object.entries(executionViewLabels) as Array<[ExecutionViewType, string]>).map(([value, label]) => ({
+  value,
+  label,
+}))
+const executionCaseModalRef = ref<{ onOpen: (record: any, type: Exclude<ExecutionType, 'jenkins'>) => void }>()
+const executionResultDrawerRef = ref<{
+  onOpen: (sceneId: string, type: ExecutionType, view: ExecutionViewType) => void
+}>()
+
+const onExecutionSelect = (record: AutomationUiSceneResp, value: string | number | Record<string, any> | undefined) => {
+  const type = String(value) as ExecutionType
+  if (type === 'jenkins') {
+    onExecute(record)
+    return
+  }
+  executionCaseModalRef.value?.onOpen(record, type)
+}
+
+const openExecutionResult = (record: AutomationUiSceneResp, type: ExecutionType, view: ExecutionViewType) => {
+  executionResultDrawerRef.value?.onOpen(record.id, type, view)
+}
+
+const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp) => void }>()
+
+const onChromeRecord = (record?: AutomationUiSceneResp) => {
+  chromeRecordingModalRef.value?.onOpen(record)
+}
 
 defineExpose({
   reset,
