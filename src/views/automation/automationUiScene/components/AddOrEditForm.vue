@@ -1,5 +1,5 @@
 <template>
-  <GiPageLayout ref="pageLayout" :left-style="{ width: 500 }">
+  <GiPageLayout ref="pageLayout" :left-style="{ width: 450 }">
     <template #left>
       <a-tabs :active-key="activeKey" type="text" size="medium" @change="handleTabChange">
         <!-- <template #extra>
@@ -18,16 +18,16 @@
         </a-tab-pane>
         <a-tab-pane key="2">
           <template #title>
-            <a-dropdown v-if="!isReadonly" trigger="hover">
+            <a-dropdown v-if="uiStore.activeId" trigger="hover">
               <icon-ordered-list /> 场景用例
               <template #content>
-                <a-doption @click="addCase">
+                <a-doption v-if="!isReadonly" @click="addCase">
                   <template #icon>
                     <icon-plus />
                   </template>
                   <template #default>新增用例</template>
                 </a-doption>
-                <a-dsubmenu v-if="uiStore.activeId">
+                <a-dsubmenu v-if="!isReadonly">
                   <template #icon>
                     <icon-play-arrow />
                   </template>
@@ -41,6 +41,25 @@
                     </a-doption>
                   </template>
                 </a-dsubmenu>
+                <a-dsubmenu
+                  v-permission="['automation:automationUiScene:execute']"
+                  :disabled="executionRunning"
+                >
+                  <template #icon>
+                    <icon-play-arrow />
+                  </template>
+                  <template #default>执行用例</template>
+                  <template #content>
+                    <a-doption
+                      v-for="item in executionTypeOptions"
+                      :key="item.value"
+                      :disabled="executionRunning"
+                      @click="handleUnifiedExecutionSelect(item.value)"
+                    >
+                      {{ item.label }}
+                    </a-doption>
+                  </template>
+                </a-dsubmenu>
                 <a-doption @click="getSceneInfo()">
                   <template #icon>
                     <icon-refresh />
@@ -51,44 +70,65 @@
             </a-dropdown>
             <span v-else><icon-ordered-list /> 场景用例</span>
           </template>
-          <AutomationUiSceneAddCase v-if="uiStore.activeId" ref="caseListRef" :readonly="isReadonly" :case-list="caseList" @get-scene-info="getSceneInfo" @get-case="getCase" @get-step="getStep" @recording="openChromeRecordingFromNode" />
+          <AutomationUiSceneAddCase
+            v-if="uiStore.activeId"
+            ref="caseListRef"
+            :readonly="isReadonly"
+            :case-list="caseList"
+            @get-scene-info="getSceneInfo"
+            @get-case="getCase"
+            @get-step="getStep"
+            @selection-clear="clearCaseSelection"
+            @recording="openChromeRecordingFromNode"
+          />
         </a-tab-pane>
       </a-tabs>
     </template>
     <div class="detail-panel" :style="{ width: '100%' }">
-      <a-card class="card">
-        <a-space style="font-weight: 700;">用例总数：{{ caseList.length }}</a-space>
-        <a-space style="font-weight: 700;">步骤总数：{{ stepList.length }}</a-space>
-        <div>
-        <!-- <div style="display: flex; margin-right: auto;">-->
-          <a-button
-            v-if="uiStore.activeId && !isReadonly"
-            v-permission="['automation:automationUiScene:create', 'automation:automationUiScene:update']"
-            type="primary"
-            @click="openChromeRecording"
-          >
-            <template #icon><icon-record /></template>
-            录制用例
-          </a-button>
-          <a-dropdown-button
-            v-permission="['automation:automationUiScene:execute']"
-            type="primary"
-            :disabled="!uiStore.activeId"
-            :style="{ marginLeft: '20px' }"
-            @click="openExecuteModal"
-            @select="handleUnifiedExecutionSelect"
-          >
-            <template #icon><icon-play-arrow /></template>
-            执行用例
-            <template #content>
-              <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
-                {{ item.label }}
-              </a-doption>
-            </template>
-          </a-dropdown-button>
+      <!-- <a-card class="card execution-overview-card">
+        <div class="execution-overview__header">
+          <div>
+            <strong>场景操作</strong>
+            <span>共 {{ caseList.length }} 个用例 · {{ stepList.length }} 个步骤</span>
+          </div>
+          <a-space class="execution-overview__actions" wrap>
+            <a-button
+              v-if="uiStore.activeId && !isReadonly"
+              v-permission="['automation:automationUiScene:create', 'automation:automationUiScene:update']"
+              type="primary"
+              @click="openChromeRecording"
+            >
+              <template #icon><icon-record /></template>
+              录制用例
+            </a-button>
+            <a-dropdown-button
+              v-permission="['automation:automationUiScene:execute']"
+              type="primary"
+              :disabled="!uiStore.activeId || executionRunning"
+              @click="openExecuteModal"
+              @select="handleUnifiedExecutionSelect"
+            >
+              <template #icon><icon-play-arrow /></template>
+              执行用例
+              <template #content>
+                <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                  {{ item.label }}
+                </a-doption>
+              </template>
+            </a-dropdown-button>
+            <a-button
+              v-if="executionRunning"
+              v-permission="['automation:automationUiScene:execute']"
+              status="danger"
+              @click="cancelLiveBatch"
+            >
+              <template #icon><icon-stop /></template>
+              取消执行批次
+            </a-button>
+          </a-space>
         </div>
-      </a-card>
-      <a-tabs class="tabs" default-active-key="1">
+      </a-card> -->
+      <a-tabs v-model:active-key="detailActiveKey" class="tabs">
         <a-tab-pane key="1" title="详情信息">
           <div style="padding: 0 0px;">
             <a-empty v-if="caseList.length === 0">暂无数据</a-empty>
@@ -207,6 +247,16 @@
           <template #title>评审信息</template>
           Content of Tab Panel 3
         </a-tab-pane>
+        <a-tab-pane key="5" title="执行历史">
+          <AutomationExecutionHistoryPanel
+            :scene="sceneDetail"
+            :loading="sceneInfoLoading"
+            :selected-case-id="selectedHistoryCaseId"
+            :live-executions="liveExecutions"
+            @refresh="getSceneInfo()"
+            @show-all="showAllExecutionHistory"
+          />
+        </a-tab-pane>
       </a-tabs>
     </div>
     <a-grid v-if="activeKey === '1' && !isReadonly" class="grid">
@@ -220,7 +270,19 @@
       :scene-options="currentScene ? [currentScene] : []"
       @recording-finished="handleRecordingFinished"
     />
-    <AutomationExecutionCaseModal ref="executionCaseModalRef" @success="getSceneInfo" />
+    <AutomationExecutionCaseSelectModal
+      ref="executionCaseSelectModalRef"
+      :live-executions="liveExecutions"
+      @next="openExecutionConfig"
+    />
+    <AutomationExecutionCaseModal
+      ref="executionCaseModalRef"
+      @back="reopenExecutionCaseSelect"
+      @batch-update="liveExecutions = $event"
+      @started="handleExecutionStarted"
+      @success="getSceneInfo"
+      @finished="handleExecutionFinished"
+    />
   </GiPageLayout>
 </template>
 
@@ -231,10 +293,17 @@ import TagsInput from 'vue3-tags-input'
 import { Message } from '@arco-design/web-vue'
 import { string } from 'sql-formatter/dist/cjs/lexer/regexFactory'
 
+import {
+  type ExecutionType,
+  type LiveExecutionCase,
+  executionTypeOptions,
+} from '../execution'
 import AutomationUiSceneAddCase from './AutomationUiSceneAddCase.vue'
 import ExecuteSceneModal from './ExecuteSceneModal.vue'
 import ChromeRecordingModal from './ChromeRecordingModal.vue'
+import AutomationExecutionCaseSelectModal from './AutomationExecutionCaseSelectModal.vue'
 import AutomationExecutionCaseModal from './AutomationExecutionCaseModal.vue'
+import AutomationExecutionHistoryPanel from './AutomationExecutionHistoryPanel.vue'
 // import { AiEditor } from '@/components/GiEditor/AiEditor.vue'
 // import QuillEditor from '@/components/GiEditor/QuillEditor.vue'
 
@@ -245,10 +314,9 @@ import mittBus from '@/utils/mitt'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
 import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
-import { type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { findNodePath } from '@/utils/sakura'
 import http from '@/utils/http'
-import { type ExecutionType, executionTypeOptions } from '../execution'
 
 defineOptions({ name: 'Ui' })
 
@@ -289,6 +357,7 @@ const [form, resetForm] = useResetReactive({
 })
 
 const activeKey = ref('1')
+const detailActiveKey = ref('1')
 const perChecked = ref(false)
 const webValue = ref('Chrome')
 
@@ -643,8 +712,28 @@ const openExecuteModal = async () => {
   executeSceneModalRef.value?.onOpen([data], { source: 'ui' })
 }
 
+interface ExecutionCaseSelection {
+  scene: any
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  caseIds: string[]
+}
+
+const liveExecutions = ref<LiveExecutionCase[]>([])
+const executionRunning = ref(false)
+const executionCaseSelectModalRef = ref<{
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options?: { caseIds?: string[] },
+  ) => void
+}>()
 const executionCaseModalRef = ref<{
-  onOpen: (record: any, type: Exclude<ExecutionType, 'jenkins'>, options?: { caseId?: string }) => void
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options: { caseIds: string[] },
+  ) => void
+  cancelBatch: () => Promise<void>
 }>()
 const handleUnifiedExecutionSelect = async (value: string) => {
   const type = value as ExecutionType
@@ -656,9 +745,39 @@ const handleUnifiedExecutionSelect = async (value: string) => {
     Message.warning('请先保存场景，再启动回放')
     return
   }
-  executionCaseModalRef.value?.onOpen(currentScene.value, type, {
-    caseId: String(caseDetail.value?.id || ''),
+  executionCaseSelectModalRef.value?.onOpen(currentScene.value, type, {
+    caseIds: selectedHistoryCaseId.value ? [selectedHistoryCaseId.value] : [],
   })
+}
+
+function openExecutionConfig(payload: ExecutionCaseSelection) {
+  executionCaseModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+  })
+}
+
+function reopenExecutionCaseSelect(payload: ExecutionCaseSelection) {
+  executionCaseSelectModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+  })
+}
+
+function handleExecutionStarted() {
+  executionRunning.value = true
+  detailActiveKey.value = '5'
+}
+
+async function handleExecutionFinished() {
+  try {
+    await getSceneInfo()
+  } finally {
+    liveExecutions.value = []
+    executionRunning.value = false
+  }
+}
+
+async function cancelLiveBatch() {
+  await executionCaseModalRef.value?.cancelBatch()
 }
 
 const handleCancel = () => {
@@ -729,6 +848,8 @@ const handleSubmit = async () => {
 
 const caseList = ref([])
 const stepList = ref([])
+const sceneDetail = ref<AutomationUiSceneDetailResp>()
+const sceneInfoLoading = ref(false)
 const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp, options?: RecordingOpenOptions) => void }>()
 
 const currentScene = computed<AutomationUiSceneResp | null>(() => {
@@ -752,19 +873,26 @@ const currentScene = computed<AutomationUiSceneResp | null>(() => {
 })
 
 const getSceneInfo = async (data1?: any) => {
-  const { data } = await getAutomationUiScene(uiStore.activeId)
-  Object.assign(form, data)
-  form.executeStatus = resolveSceneStatusValue(data.executeStatus, status_type.value) ?? '10'
-  // 先清空数组，再添加新元素
-  caseList.value.splice(0)
-  Object.assign(caseList.value, data.caseList ?? [])
-  caseListRef.value?.getTreeCaseList(data1)
-  console.log('caseList', caseList.value)
-  // stepTotal.value = data.caseList.reduce((total: number, item: any) => total + item.stepList.length, 0)
-  stepList.value = caseList.value.reduce((list: any, item: any) => {
-    return list.concat(item.stepList || [])
-  }, [])
-  console.log('stepList', stepList.value)
+  if (!uiStore.activeId) return
+  sceneInfoLoading.value = true
+  try {
+    const { data } = await getAutomationUiScene(uiStore.activeId)
+    sceneDetail.value = data
+    Object.assign(form, data)
+    form.executeStatus = resolveSceneStatusValue(data.executeStatus, status_type.value) ?? '10'
+    // 先清空数组，再添加新元素
+    caseList.value.splice(0)
+    Object.assign(caseList.value, data.caseList ?? [])
+    caseListRef.value?.getTreeCaseList(data1)
+    console.log('caseList', caseList.value)
+    // stepTotal.value = data.caseList.reduce((total: number, item: any) => total + item.stepList.length, 0)
+    stepList.value = caseList.value.reduce((list: any, item: any) => {
+      return list.concat(item.stepList || [])
+    }, [])
+    console.log('stepList', stepList.value)
+  } finally {
+    sceneInfoLoading.value = false
+  }
 }
 
 const caseListRef = ref()
@@ -776,10 +904,12 @@ const getCaseList = async () => {
 
 const caseDetail = ref()
 const stepDetail = ref()
+const selectedHistoryCaseId = ref('')
 const getCase = async (id: string) => {
   console.log('getCase', id)
   caseDetail.value = caseList.value.find((item: any) => item.id === id)
   stepDetail.value = undefined
+  selectedHistoryCaseId.value = String(id || '')
 }
 
 const getStep = async (data: any) => {
@@ -788,6 +918,17 @@ const getStep = async (data: any) => {
   stepDetail.value = parentCase?.stepList?.find((item: any) => item.id === (data?.id || data.node?.id))
   // console.log('caseDetail', caseDetail.value, 'stepDetail', stepDetail.value)
   caseDetail.value = undefined
+  selectedHistoryCaseId.value = String(parentCase?.id || '')
+}
+
+const clearCaseSelection = () => {
+  caseDetail.value = undefined
+  stepDetail.value = undefined
+  selectedHistoryCaseId.value = ''
+}
+const showAllExecutionHistory = () => {
+  caseListRef.value?.clearSelection()
+  clearCaseSelection()
 }
 
 const openChromeRecording = (options?: RecordingOpenOptions) => {
@@ -803,7 +944,7 @@ const openChromeRecording = (options?: RecordingOpenOptions) => {
   chromeRecordingModalRef.value?.onOpen(currentScene.value || undefined, options)
 }
 
-const openChromeRecordingFromNode = (data: { mode: RecordingMode; node: any }) => {
+const openChromeRecordingFromNode = (data: { mode: RecordingMode, node: any }) => {
   const node = data.node || {}
   const isCase = node.type === 'case'
   const isStep = node.type === 'step'
@@ -827,6 +968,7 @@ const handleRecordingFinished = async () => {
   await getSceneInfo()
   caseDetail.value = undefined
   stepDetail.value = undefined
+  selectedHistoryCaseId.value = ''
 }
 
 const addCase = () => {
@@ -897,18 +1039,51 @@ export default {}
   flex-direction: column !important;
 }
 .card {
-  // width: 100%;
   box-shadow: 4px 4px 8px rgba(0, 0, 0, 0.1), -4px -4px 8px rgba(0, 0, 0, 0.1);
-  // font-weight: 700;
   margin: 10px 30px 10px 30px;
-  padding: 0 10px;
-  border-radius: 3px;
+  border-radius: 10px;
 }
-:deep(.arco-card-body) {
+
+.execution-overview-card :deep(.arco-card-body) {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px !important;
+}
+
+.execution-overview__header {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 15px !important;
-  gap: 200px;
+  gap: 16px;
+}
+
+.execution-overview__header > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.execution-overview__header strong {
+  color: var(--color-text-1);
+  font-size: 15px;
+}
+
+.execution-overview__header span {
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.execution-overview__actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .execution-overview__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 :deep(.arco-btn-size-medium) {
     font-size: 13px !important;
@@ -955,7 +1130,7 @@ export default {}
     gap: 5px;
 }
 .tabs {
-  margin: 0 30px 0 30px;
+  margin: 0 20px 0 20px;
 
   :deep(.arco-tabs-nav-tab) {
     justify-content: left;

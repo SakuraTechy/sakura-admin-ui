@@ -1,28 +1,36 @@
 <template>
   <a-modal
     v-model:visible="visible"
-    :title="`${executionTypeLabel(executionType)}`"
+    :title="executionTypeLabel(executionType)"
     :width="980"
     :mask-closable="false"
-    :esc-to-close="!running"
     unmount-on-close
   >
     <a-spin :loading="loading" style="width: 100%">
       <div class="execute-modal">
         <a-alert type="info" show-icon>
-          已选择 1 个场景，请确认本次回放使用的产品环境、执行用例与回放配置。
+          已选择 {{ selectedCaseKeys.length }} 个用例。请确认产品环境和执行参数，开始后请在执行历史中查看实时状态。
         </a-alert>
 
         <a-descriptions :column="2" bordered size="medium">
           <a-descriptions-item label="所属项目">{{ projectName }}</a-descriptions-item>
           <a-descriptions-item label="所属版本">{{ versionName }}</a-descriptions-item>
+          <a-descriptions-item label="执行用例" :span="2">
+            <a-space wrap>
+              <a-tag v-for="item in selectedCaseRows" :key="item.caseId" color="arcoblue">
+                {{ item.name }}
+              </a-tag>
+            </a-space>
+          </a-descriptions-item>
         </a-descriptions>
 
         <a-row :gutter="16" class="config-row">
           <a-col :span="12">
             <a-card title="产品环境" size="small" class="config-card">
               <template #extra>
-                <a-button type="outline" size="small" @click="goProjectEnvironmentConfig">去配置</a-button>
+                <a-button type="outline" size="small" :disabled="running" @click="goProjectEnvironmentConfig">
+                  去配置
+                </a-button>
               </template>
               <a-form :model="form" layout="vertical">
                 <a-form-item label="服务器 IP" required>
@@ -58,7 +66,9 @@
                 </div>
                 <div class="summary-item">
                   <span class="summary-label">在线状态</span>
-                  <a-tag :color="selectedProjectEnvironment.statusColor">{{ selectedProjectEnvironment.statusLabel }}</a-tag>
+                  <a-tag :color="selectedProjectEnvironment.statusColor">
+                    {{ selectedProjectEnvironment.statusLabel }}
+                  </a-tag>
                 </div>
                 <div class="summary-item">
                   <span class="summary-label">启用状态</span>
@@ -66,9 +76,9 @@
                 </div>
               </div>
               <div class="effective-url">
-                <div class="summary-label">本次回放起始地址</div>
+                <div class="summary-label">预览用例 {{ previewCaseId || '-' }} 起始地址</div>
                 <a-spin :loading="previewLoading" size="mini">
-                  <div :class="['effective-url-value', { error: previewError }]">
+                  <div class="effective-url-value" :class="[{ error: previewError }]">
                     {{ previewError || effectiveStartUrl || '请选择产品环境和用例' }}
                   </div>
                 </a-spin>
@@ -77,19 +87,19 @@
           </a-col>
 
           <a-col :span="12">
-            <a-card :title="executionType === 'extension-cdp' ? 'CDP 回放配置' : 'Playwright Runner 配置'" size="small" class="config-card">
+            <a-card
+              :title="executionType === 'extension-cdp' ? 'CDP 回放配置' : 'Playwright Runner 配置'"
+              size="small"
+              class="config-card"
+            >
               <div v-if="executionType === 'extension-cdp'" class="cdp-config">
                 <a-form :model="form" layout="vertical">
-                <a-form-item label="浏览器" required>
-                  <a-select
-                    placeholder="使用当前浏览器"
-                    allow-search
-                    disabled
-                  >
-                    <a-option value="chromium">当前浏览器</a-option>
-                  </a-select>
-                </a-form-item>
-              </a-form>
+                  <a-form-item label="浏览器" required>
+                    <a-select placeholder="使用当前浏览器" allow-search disabled>
+                      <a-option value="chromium">当前浏览器</a-option>
+                    </a-select>
+                  </a-form-item>
+                </a-form>
                 <fieldset class="option-group">
                   <legend>执行窗口尺寸</legend>
                   <a-radio-group v-model="cdpConfig.windowSizeMode" direction="vertical" :disabled="running">
@@ -100,12 +110,22 @@
                   <a-row v-if="cdpConfig.windowSizeMode === 'custom'" :gutter="12" class="viewport-row">
                     <a-col :span="12">
                       <a-form-item label="宽度">
-                        <a-input-number v-model="cdpConfig.viewportWidth" :min="320" :max="10000" :disabled="running" />
+                        <a-input-number
+                          v-model="cdpConfig.viewportWidth"
+                          :min="320"
+                          :max="10000"
+                          :disabled="running"
+                        />
                       </a-form-item>
                     </a-col>
                     <a-col :span="12">
                       <a-form-item label="高度">
-                        <a-input-number v-model="cdpConfig.viewportHeight" :min="320" :max="10000" :disabled="running" />
+                        <a-input-number
+                          v-model="cdpConfig.viewportHeight"
+                          :min="320"
+                          :max="10000"
+                          :disabled="running"
+                        />
                       </a-form-item>
                     </a-col>
                   </a-row>
@@ -155,88 +175,60 @@
                   </a-col>
                   <a-col :span="12">
                     <a-form-item label="单步骤超时（毫秒）">
-                      <a-input-number v-model="runnerConfig.stepTimeoutMs" :min="1000" :max="300000" :disabled="running" />
+                      <a-input-number
+                        v-model="runnerConfig.stepTimeoutMs"
+                        :min="1000"
+                        :max="300000"
+                        :disabled="running"
+                      />
                     </a-form-item>
                   </a-col>
                   <a-col :span="12">
                     <a-form-item label="用例总超时（毫秒）">
-                      <a-input-number v-model="runnerConfig.caseTimeoutMs" :min="10000" :max="3600000" :disabled="running" />
+                      <a-input-number
+                        v-model="runnerConfig.caseTimeoutMs"
+                        :min="10000"
+                        :max="3600000"
+                        :disabled="running"
+                      />
                     </a-form-item>
                   </a-col>
                   <a-col :span="12">
                     <a-form-item label="操作慢放（毫秒）">
-                      <a-input-number v-model="runnerConfig.slowMoMs" :min="0" :max="10000" :disabled="running" />
+                      <a-input-number
+                        v-model="runnerConfig.slowMoMs"
+                        :min="0"
+                        :max="10000"
+                        :disabled="running"
+                      />
                     </a-form-item>
                   </a-col>
                   <a-col :span="12">
                     <a-form-item label="执行结束停留（毫秒）">
-                      <a-input-number v-model="runnerConfig.finishDelayMs" :min="0" :max="600000" :disabled="running" />
+                      <a-input-number
+                        v-model="runnerConfig.finishDelayMs"
+                        :min="0"
+                        :max="600000"
+                        :disabled="running"
+                      />
                     </a-form-item>
                   </a-col>
                 </a-row>
-                <div class="option-tip">并发数、产物目录、访问令牌与登录态继续由 Runner 服务端配置管理。</div>
+                <div class="option-tip">产物目录、访问令牌与登录态继续由 Runner 服务端配置管理。</div>
               </a-form>
             </a-card>
           </a-col>
         </a-row>
-
-        <a-card title="场景信息" size="small" class="scene-card">
-          <a-table :data="sceneRows" :pagination="false" row-key="id" size="small" :scroll="{ y: 220 }">
-            <template #columns>
-              <a-table-column title="场景 ID" data-index="sceneId" :width="180" />
-              <a-table-column title="场景名称" data-index="name" />
-              <a-table-column title="执行状态" :width="120" align="center">
-                <template #cell="{ record }">
-                  <GiCellTag
-                    v-if="getSceneExecuteFieldValue(record, 'executeStatus')"
-                    :value="getSceneExecuteFieldValue(record, 'executeStatus')"
-                    :dict="status_type"
-                  />
-                  <span v-else>-</span>
-                </template>
-              </a-table-column>
-              <a-table-column title="上次结果" :width="120" align="center">
-                <template #cell="{ record }">
-                  <GiCellTag
-                    v-if="getSceneExecuteFieldValue(record, 'executeResult')"
-                    :value="getSceneExecuteFieldValue(record, 'executeResult')"
-                    :dict="status_type"
-                  />
-                  <span v-else>-</span>
-                </template>
-              </a-table-column>
-              <a-table-column title="运行耗时" :width="120" align="center">
-                <template #cell="{ record }">{{ getSceneDuration(record) }}</template>
-              </a-table-column>
-              <a-table-column title="构建号" :width="100" align="center">
-                <template #cell="{ record }">{{ getSceneBuildNumber(record) }}</template>
-              </a-table-column>
-            </template>
-          </a-table>
-          <a-alert v-if="!loading && executableCases.length === 0" type="warning">
-            当前场景没有启用且包含步骤的用例，无法启动回放。
-          </a-alert>
-        </a-card>
-
-        <a-card v-if="status !== 'idle'" size="small" class="execution-status-card">
-          <a-space direction="vertical" fill>
-            <a-space>
-              <span>任务状态</span>
-              <a-tag :color="statusColor">{{ statusLabel }}</a-tag>
-              <span v-if="activeCaseKey" class="muted">{{ activeCaseKey }}</span>
-            </a-space>
-            <a-alert v-if="errorMessage" type="error">{{ errorMessage }}</a-alert>
-            <pre v-if="runnerJob?.outputTail?.length" class="runner-output">{{ runnerJob.outputTail.join('\n') }}</pre>
-          </a-space>
-        </a-card>
       </div>
     </a-spin>
 
     <template #footer>
       <a-space>
-        <a-button v-if="executionType === 'playwright-runner' && running" status="danger" @click="cancelRunner">取消任务</a-button>
+        <a-button @click="backToCaseSelection">上一步</a-button>
         <a-button @click="visible = false">取消</a-button>
-        <a-button type="primary" :loading="starting" :disabled="!canStart" @click="startPlayback">确定</a-button>
+        <a-button type="primary" :disabled="!canStartSelected" @click="startSelectedCases">
+          开始执行（{{ selectedCaseKeys.length }}）
+        </a-button>
       </a-space>
     </template>
   </a-modal>
@@ -245,23 +237,24 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
-import { type ExecutionType, executionTypeLabel, isExecutableCase } from '../execution'
-import { startExtensionCdpPlayback } from '../extensionPlayback'
+import { type ExecutionType, type LiveExecutionCase, executionTypeLabel, isExecutableCase } from '../execution'
+import { startExtensionCdpPlayback, stopExtensionCdpPlayback } from '../extensionPlayback'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import {
   type AutomationPlaywrightRunnerJobResp,
   type AutomationPlaywrightRunnerOptions,
+  cancelAutomationPlaywrightBatch,
   cancelAutomationPlaywrightRunnerJob,
+  createAutomationPlaywrightBatch,
   createAutomationPlaywrightRunnerJob,
   getAutomationPlaywrightCase,
   getAutomationPlaywrightRunnerJob,
+  updateAutomationPlaywrightBatchCase,
 } from '@/apis/automation/automationPlaywrightRunner'
 import { getProjectConfig } from '@/apis/project/projectConfig'
 import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } from '@/apis/project/projectEnvironmentConfig'
 import { getProjectVersionConfig } from '@/apis/project/projectVersionConfig'
 import { useDict } from '@/hooks/app'
-import { formatDuration } from '@/utils/sakura'
-import { pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 import GiCellTag from '@/components/GiCell/GiCellTag.vue'
 
 interface ProjectEnvironmentOption {
@@ -276,10 +269,37 @@ interface ProjectEnvironmentOption {
 }
 
 type SelectChangeValue = string | number | boolean | Record<string, any> | Array<any>
-type PlaybackStatus = 'idle' | 'starting' | 'queued' | 'running' | 'passed' | 'failed' | 'cancelled'
+type CasePlaybackStatus = 'idle' | 'waiting' | 'starting' | 'queued' | 'running' | 'passed' | 'failed' | 'cancelled'
+type BatchState = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled'
 
+interface PlaybackCaseRow {
+  caseId: string
+  executionId: string
+  name: string
+  stepTotal: number
+  status: CasePlaybackStatus
+  error: string
+  startedAt?: number
+  finishedAt?: number
+}
+
+interface ExtensionCompletion {
+  ok: boolean
+  error?: string
+}
+
+const emit = defineEmits<{
+  (e: 'success'): void
+  (e: 'started'): void
+  (e: 'finished'): void
+  (e: 'back', payload: {
+    scene: any
+    executionType: Exclude<ExecutionType, 'jenkins'>
+    caseIds: string[]
+  }): void
+  (e: 'batch-update', rows: LiveExecutionCase[]): void
+}>()
 const { server_type, status_type } = useDict('server_type', 'status_type')
-const emit = defineEmits<{ (e: 'success'): void }>()
 const router = useRouter()
 
 const visible = ref(false)
@@ -287,20 +307,27 @@ const loading = ref(false)
 const previewLoading = ref(false)
 const scene = ref<any>()
 const executionType = ref<Exclude<ExecutionType, 'jenkins'>>('extension-cdp')
-const selectedCaseId = ref('')
-const preferredCaseId = ref('')
+const selectedCaseKeys = ref<Array<string | number>>([])
+const caseRows = ref<PlaybackCaseRow[]>([])
 const projectName = ref('-')
 const versionName = ref('-')
 const projectEnvironmentOptions = ref<ProjectEnvironmentOption[]>([])
 const previewCase = ref<any>()
 const previewError = ref('')
-const status = ref<PlaybackStatus>('idle')
-const errorMessage = ref('')
-const activeCaseKey = ref('')
+const previewCaseId = ref('')
 const runnerJob = ref<AutomationPlaywrightRunnerJobResp>()
+const activeCaseId = ref('')
+const activeCaseKey = ref('')
+const batchState = ref<BatchState>('idle')
+const batchCaseIds = ref<string[]>([])
+const batchId = ref('')
+const batchExecuteName = ref('')
+const cancelRequested = ref(false)
 const cdpConfiguredCaseId = ref('')
+let batchTimer: number | undefined
 let runnerPollTimer: number | undefined
 let previewSequence = 0
+let extensionCompletionResolver: ((result: ExtensionCompletion) => void) | undefined
 
 const form = reactive({ projectEnvironmentId: '' })
 const cdpConfig = reactive({
@@ -326,17 +353,23 @@ const artifactPolicyOptions = [
   { label: '仅失败保留', value: 'retain-on-failure' },
 ]
 
-const executableCases = computed(() => {
-  const caseList = Array.isArray(scene.value?.caseList) ? scene.value.caseList : []
-  return caseList.filter(isExecutableCase)
-})
-const sceneRows = computed(() => scene.value ? [scene.value] : [])
 const playbackSceneKey = computed(() => String(scene.value?.sceneId || scene.value?.id || ''))
 const selectedProjectEnvironment = computed(() => projectEnvironmentOptions.value
-  .find(item => item.value === form.projectEnvironmentId))
+  .find((item) => item.value === form.projectEnvironmentId))
 const effectiveStartUrl = computed(() => previewCase.value?.start_url || previewCase.value?.startUrl || '')
-const starting = computed(() => status.value === 'starting')
-const running = computed(() => ['starting', 'queued', 'running'].includes(status.value))
+const running = computed(() => ['running', 'cancelling'].includes(batchState.value))
+const activeCaseRow = computed(() => caseRows.value.find((item) => item.caseId === activeCaseId.value))
+const terminalStatuses: CasePlaybackStatus[] = ['passed', 'failed', 'cancelled']
+const batchRows = computed(() => {
+  const ids = new Set(batchCaseIds.value)
+  return caseRows.value.filter((item) => ids.has(item.caseId))
+})
+const passedCount = computed(() => batchRows.value.filter((item) => item.status === 'passed').length)
+const failedCount = computed(() => batchRows.value.filter((item) => item.status === 'failed').length)
+const selectedCaseRows = computed(() => {
+  const selectedIds = new Set(selectedCaseKeys.value.map(String))
+  return caseRows.value.filter((item) => selectedIds.has(item.caseId))
+})
 const cdpConfigValid = computed(() => cdpConfig.windowSizeMode !== 'custom' || (
   cdpConfig.viewportWidth >= 320 && cdpConfig.viewportWidth <= 10000
   && cdpConfig.viewportHeight >= 320 && cdpConfig.viewportHeight <= 10000
@@ -345,50 +378,13 @@ const runnerConfigValid = computed(() => runnerConfig.stepTimeoutMs >= 1000
   && runnerConfig.caseTimeoutMs >= runnerConfig.stepTimeoutMs
   && runnerConfig.slowMoMs >= 0
   && runnerConfig.finishDelayMs >= 0)
-const canStart = computed(() => Boolean(
-  selectedCaseId.value
-  && form.projectEnvironmentId
-  && effectiveStartUrl.value
+const baseConfigValid = computed(() => Boolean(
+  form.projectEnvironmentId
   && selectedProjectEnvironment.value?.statusLabel === '在线'
-  && !previewError.value
   && !running.value
   && (executionType.value === 'extension-cdp' ? cdpConfigValid.value : runnerConfigValid.value),
 ))
-const statusLabel = computed(() => ({
-  idle: '未开始',
-  starting: '启动中',
-  queued: '排队中',
-  running: '执行中',
-  passed: '通过',
-  failed: '失败',
-  cancelled: '已取消',
-}[status.value]))
-const statusColor = computed(() => {
-  if (status.value === 'passed') return 'green'
-  if (status.value === 'failed') return 'red'
-  if (status.value === 'cancelled') return 'orange'
-  return 'arcoblue'
-})
-
-const getLastDebugRecord = (record: any) => {
-  if (Array.isArray(record?.debugRecord) && record.debugRecord.length > 0) return record.debugRecord[0]
-  if (Array.isArray(record?.testRecord) && record.testRecord.length > 0) return record.testRecord[0]
-  return undefined
-}
-
-const getSceneExecuteFieldValue = (record: any, field: 'executeStatus' | 'executeResult') => {
-  const lastRecord = getLastDebugRecord(record)
-  const recordForPick = lastRecord ? { ...record, debugRecord: [lastRecord] } : record
-  return pickSceneExecuteField(recordForPick, field, status_type.value)
-}
-
-const getSceneDuration = (record: any) => {
-  const duration = getLastDebugRecord(record)?.duration
-  if (duration === undefined || duration === null || duration === '-' || duration === '') return '-'
-  return formatDuration(Number(duration))
-}
-
-const getSceneBuildNumber = (record: any) => getLastDebugRecord(record)?.buildNumber || '-'
+const canStartSelected = computed(() => baseConfigValid.value && selectedCaseKeys.value.length > 0)
 
 const resetRunnerConfig = () => Object.assign(runnerConfig, {
   browser: 'chromium',
@@ -401,6 +397,25 @@ const resetRunnerConfig = () => Object.assign(runnerConfig, {
   slowMoMs: 0,
   finishDelayMs: 0,
 })
+
+const resetBatchState = () => {
+  clearTimers()
+  batchState.value = 'idle'
+  batchCaseIds.value = []
+  batchId.value = ''
+  batchExecuteName.value = ''
+  activeCaseId.value = ''
+  activeCaseKey.value = ''
+  runnerJob.value = undefined
+  cancelRequested.value = false
+  extensionCompletionResolver = undefined
+  caseRows.value.forEach((item) => {
+    item.status = 'idle'
+    item.error = ''
+    item.startedAt = undefined
+    item.finishedAt = undefined
+  })
+}
 
 const getPrimaryServer = (item: any) => {
   const servers = Array.isArray(item?.serverConfig) ? item.serverConfig : []
@@ -450,7 +465,7 @@ const loadProjectEnvironments = async () => {
   if (form.projectEnvironmentId) await refreshSelectedEnvironmentStatus()
 }
 
-const refreshSelectedEnvironmentStatus = async () => {
+async function refreshSelectedEnvironmentStatus() {
   const option = selectedProjectEnvironment.value
   if (!option) return
   option.statusLabel = '检测中'
@@ -469,27 +484,36 @@ const refreshSelectedEnvironmentStatus = async () => {
   }
 }
 
-const loadPlaybackPreview = async () => {
+const fetchPlaybackCase = async (caseId: string) => {
+  const caseKey = `${playbackSceneKey.value}:${caseId}`
+  const { data } = await getAutomationPlaywrightCase(caseKey, form.projectEnvironmentId)
+  return data
+}
+
+const applyCdpCaseDefaults = (caseId: string, data: any) => {
+  if (cdpConfiguredCaseId.value === caseId || running.value) return
+  const windowMode = String(data?.window_size_mode || data?.windowSizeMode || '')
+  cdpConfig.windowSizeMode = ['current', 'custom'].includes(windowMode)
+    ? windowMode as 'current' | 'custom'
+    : 'maximized'
+  cdpConfig.viewportWidth = Number(data?.viewport_width || data?.viewportWidth) || 1920
+  cdpConfig.viewportHeight = Number(data?.viewport_height || data?.viewportHeight) || 1080
+  cdpConfig.pageErrorCheckEnabled = Number(data?.page_error_check_enabled ?? data?.pageErrorCheckEnabled ?? 0) !== 0
+  cdpConfiguredCaseId.value = caseId
+}
+
+const loadPlaybackPreview = async (caseId = resolvePreviewCaseId()) => {
   previewError.value = ''
   previewCase.value = undefined
-  if (!scene.value?.id || !selectedCaseId.value || !form.projectEnvironmentId) return
+  previewCaseId.value = caseId
+  if (!scene.value?.id || !caseId || !form.projectEnvironmentId) return
   const currentSequence = ++previewSequence
   previewLoading.value = true
   try {
-    const caseKey = `${playbackSceneKey.value}:${selectedCaseId.value}`
-    const { data } = await getAutomationPlaywrightCase(caseKey, form.projectEnvironmentId)
+    const data = await fetchPlaybackCase(caseId)
     if (currentSequence !== previewSequence) return
     previewCase.value = data
-    if (cdpConfiguredCaseId.value !== selectedCaseId.value) {
-      const windowMode = String(data?.window_size_mode || data?.windowSizeMode || '')
-      cdpConfig.windowSizeMode = ['current', 'custom'].includes(windowMode)
-        ? windowMode as 'current' | 'custom'
-        : 'maximized'
-      cdpConfig.viewportWidth = Number(data?.viewport_width || data?.viewportWidth) || 1920
-      cdpConfig.viewportHeight = Number(data?.viewport_height || data?.viewportHeight) || 1080
-      cdpConfig.pageErrorCheckEnabled = Number(data?.page_error_check_enabled ?? data?.pageErrorCheckEnabled ?? 0) !== 0
-      cdpConfiguredCaseId.value = selectedCaseId.value
-    }
+    applyCdpCaseDefaults(caseId, data)
   } catch (error: any) {
     if (currentSequence !== previewSequence) return
     previewError.value = error?.message || '生成环境回放地址失败'
@@ -498,36 +522,48 @@ const loadPlaybackPreview = async () => {
   }
 }
 
-const onOpen = async (record: any, type: Exclude<ExecutionType, 'jenkins'>, options?: { caseId?: string }) => {
-  if (runnerPollTimer) window.clearTimeout(runnerPollTimer)
+const onOpen = async (
+  record: any,
+  type: Exclude<ExecutionType, 'jenkins'>,
+  options: { caseIds: string[] },
+) => {
+  if (running.value) {
+    Message.warning('当前已有批次正在执行，请在执行历史中查看进度')
+    return
+  }
   executionType.value = type
-  preferredCaseId.value = String(options?.caseId || '')
-  selectedCaseId.value = ''
+  selectedCaseKeys.value = []
+  caseRows.value = []
   form.projectEnvironmentId = ''
   projectEnvironmentOptions.value = []
   previewCase.value = undefined
   previewError.value = ''
+  previewCaseId.value = ''
   cdpConfiguredCaseId.value = ''
-  status.value = 'idle'
-  errorMessage.value = ''
-  activeCaseKey.value = ''
-  runnerJob.value = undefined
   resetRunnerConfig()
+  resetBatchState()
   visible.value = true
   loading.value = true
   try {
     const { data } = await getAutomationUiScene(String(record.id))
     scene.value = data
+    const selectedIds = new Set((options.caseIds || []).map(String))
     const cases = (Array.isArray(data.caseList) ? data.caseList : []).filter(isExecutableCase)
-    if (preferredCaseId.value && cases.some(item => String(item.id) === preferredCaseId.value)) {
-      selectedCaseId.value = preferredCaseId.value
-    } else if (cases.length > 0) {
-      selectedCaseId.value = String(cases[0].id)
-    }
+    caseRows.value = cases
+      .filter((item: any) => selectedIds.has(String(item.id)))
+      .map((item: any) => ({
+        caseId: String(item.id),
+        executionId: '',
+        name: item.name || String(item.id),
+        stepTotal: Array.isArray(item.stepList) ? item.stepList.length : 0,
+        status: 'idle',
+        error: '',
+      }))
+    selectedCaseKeys.value = caseRows.value.map((item) => item.caseId)
     await Promise.all([loadSceneMeta(), loadProjectEnvironments()])
     await loadPlaybackPreview()
   } catch (error: any) {
-    errorMessage.value = error?.message || '读取场景回放配置失败'
+    Message.error(error?.message || '读取场景回放配置失败')
   } finally {
     loading.value = false
   }
@@ -550,8 +586,25 @@ const handleProjectEnvironmentChange = async (value: SelectChangeValue) => {
   await loadPlaybackPreview()
 }
 
-const startPlayback = async () => {
-  if (!selectedCaseId.value || !scene.value?.id || !form.projectEnvironmentId) return
+const startSelectedCases = async () => {
+  try {
+    await startBatch(selectedCaseKeys.value.map(String))
+  } catch (error: any) {
+    Message.error(error?.message || '创建执行批次失败，请稍后重试')
+  }
+}
+
+function backToCaseSelection() {
+  emit('back', {
+    scene: scene.value,
+    executionType: executionType.value,
+    caseIds: selectedCaseKeys.value.map(String),
+  })
+  visible.value = false
+}
+
+async function startBatch(caseIds: string[]) {
+  if (!caseIds.length || running.value) return
   try {
     await refreshSelectedEnvironmentStatus()
   } catch {
@@ -562,80 +615,312 @@ const startPlayback = async () => {
     Message.warning('当前产品环境服务器不在线，请切换为在线环境后再执行')
     return
   }
-  await loadPlaybackPreview()
-  if (!effectiveStartUrl.value || previewError.value) {
-    Message.warning(previewError.value || '当前用例没有可用的回放起始地址')
-    return
-  }
   if (executionType.value === 'playwright-runner' && runnerConfig.caseTimeoutMs < runnerConfig.stepTimeoutMs) {
     Message.warning('用例总超时不能小于单步骤超时')
     return
   }
 
-  activeCaseKey.value = `${playbackSceneKey.value}:${selectedCaseId.value}`
-  status.value = 'starting'
-  errorMessage.value = ''
-  try {
-    if (executionType.value === 'extension-cdp') {
-      await startExtensionCdpPlayback({
-        caseKey: activeCaseKey.value,
-        caseId: selectedCaseId.value,
-        projectEnvironmentId: form.projectEnvironmentId,
-        startUrl: effectiveStartUrl.value,
-        viewportMode: cdpConfig.windowSizeMode,
-        viewportWidth: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportWidth : undefined,
-        viewportHeight: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportHeight : undefined,
-        pageErrorCheckEnabled: cdpConfig.pageErrorCheckEnabled,
-      })
-      status.value = 'running'
-      Message.success('扩展已接收 CDP 回放任务，请保持当前页面打开')
-      return
+  const { data: createdBatch } = await createAutomationPlaywrightBatch({
+    sceneKey: playbackSceneKey.value,
+    executionType: executionType.value,
+    caseIds,
+    projectEnvironmentId: form.projectEnvironmentId,
+    executionConfig: executionType.value === 'extension-cdp'
+      ? { ...cdpConfig }
+      : { ...runnerConfig },
+  })
+  const batchCases = new Map(createdBatch.cases.map((item) => [String(item.caseId), item]))
+  batchCaseIds.value = [...caseIds]
+  batchState.value = 'running'
+  batchId.value = createdBatch.batchId
+  batchExecuteName.value = createdBatch.executeName || '-'
+  cancelRequested.value = false
+  runnerJob.value = undefined
+  caseRows.value.forEach((item) => {
+    item.executionId = batchCases.get(item.caseId)?.executionId || ''
+    item.status = caseIds.includes(item.caseId) ? 'waiting' : 'idle'
+    item.error = ''
+    item.startedAt = undefined
+    item.finishedAt = undefined
+  })
+  startBatchTimer()
+  publishBatchState()
+  visible.value = false
+  emit('started')
+
+  for (const caseId of caseIds) {
+    if (cancelRequested.value) break
+    const row = caseRows.value.find((item) => item.caseId === caseId)
+    if (!row) continue
+    activeCaseId.value = caseId
+    activeCaseKey.value = `${playbackSceneKey.value}:${caseId}`
+    row.startedAt = Date.now()
+    row.status = 'starting'
+    row.error = ''
+    publishBatchState()
+    await updateBatchCaseStatus(row, 'starting')
+    try {
+      await executeOneCase(row)
+    } catch (error: any) {
+      if (cancelRequested.value) {
+        row.status = 'cancelled'
+        row.error = row.error || '批次已取消'
+      } else {
+        row.status = 'failed'
+        row.error = error?.message || `${executionTypeLabel(executionType.value)}执行失败`
+      }
+    } finally {
+      row.finishedAt = Date.now()
+      if (['failed', 'cancelled'].includes(row.status)) {
+        await updateBatchCaseStatus(row, row.status, { error: row.error })
+      }
+      publishBatchState()
+      await refreshSceneAfterCase()
+      activeCaseId.value = ''
+      activeCaseKey.value = ''
+      runnerJob.value = undefined
     }
-    const { data } = await createAutomationPlaywrightRunnerJob({
-      caseKey: activeCaseKey.value,
-      projectEnvironmentId: form.projectEnvironmentId,
-      options: { ...runnerConfig },
-    })
-    runnerJob.value = data
-    status.value = data.status
-    Message.success(`已创建 Playwright Runner 任务：${data.jobId}`)
-    await pollRunner(data.jobId)
-  } catch (error: any) {
-    status.value = 'failed'
-    errorMessage.value = error?.message || `${executionTypeLabel(executionType.value)}启动失败`
+  }
+
+  if (cancelRequested.value) {
+    markWaitingCasesCancelled()
+    batchState.value = 'cancelled'
+    Message.warning('批量执行已取消')
+  } else {
+    batchState.value = 'completed'
+    Message.success(`批量执行完成：通过 ${passedCount.value}，失败 ${failedCount.value}`)
+  }
+  publishBatchState()
+  clearBatchTimer()
+  emit('success')
+  emit('finished')
+}
+
+async function executeOneCase(row: PlaybackCaseRow) {
+  const data = await fetchPlaybackCase(row.caseId)
+  previewCaseId.value = row.caseId
+  previewCase.value = data
+  previewError.value = ''
+  const startUrl = data?.start_url || data?.startUrl || ''
+  if (!startUrl) throw new Error('当前用例没有可用的回放起始地址')
+  if (!Array.isArray(data?.steps) || data.steps.length === 0) {
+    throw new Error('当前用例没有可执行步骤')
+  }
+  if (cancelRequested.value) throw new Error('批次已取消')
+
+  if (executionType.value === 'extension-cdp') {
+    await executeExtensionCase(row, startUrl)
+  } else {
+    await executeRunnerCase(row)
   }
 }
 
-async function pollRunner(jobId: string) {
+async function executeExtensionCase(row: PlaybackCaseRow, startUrl: string) {
+  const completionPromise = new Promise<ExtensionCompletion>((resolve) => {
+    extensionCompletionResolver = resolve
+  })
   try {
+    await startExtensionCdpPlayback({
+      caseKey: activeCaseKey.value,
+      caseId: row.caseId,
+      batchId: batchId.value,
+      executionId: row.executionId,
+      projectEnvironmentId: form.projectEnvironmentId,
+      startUrl,
+      viewportMode: cdpConfig.windowSizeMode,
+      viewportWidth: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportWidth : undefined,
+      viewportHeight: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportHeight : undefined,
+      pageErrorCheckEnabled: cdpConfig.pageErrorCheckEnabled,
+    })
+  } catch (error) {
+    extensionCompletionResolver = undefined
+    throw error
+  }
+  row.status = 'running'
+  await updateBatchCaseStatus(row, 'running')
+  publishBatchState()
+  const result = await completionPromise
+  extensionCompletionResolver = undefined
+  if (cancelRequested.value) {
+    row.status = 'cancelled'
+    row.error = '批次已取消'
+  } else if (result.ok) {
+    row.status = 'passed'
+  } else {
+    row.status = 'failed'
+    row.error = result.error || '扩展 CDP 回放失败'
+  }
+  publishBatchState()
+}
+
+async function executeRunnerCase(row: PlaybackCaseRow) {
+  const { data } = await createAutomationPlaywrightRunnerJob({
+    caseKey: activeCaseKey.value,
+    batchId: batchId.value,
+    executionId: row.executionId,
+    projectEnvironmentId: form.projectEnvironmentId,
+    options: { ...runnerConfig },
+  })
+  runnerJob.value = data
+  if (cancelRequested.value) {
+    runnerJob.value = (await cancelAutomationPlaywrightRunnerJob(data.jobId)).data
+  }
+  row.status = normalizeRunnerStatus(runnerJob.value.status)
+  await updateBatchCaseStatus(row, row.status === 'queued' ? 'queued' : 'running', { jobId: data.jobId })
+  publishBatchState()
+  const finalJob = await pollRunnerJob(data.jobId, row)
+  runnerJob.value = finalJob
+  row.status = normalizeRunnerStatus(finalJob.status)
+  if (finalJob.status === 'failed') {
+    row.error = finalJob.error || finalJob.outputTail?.slice(-8).join('\n') || 'Runner 回放失败'
+  } else if (finalJob.status === 'cancelled') {
+    row.error = '批次已取消'
+  }
+}
+
+async function pollRunnerJob(jobId: string, row: PlaybackCaseRow) {
+  let previousStatus = row.status
+  while (true) {
     const { data } = await getAutomationPlaywrightRunnerJob(jobId)
     runnerJob.value = data
-    status.value = data.status
-    if (['passed', 'failed', 'cancelled'].includes(data.status)) {
-      if (data.status === 'failed') {
-        errorMessage.value = data.error || data.outputTail?.slice(-8).join('\n') || 'Runner 回放失败'
-      }
-      emit('success')
-      return
+    row.status = normalizeRunnerStatus(data.status)
+    if (row.status !== previousStatus && ['queued', 'running'].includes(row.status)) {
+      await updateBatchCaseStatus(row, row.status as 'queued' | 'running', { jobId })
+      previousStatus = row.status
     }
-    runnerPollTimer = window.setTimeout(() => pollRunner(jobId), 1500)
-  } catch (error: any) {
-    status.value = 'failed'
-    errorMessage.value = error?.message || '获取 Runner 任务状态失败'
+    publishBatchState()
+    if (['passed', 'failed', 'cancelled'].includes(data.status)) return data
+    await waitForRunnerPoll()
   }
 }
 
-const cancelRunner = async () => {
-  if (!runnerJob.value?.jobId) return
-  try {
-    const { data } = await cancelAutomationPlaywrightRunnerJob(runnerJob.value.jobId)
-    runnerJob.value = data
-    status.value = data.status
-    if (runnerPollTimer) window.clearTimeout(runnerPollTimer)
-    emit('success')
-  } catch (error: any) {
-    errorMessage.value = error?.message || '取消 Runner 任务失败'
+function waitForRunnerPoll() {
+  return new Promise<void>((resolve) => {
+    runnerPollTimer = window.setTimeout(resolve, 1500)
+  })
+}
+
+const cancelBatch = async () => {
+  if (!running.value || cancelRequested.value) return
+  cancelRequested.value = true
+  batchState.value = 'cancelling'
+  markWaitingCasesCancelled()
+  const row = activeCaseRow.value
+  if (row && !terminalStatuses.includes(row.status)) {
+    row.status = 'cancelled'
+    row.error = '批次已取消'
   }
+  publishBatchState()
+  try {
+    await cancelAutomationPlaywrightBatch(playbackSceneKey.value, batchId.value)
+    if (executionType.value === 'playwright-runner' && runnerJob.value?.jobId) {
+      runnerJob.value = (await cancelAutomationPlaywrightRunnerJob(runnerJob.value.jobId)).data
+    } else if (executionType.value === 'extension-cdp') {
+      await stopExtensionCdpPlayback()
+      settleExtensionCompletion({ ok: false, error: '批次已取消' })
+    }
+  } catch (error: any) {
+    Message.error(error?.message || '取消当前执行任务失败')
+    settleExtensionCompletion({ ok: false, error: error?.message || '批次已取消' })
+  }
+  publishBatchState()
+}
+
+async function refreshSceneAfterCase() {
+  if (!scene.value?.id) return
+  try {
+    const { data } = await getAutomationUiScene(String(scene.value.id))
+    scene.value = data
+    emit('success')
+  } catch {
+    // 执行结果已经由 Runner/CDP 回传；刷新失败不应中断后续用例。
+  }
+}
+
+function markWaitingCasesCancelled() {
+  caseRows.value.forEach((item) => {
+    if (batchCaseIds.value.includes(item.caseId) && item.status === 'waiting') {
+      item.status = 'cancelled'
+      item.error = '批次已取消，未开始执行'
+      item.finishedAt = Date.now()
+    }
+  })
+}
+
+function resolvePreviewCaseId() {
+  if (activeCaseId.value) return activeCaseId.value
+  return selectedCaseKeys.value.length ? String(selectedCaseKeys.value[0]) : ''
+}
+
+function normalizeRunnerStatus(status: AutomationPlaywrightRunnerJobResp['status']): CasePlaybackStatus {
+  return status === 'queued' ? 'queued' : status
+}
+
+async function updateBatchCaseStatus(
+  row: PlaybackCaseRow,
+  status: 'starting' | 'queued' | 'running' | 'failed' | 'cancelled',
+  extra: { jobId?: string, error?: string } = {},
+) {
+  if (!batchId.value || !playbackSceneKey.value || !row.executionId) return
+  const terminal = ['failed', 'cancelled'].includes(status)
+  try {
+    await updateAutomationPlaywrightBatchCase(
+      playbackSceneKey.value,
+      batchId.value,
+      row.caseId,
+      {
+        status,
+        jobId: extra.jobId,
+        startedAt: status === 'starting' ? new Date(row.startedAt || Date.now()).toISOString() : undefined,
+        finishedAt: terminal ? new Date(row.finishedAt || Date.now()).toISOString() : undefined,
+        durationMs: terminal && row.startedAt ? Math.max(0, (row.finishedAt || Date.now()) - row.startedAt) : undefined,
+        error: extra.error,
+      },
+    )
+  } catch (error) {
+    console.warn('[automation] 批次用例状态同步失败', error)
+  }
+}
+
+function startBatchTimer() {
+  clearBatchTimer()
+  batchTimer = window.setInterval(() => {
+    publishBatchState()
+  }, 1000)
+}
+
+function clearBatchTimer() {
+  if (batchTimer) window.clearInterval(batchTimer)
+  batchTimer = undefined
+}
+
+function clearTimers() {
+  clearBatchTimer()
+  if (runnerPollTimer) window.clearTimeout(runnerPollTimer)
+  runnerPollTimer = undefined
+}
+
+function settleExtensionCompletion(result: ExtensionCompletion) {
+  const resolver = extensionCompletionResolver
+  extensionCompletionResolver = undefined
+  resolver?.(result)
+}
+
+function publishBatchState() {
+  if (!batchId.value) return
+  emit('batch-update', batchRows.value.map((item) => ({
+    batchId: batchId.value,
+    executionId: item.executionId,
+    executeName: batchExecuteName.value,
+    executionType: executionType.value,
+    caseId: item.caseId,
+    caseName: item.name,
+    stepTotal: item.stepTotal,
+    status: item.status === 'idle' ? 'waiting' : item.status,
+    error: item.error,
+    startedAt: item.startedAt,
+    finishedAt: item.finishedAt,
+  })))
 }
 
 const goProjectEnvironmentConfig = async () => {
@@ -650,18 +935,25 @@ const handleExtensionPlaybackEnd = (event: MessageEvent) => {
   if (event.source !== window) return
   const data = event.data || {}
   if (data.type !== 'AT_PLAYBACK_END' || data.adminCaseKey !== activeCaseKey.value) return
-  status.value = data.ok === false ? 'failed' : 'passed'
-  errorMessage.value = data.ok === false ? (data.error || '扩展 CDP 回放失败') : ''
-  emit('success')
+  settleExtensionCompletion({
+    ok: data.ok !== false,
+    error: data.ok === false ? (data.error || '扩展 CDP 回放失败') : '',
+  })
 }
+
+watch(selectedCaseKeys, async () => {
+  if (running.value) return
+  await loadPlaybackPreview()
+})
 
 onMounted(() => window.addEventListener('message', handleExtensionPlaybackEnd))
 onUnmounted(() => {
   window.removeEventListener('message', handleExtensionPlaybackEnd)
-  if (runnerPollTimer) window.clearTimeout(runnerPollTimer)
+  clearTimers()
+  settleExtensionCompletion({ ok: false, error: '页面已关闭' })
 })
 
-defineExpose({ onOpen })
+defineExpose({ onOpen, cancelBatch })
 </script>
 
 <style scoped lang="scss">
@@ -675,8 +967,7 @@ defineExpose({ onOpen })
   margin-top: -4px;
 }
 
-.config-card,
-.scene-card {
+.config-card {
   height: 100%;
   border-radius: 12px;
 }
@@ -775,25 +1066,10 @@ defineExpose({ onOpen })
   margin-bottom: 10px;
 }
 
-.execution-status-card {
-  background: var(--color-fill-1);
-}
-
-.runner-output {
-  max-height: 260px;
-  margin: 0;
-  padding: 12px;
-  overflow: auto;
-  border-radius: 4px;
-  background: #101828;
-  color: #d0d5dd;
-  font: 12px/1.6 Consolas, monospace;
-  white-space: pre-wrap;
-}
-
 :deep(.arco-card-body) {
   padding: 12px 10px;
 }
+
 :deep(.arco-table-body) {
   min-height: 0;
 }

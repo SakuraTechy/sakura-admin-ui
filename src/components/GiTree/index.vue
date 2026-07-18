@@ -107,6 +107,7 @@ const props = defineProps({
   treeData: { type: Array, required: true },
   selectedKeys: { type: Array, default: () => [] },
   multiple: { type: Boolean, default: false },
+  allowDeselect: { type: Boolean, default: false },
   checkStrictly: { type: Boolean, default: false },
   checkedKeys: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
@@ -323,12 +324,23 @@ const filteredData = computed(() => {
 })
 
 // 选中节点
-const onSelect = (selectedKeys: any, data: any) => {
-  console.log('onSelect', selectedKeys, data)
-  if (!multiple.value) emit('node-click', data)
-  //   if (localSelectedKeys.value && localSelectedKeys.value[0] === keys[0]) return
-  //   localSelectedKeys.value = keys
-  //   emit('update:selectedKeys', keys)
+const clearSelection = () => {
+  selectedKeys.value = []
+  emit('update:selectedKeys', [])
+  emit('node-click', { selected: false, node: null, selectedKeys: [] })
+}
+
+const onSelect = (keys: any[], data: any) => {
+  const node = data?.node || data
+  const nodeKey = node?.[props.fieldNames.key]
+  const selectedBeforeClick = props.selectedKeys?.map(String).includes(String(nodeKey))
+  if (!multiple.value && props.allowDeselect && selectedBeforeClick) {
+    clearSelection()
+    return
+  }
+  selectedKeys.value = keys
+  emit('update:selectedKeys', keys)
+  if (!multiple.value) emit('node-click', { ...data, selected: true })
 }
 
 // 拖动节点
@@ -592,7 +604,14 @@ export default {}
     box-sizing: border-box;
 
     &__search {
+      display: flex;
+      align-items: center;
+      gap: 4px;
       margin-bottom: 10px;
+
+      :deep(.arco-input-wrapper) {
+        flex: 1;
+      }
     }
 
     &__tree {

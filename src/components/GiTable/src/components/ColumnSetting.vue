@@ -360,7 +360,8 @@ watch(() => props.columns, (newColumns) => {
   if (newColumns && newColumns.length > 0) {
     // 第一次接收到非空列数据时，保存原始配置
     if (originalColumns.value.length === 0) {
-      originalColumns.value = JSON.parse(JSON.stringify(newColumns))
+      // 保留 JSX render 等函数配置，列重置时不能用 JSON 深拷贝丢失渲染器。
+      originalColumns.value = newColumns.map((column) => ({ ...column }))
     }
 
     // 如果本地列数组为空，初始化本地列
@@ -419,8 +420,8 @@ const handleReset = () => {
 
     // 使用原始列配置重新创建本地列
     if (originalColumns.value.length > 0) {
-      // 将原始列配置重新应用（深拷贝避免共享引用）
-      const columnsToReset = JSON.parse(JSON.stringify(originalColumns.value))
+      // 浅拷贝列对象，既隔离可变字段，又保留 render 函数。
+      const columnsToReset = originalColumns.value.map((column) => ({ ...column }))
 
       // 使用父组件传入的列更新内部状态
       emit('update:columns', columnsToReset)
@@ -470,10 +471,6 @@ defineExpose({
   resetColumns: handleReset,
   saveColumns: handleSave,
 })
-</script>
-
-<script lang="ts">
-export default {}
 </script>
 
 <style lang="scss" scoped>

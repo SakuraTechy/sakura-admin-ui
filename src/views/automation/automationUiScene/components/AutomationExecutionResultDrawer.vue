@@ -49,10 +49,10 @@
               </a-card>
               <a-card v-else title="结构化执行日志" size="small">
                 <a-descriptions :column="2" size="small" bordered>
-                  <a-descriptions-item label="执行 ID">{{ selectedRecord.executionId || '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="用例">{{ selectedRecord.caseName || selectedRecord.caseId || '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="失败步骤">{{ selectedRecord.playwrightResult?.failed_step_index ?? '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="错误">{{ selectedRecord.playwrightError || selectedRecord.playwrightResult?.error || '-' }}</a-descriptions-item>
+                  <a-descriptions-item label="执行 ID">{{ selectedExecutionId }}</a-descriptions-item>
+                  <a-descriptions-item label="用例">{{ caseResult.case_name || caseResult.case_id || selectedRecord.caseName || selectedRecord.caseId || '-' }}</a-descriptions-item>
+                  <a-descriptions-item label="失败步骤">{{ selectedPlaywrightResult.failed_step_index ?? '-' }}</a-descriptions-item>
+                  <a-descriptions-item label="错误">{{ caseResult.error || selectedPlaywrightResult.error || selectedRecord.playwrightError || '-' }}</a-descriptions-item>
                 </a-descriptions>
                 <a-button
                   v-if="executionType === 'playwright-runner' && consoleArtifactUrl"
@@ -81,8 +81,8 @@
                         {{ resultLabel(caseResult.status || selectedRecord.executeResult) }}
                       </a-tag>
                     </a-descriptions-item>
-                    <a-descriptions-item label="通过率">{{ selectedRecord.scenePassRate || selectedRecord.casePassRate || '-' }}</a-descriptions-item>
-                    <a-descriptions-item label="耗时">{{ formatDuration(selectedRecord.duration) }}</a-descriptions-item>
+                    <a-descriptions-item label="通过率">{{ selectedCasePassRate }}</a-descriptions-item>
+                    <a-descriptions-item label="耗时">{{ formatDuration(selectedCaseDuration) }}</a-descriptions-item>
                   </a-descriptions>
                   <a-space v-if="executionType === 'playwright-runner'" wrap style="margin-top: 12px">
                     <a-button v-if="reportArtifactUrl" type="primary" @click="openProtectedArtifact(reportArtifactUrl)">打开 HTML report</a-button>
@@ -127,14 +127,22 @@
 import { useWindowSize } from '@vueuse/core'
 import { Message } from '@arco-design/web-vue'
 import {
+  type ExecutionRecordScope,
+  type ExecutionResultOpenOptions,
   type ExecutionType,
   type ExecutionViewType,
   executionTypeLabel,
   executionViewLabels,
+  formatExecutionDuration as formatDuration,
   formatExecutionDateTime,
   getArtifactUrl,
   getExecutionRecords,
+  matchesExecutionRecord,
   resolveJenkinsVideoUrl,
+  executionResultColor as resultColor,
+  executionResultLabel as resultLabel,
+  executionStatusColor as statusColor,
+  executionStatusLabel as statusLabel,
 } from '../execution'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { getToken } from '@/utils/auth'
@@ -146,12 +154,14 @@ const loading = ref(false)
 const artifactLoading = ref(false)
 const scene = ref<any>()
 const executionType = ref<ExecutionType>('jenkins')
+const recordScope = ref<ExecutionRecordScope>('all')
 const viewType = ref<ExecutionViewType>('record')
 const selectedRecordKey = ref('')
+const targetCaseId = ref('')
 const artifactText = ref('')
 const videoObjectUrl = ref('')
 
-const records = computed(() => getExecutionRecords(scene.value, executionType.value))
+const records = computed(() => getExecutionRecords(scene.value, executionType.value, recordScope.value))
 const selectedRecord = computed<any>(() => records.value.find((item) => item.__key === selectedRecordKey.value) || records.value[0])
 const recordOptions = computed(() => records.value.map((record: any) => ({
   value: record.__key,
@@ -159,27 +169,61 @@ const recordOptions = computed(() => records.value.map((record: any) => ({
 })))
 const caseResult = computed<any>(() => {
   const record = selectedRecord.value || {}
-  if (Array.isArray(record.caseResults) && record.caseResults.length) return record.caseResults[0]
+  if (Array.isArray(record.caseResults) && record.caseResults.length) {
+    return record.caseResults.find((item: any) => String(item.case_id || item.caseId || '') === targetCaseId.value)
+      || record.caseResults[0]
+  }
   if (record.playwrightResult?.case_result) return record.playwrightResult.case_result
   return {}
 })
+const selectedPlaywrightResult = computed<any>(() => (
+  caseResult.value?.playwright_result
+  || caseResult.value?.playwrightResult
+  || selectedRecord.value?.playwrightResult
+  || {}
+))
+const selectedExecutionId = computed(() => (
+  caseResult.value?.execution_id
+  || caseResult.value?.executionId
+  || selectedRecord.value?.executionId
+  || '-'
+))
+const selectedCaseDuration = computed(() => (
+  caseResult.value?.duration_ms
+  ?? caseResult.value?.duration
+  ?? selectedRecord.value?.duration
+))
+const selectedCasePassRate = computed(() => {
+  const total = Number(caseResult.value?.step_total ?? caseResult.value?.stepTotal)
+  const passed = Number(caseResult.value?.step_pass ?? caseResult.value?.stepPass)
+  if (Number.isFinite(total) && total > 0 && Number.isFinite(passed)) {
+    return `${Math.round(passed * 10000 / total) / 100}%`
+  }
+  return selectedRecord.value?.casePassRate || selectedRecord.value?.scenePassRate || '-'
+})
+const artifactRecord = computed(() => ({
+  artifactUrls: caseResult.value?.artifact_urls || caseResult.value?.artifactUrls,
+  playwrightResult: selectedPlaywrightResult.value,
+}))
 const stepResults = computed<any[]>(() => {
   const record = selectedRecord.value || {}
-  const steps = caseResult.value?.steps || record.stepResults || record.playwrightResult?.steps
+  const steps = caseResult.value?.steps || selectedPlaywrightResult.value?.steps || record.stepResults
   return Array.isArray(steps) ? steps : []
 })
 const artifactUploadErrors = computed<any[]>(() => {
-  const value = selectedRecord.value?.artifactUploadErrors || selectedRecord.value?.playwrightResult?.artifact_upload_errors
+  const value = caseResult.value?.artifact_upload_errors
+    || selectedPlaywrightResult.value?.artifact_upload_errors
+    || selectedRecord.value?.artifactUploadErrors
   return Array.isArray(value) ? value : []
 })
-const consoleArtifactUrl = computed(() => getArtifactUrl(selectedRecord.value, 'console_log', 'console', 'logs'))
-const reportArtifactUrl = computed(() => getArtifactUrl(selectedRecord.value, 'report_html', 'report'))
-const videoArtifactUrl = computed(() => getArtifactUrl(selectedRecord.value, 'video', 'videos'))
-const traceArtifactUrl = computed(() => getArtifactUrl(selectedRecord.value, 'trace'))
-const screenshotArtifactUrl = computed(() => getArtifactUrl(selectedRecord.value, 'failure_screenshot', 'screenshot', 'screenshots'))
+const consoleArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'console_log', 'console', 'logs'))
+const reportArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'report_html', 'report'))
+const videoArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'video', 'videos'))
+const traceArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'trace'))
+const screenshotArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'failure_screenshot', 'screenshot', 'screenshots'))
 const jenkinsVideoUrl = computed(() => resolveJenkinsVideoUrl(selectedRecord.value, String(scene.value?.sceneId || '')))
 const runnerVideoEmptyText = computed(() => {
-  const policy = selectedRecord.value?.playwrightResult?.raw?.video_policy
+  const policy = selectedPlaywrightResult.value?.raw?.video_policy
   if (policy === 'retain-on-failure' && resultLabel(selectedRecord.value?.executeResult) === '通过') {
     return '当前保留策略为 retain-on-failure，成功执行未生成录屏'
   }
@@ -190,16 +234,16 @@ const logContent = computed(() => {
   const record = selectedRecord.value || {}
   if (executionType.value === 'extension-cdp') {
     return prettyJson({
-      error: record.playwrightError || record.playwrightResult?.error || '',
-      failed_step_index: record.playwrightResult?.failed_step_index,
-      cdp_attach_error: record.playwrightResult?.detail?.cdp_attach_error,
-      diagnostics: record.playwrightResult?.detail || {},
+      error: caseResult.value?.error || selectedPlaywrightResult.value?.error || record.playwrightError || '',
+      failed_step_index: selectedPlaywrightResult.value?.failed_step_index,
+      cdp_attach_error: selectedPlaywrightResult.value?.detail?.cdp_attach_error,
+      diagnostics: selectedPlaywrightResult.value?.detail || {},
     })
   }
   return prettyJson({
-    error: record.playwrightError || record.playwrightResult?.error || '',
-    error_code: record.playwrightResult?.error_code,
-    error_details: record.playwrightResult?.error_details,
+    error: caseResult.value?.error || selectedPlaywrightResult.value?.error || record.playwrightError || '',
+    error_code: selectedPlaywrightResult.value?.error_code,
+    error_details: selectedPlaywrightResult.value?.error_details,
     steps: stepResults.value,
   })
 })
@@ -254,10 +298,17 @@ const stepColumns = [
   { title: '错误', dataIndex: 'error', width: 240, ellipsis: true, tooltip: true },
 ]
 
-const onOpen = async (sceneId: string, type: ExecutionType, targetView: ExecutionViewType) => {
+const onOpen = async (
+  sceneId: string,
+  type: ExecutionType,
+  targetView: ExecutionViewType,
+  options: ExecutionResultOpenOptions = {},
+) => {
   executionType.value = type
+  recordScope.value = options.source || 'all'
   viewType.value = targetView
   selectedRecordKey.value = ''
+  targetCaseId.value = options.target?.caseId || ''
   artifactText.value = ''
   releaseVideoUrl()
   visible.value = true
@@ -265,7 +316,9 @@ const onOpen = async (sceneId: string, type: ExecutionType, targetView: Executio
   try {
     const { data } = await getAutomationUiScene(sceneId)
     scene.value = data
-    selectedRecordKey.value = getExecutionRecords(data, type)[0]?.__key || ''
+    const availableRecords = getExecutionRecords(data, type, recordScope.value)
+    const targetRecord = availableRecords.find((record) => matchesExecutionRecord(record, options.target))
+    selectedRecordKey.value = targetRecord?.__key || availableRecords[0]?.__key || ''
   } finally {
     loading.value = false
   }
@@ -359,46 +412,6 @@ onUnmounted(releaseVideoUrl)
 
 function prettyJson(value: unknown) {
   return JSON.stringify(value ?? {}, null, 2)
-}
-
-function formatDuration(value: unknown) {
-  const total = Number(value)
-  if (!Number.isFinite(total) || total < 0) return '-'
-  if (total < 1000) return `${total} ms`
-  const seconds = Math.floor(total / 1000)
-  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} m ${seconds % 60} s`
-}
-
-function resultLabel(value: unknown) {
-  const normalized = String(value ?? '').toLowerCase()
-  if (['passed', 'success', '14'].includes(normalized)) return '通过'
-  if (['failed', '15'].includes(normalized)) return '失败'
-  if (['skipped', 'cancelled', '16'].includes(normalized)) return normalized === 'cancelled' ? '已取消' : '跳过'
-  if (['running', '13'].includes(normalized)) return '未执行'
-  return normalized || '-'
-}
-
-function resultColor(value: unknown) {
-  const label = resultLabel(value)
-  if (label === '通过') return 'green'
-  if (label === '失败') return 'red'
-  if (label === '跳过' || label === '已取消') return 'orange'
-  return 'gray'
-}
-
-function statusLabel(value: unknown) {
-  const normalized = String(value ?? '').toLowerCase()
-  if (['running', '11'].includes(normalized)) return '执行中'
-  if (['completed', '12'].includes(normalized)) return '已完成'
-  if (['not_started', '10'].includes(normalized)) return '未开始'
-  return normalized || '-'
-}
-
-function statusColor(value: unknown) {
-  const label = statusLabel(value)
-  if (label === '执行中') return 'arcoblue'
-  if (label === '已完成') return 'green'
-  return 'gray'
 }
 
 defineExpose({ onOpen })

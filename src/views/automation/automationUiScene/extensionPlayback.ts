@@ -43,6 +43,8 @@ const waitForExtensionAck = (type: string, payload: Record<string, unknown>, tim
 export interface ExtensionCdpPlaybackOptions {
   caseKey: string
   caseId: string
+  batchId: string
+  executionId: string
   projectEnvironmentId: string
   startUrl: string
   viewportMode: 'maximized' | 'current' | 'custom'
@@ -68,6 +70,8 @@ export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOpt
     authToken,
     testCaseId: caseId,
     adminCaseKey: caseKey,
+    batchId: options.batchId,
+    executionId: options.executionId,
     projectEnvironmentId,
     dataSource: 'admin',
     executionSource: 'extension-cdp',
@@ -79,5 +83,11 @@ export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOpt
     locale: 'zh',
   }, 8000)
   if (response?.ok === false) throw new Error(response.error || '扩展 CDP 回放启动失败')
+  return response
+}
+
+export const stopExtensionCdpPlayback = async () => {
+  const response = await waitForExtensionAck('AT_PLATFORM_STOP_PLAYBACK', {}, 6000)
+  if (response?.ok === false) throw new Error(response.error || '停止扩展 CDP 回放失败')
   return response
 }

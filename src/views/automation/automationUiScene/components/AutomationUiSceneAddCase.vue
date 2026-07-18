@@ -8,6 +8,7 @@
     :field-names="{ key: 'treeKey', title: 'name', children: 'children' }"
     :loading="loading"
     :selected-keys="selectedKeys"
+    allow-deselect
     :multiple="multiple"
     :on-save="onMenuClick"
     @update:selected-keys="val => selectedKeys = val"
@@ -71,7 +72,8 @@ const emit = defineEmits<{
   (e: 'get-scene-info', data?: any): void
   (e: 'get-case', data?: any): void
   (e: 'get-step', data?: any): void
-  (e: 'recording', data: { mode: string; node: any }): void
+  (e: 'selection-clear'): void
+  (e: 'recording', data: { mode: string, node: any }): void
 }>()
 
 const { sort_type, status_type, automation_operation_type, automation_operation_method } = useDict('sort_type', 'status_type', 'automation_operation_type', 'automation_operation_method')
@@ -79,6 +81,7 @@ const { sort_type, status_type, automation_operation_type, automation_operation_
 const uiStore = useUiStore()
 
 const selectedKeys = ref()
+const selectionInitialized = ref(false)
 const multiple = ref()
 const modalData = ref()
 const giTreeRef = ref()
@@ -133,7 +136,12 @@ const getTreeCaseList = async (data?: any) => {
     // const res = await getAutomationUiScene(uiStore.activeId)
     // console.log('caseList', props.caseList)
     treeList.value = buildCaseTree(props.caseList as any) as TreeCateItem[]
-    onNodeClick(data)
+    if (data) {
+      onNodeClick(data)
+    } else if (!selectionInitialized.value) {
+      const firstCase = treeList.value.find((item) => item.type === 'case')
+      if (firstCase) onNodeClick({ node: firstCase, selected: true })
+    }
     // this.moduleId = this.treeList[0].id
     // this.moduleId = JSON.parse(localStorage.getItem('ui-store') ?? '{}').moduleId ?? this.treeList[0]?.id
   } finally {
@@ -553,12 +561,24 @@ const handleClose = () => {
 const onNodeClick = (data?: any) => {
   // console.warn('onNodeClick', data)
   const node = data?.node || data
-  selectedKeys.value = node ? [node.treeKey || node.id] : [treeList.value[0]?.treeKey || treeList.value[0]?.id]
+  if (data?.selected === false || !node) {
+    selectionInitialized.value = true
+    selectedKeys.value = []
+    emit('selection-clear')
+    return
+  }
+  selectionInitialized.value = true
+  selectedKeys.value = [node.treeKey || node.id]
   if (data?.type === 'step' || data?.node?.type === 'step') {
     emit('get-step', data)
-  } else if (data?.node?.type === 'case' || treeList.value[0]?.type === 'case') {
-    emit('get-case', node?.id || treeList.value[0]?.id)
+  } else if (data?.type === 'case' || data?.node?.type === 'case') {
+    emit('get-case', node.id)
   }
+}
+const clearSelection = () => {
+  selectionInitialized.value = true
+  selectedKeys.value = []
+  emit('selection-clear')
 }
 const onNodeDrop = async (data?: any) => {
   if (props.readonly) {
@@ -723,6 +743,7 @@ onMounted(async () => {
 defineExpose({
   onMenuClick,
   getTreeCaseList,
+  clearSelection,
 })
 </script>
 
