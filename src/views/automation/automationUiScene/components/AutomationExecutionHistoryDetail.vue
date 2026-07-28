@@ -6,28 +6,43 @@
   >
     <div v-if="!embedded" class="step-summary">
       <div class="step-summary__identity">
-        <a-tag :color="executionResultColor(record.executeResult)">{{ executionResultLabel(record.executeResult) }}</a-tag>
+        <a-tag :color="executionResultColor(record.executeResult)">{{ executionAggregateResultLabel(record.executeResult) }}</a-tag>
         <strong>{{ record.caseName }}</strong>
-        <span>{{ record.executionId }}</span>
+        <!-- <div class="step-summary__metrics">
+          <strong>{{ record.caseName }}</strong>
+          <small>{{ record.caseId }} · {{ record.executionId }} · {{ sessionModeLabel(record.sessionMode) }}</small>
+          <span class="duration">总步骤 <strong>{{ record.stepTotal }}</strong></span>
+          <span class="success">通过 <strong>{{ record.stepPass }}</strong></span>
+          <span class="danger">失败 <strong>{{ record.stepFail }}</strong></span>
+          <span>跳过 <strong>{{ record.stepSkip }}</strong></span>
+          <span>失败步骤 <strong>{{ record.failedStepIndex }}</strong></span>
+          <span class="duration">耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
+        </div> -->
       </div>
-      <div class="step-summary__metrics">
-        <!-- <span>耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span> -->
+      <!-- <div class="step-summary__metrics">
         <span>总步骤 <strong>{{ record.stepTotal }}</strong></span>
         <span class="success">通过 <strong>{{ record.stepPass }}</strong></span>
         <span class="danger">失败 <strong>{{ record.stepFail }}</strong></span>
         <span>跳过 <strong>{{ record.stepSkip }}</strong></span>
         <span>失败步骤 <strong>{{ record.failedStepIndex }}</strong></span>
       </div>
-      <span>耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
+      <span>耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span> -->
       <a-space>
         <a-button size="small" @click="emit('open', record, 'log')">日志</a-button>
+        <a-button
+          v-if="record.executionType === 'playwright-runner'"
+          size="small"
+          @click="emit('open', record, 'live')"
+        >
+          实时画面
+        </a-button>
         <a-button size="small" type="primary" @click="emit('open', record, 'report')">报告</a-button>
       </a-space>
     </div>
 
-    <a-alert v-if="record.error !== '-'" type="error" class="record-alert">
+    <!-- <a-alert v-if="record.error !== '-'" type="error" class="record-alert">
       {{ record.errorCode !== '-' ? `[${record.errorCode}] ` : '' }}{{ record.error }}
-    </a-alert>
+    </a-alert> -->
     <a-alert v-if="record.summaryOnly" type="info" class="record-alert">
       该记录仅包含场景汇总，未保存用例步骤明细。
     </a-alert>
@@ -47,10 +62,10 @@
             <strong>{{ step.stepName }}</strong>
             <small style="margin-top: 5px;">{{ step.actionType }}</small>
           </span>
-         <div style="display: flex; align-items: center; gap: 16px;">
-           <em>{{ formatExecutionDuration(step.duration) }}</em>
-           <a-tag :color="executionResultColor(step.status)">{{ executionResultLabel(step.status) }}</a-tag>
-         </div>
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <em>{{ formatExecutionDuration(step.duration) }}</em>
+            <a-tag :color="executionResultColor(step.status)">{{ executionResultLabel(step.status) }}</a-tag>
+          </div>
         </button>
       </nav>
       <section v-if="activeStep" class="step-inspector__content">
@@ -111,7 +126,7 @@
 
 <script setup lang="ts">
 import type { ExecutionHistoryCaseRow, ExecutionHistoryStepRow, ExecutionViewType } from '../execution'
-import { executionResultColor, executionResultLabel, formatExecutionDuration } from '../execution'
+import { executionAggregateResultLabel, executionResultColor, executionResultLabel, formatExecutionDuration } from '../execution'
 import AutomationExecutionStepDiagnostic from './AutomationExecutionStepDiagnostic.vue'
 
 const props = withDefaults(defineProps<{
@@ -141,6 +156,9 @@ function stepState(step: ExecutionHistoryStepRow) {
   const label = executionResultLabel(step.status)
   return label === '通过' ? 'passed' : label === '失败' ? 'failed' : 'skipped'
 }
+function sessionModeLabel(value: string) {
+  return value === 'reuse-auth' ? '复用登录态' : '独立登录'
+}
 </script>
 
 <style scoped lang="scss">
@@ -152,10 +170,35 @@ function stepState(step: ExecutionHistoryStepRow) {
   animation: history-expand-in 200ms ease-out;
 }
 
-.step-history--embedded {
-  padding: 10px 12px 12px;
+.step-history--embedded,
+.step-history--table {
+  min-height: 0;
+  max-height: calc(100vh - 220px);
+  max-height: calc(100dvh - 220px);
+  padding: 12px;
+  overflow-x: hidden;
+  overflow-y: scroll;
   border-radius: 0 0 10px 10px;
   background: var(--color-bg-1);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+// 单个用例展开行只保留根报告容器滚动，避免步骤栏和详情栏抢占滚轮事件。
+.step-history--table:not(.step-history--embedded) {
+  overflow-y: auto;
+  overscroll-behavior: auto;
+}
+
+.step-history--table:not(.step-history--embedded) .step-inspector {
+  height: auto;
+  max-height: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.step-history--table:not(.step-history--embedded) .step-inspector__content {
+  overflow: visible;
 }
 
 .step-summary {
@@ -164,8 +207,9 @@ function stepState(step: ExecutionHistoryStepRow) {
   top: 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 18px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding: 12px 14px;
   border: 1px solid var(--color-border-2);
   border-radius: 10px;
@@ -181,14 +225,16 @@ function stepState(step: ExecutionHistoryStepRow) {
   gap: 9px;
 }
 
-.step-summary__identity strong {
+.step-summary__identity strong,
+.step-summary__identity small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.step-summary__identity small,
 .step-summary__identity span,
-.step-summary__metrics {
+.step-summary__duration {
   color: var(--color-text-3);
   font-size: 12px;
 }
@@ -197,7 +243,7 @@ function stepState(step: ExecutionHistoryStepRow) {
   display: flex;
   flex: 1;
   flex-wrap: wrap;
-  gap: 13px;
+  gap: 5px;
 }
 
 .success strong {
@@ -208,12 +254,18 @@ function stepState(step: ExecutionHistoryStepRow) {
   color: rgb(var(--danger-6));
 }
 
+.duration strong {
+  color: var(--color-text-1);
+}
+
 .record-alert {
   margin-bottom: 12px;
 }
 
 .step-inspector {
   display: grid;
+  min-height: 0;
+  height: min(520px, calc(100dvh - 220px));
   max-height: 520px;
   grid-template-columns: minmax(250px, 32%) minmax(0, 1fr);
   overflow: hidden;
@@ -223,17 +275,23 @@ function stepState(step: ExecutionHistoryStepRow) {
 }
 
 .step-inspector__nav {
-  overflow: auto;
+  min-height: 0;
+  max-height: 480px;
+  overflow-x: hidden;
+  overflow-y: auto;
   border-right: 1px solid var(--color-border-2);
+  scrollbar-gutter: stable;
 }
 
 .step-inspector__nav button {
   display: grid;
+  box-sizing: border-box;
   width: 100%;
+  height: 48px;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  padding: 10px 11px;
+  padding: 6.5px 11px;
   border: 0;
   border-bottom: 1px solid var(--color-border-1);
   background: transparent;
@@ -328,6 +386,7 @@ function stepState(step: ExecutionHistoryStepRow) {
 
 .step-inspector__content {
   min-width: 0;
+  min-height: 0;
   // padding: 10px;
   overflow: auto;
 }

@@ -1,19 +1,39 @@
 <template>
   <div v-if="indeterminate" class="execution-progress execution-progress--indeterminate" aria-label="执行中">
-    <span><i></i></span><small>执行中</small>
+    <span><i></i></span><small>{{ indeterminateText }}</small>
   </div>
   <div v-else class="execution-progress">
-    <a-progress :percent="normalized / 100" size="small" :stroke-width="5" />
-    <!-- <small>{{ formatPercent(normalized) }}</small> -->
+    <a-progress
+      :percent="displayPercent / 100"
+      :show-text="false"
+      size="small"
+      :stroke-width="5"
+    />
+    <small>{{ progressText }}</small>
   </div>
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{ progress?: number | null, indeterminate?: boolean }>()
-const normalized = computed(() => Math.min(100, Math.max(0, Number(props.progress) || 0)))
-function formatPercent(value: number) {
-  return `${Math.round(value * 100) / 100}%`
-}
+const props = defineProps<{
+  progress?: number | null
+  indeterminate?: boolean
+  completed?: number | string
+  total?: number | string
+}>()
+const normalized = computed(() => {
+  const value = Number(props.progress)
+  if (!Number.isFinite(value)) return 0
+  return Math.min(100, Math.max(0, value))
+})
+const displayPercent = computed(() => Number(normalized.value.toFixed(2)))
+const total = computed(() => Math.max(0, Number(props.total) || 0))
+const completed = computed(() => Math.min(total.value, Math.max(0, Number(props.completed) || 0)))
+const progressText = computed(() => total.value > 0
+  ? `${completed.value}/${total.value} · ${displayPercent.value}%`
+  : `${displayPercent.value}%`)
+const indeterminateText = computed(() => total.value > 0
+  ? `${completed.value}/${total.value} · 执行中`
+  : '执行中')
 </script>
 
 <style scoped lang="scss">
@@ -32,8 +52,16 @@ function formatPercent(value: number) {
   display: none;
 }
 
+.execution-progress > small {
+  // min-width: 42px;
+  color: var(--color-text-2);
+  font-size: 11px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .execution-progress small {
-  min-width: 38px;
+  // min-width: 42px;
   color: var(--color-text-2);
   font-size: 11px;
   text-align: right;

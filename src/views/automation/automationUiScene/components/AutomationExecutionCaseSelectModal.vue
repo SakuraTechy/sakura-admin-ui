@@ -1,56 +1,72 @@
 <template>
   <a-modal
     v-model:visible="visible"
-    :title="`${executionTypeLabel(executionType)} - 选择执行用例`"
+    :title="`${executionTypeLabel(executionType)} - ${isSceneSelection ? '选择执行场景' : '选择执行用例'}`"
     :width="1180"
     :mask-closable="false"
     unmount-on-close
   >
     <div class="case-select-modal">
       <a-alert type="info" show-icon>
-        请选择需要执行的用例。下一步将配置产品环境和执行参数，批量任务按列表顺序串行执行。
+        {{ isSceneSelection
+          ? '请选择需要执行的测试场景。下一步将配置产品环境和执行参数，场景按列表顺序串行执行。'
+          : '请选择需要执行的用例。下一步将配置产品环境和执行参数，批量任务按列表顺序串行执行。' }}
       </a-alert>
 
       <div class="case-select-search">
         <a-input
           v-model="keyword"
           allow-clear
-          placeholder="搜索用例 ID、用例名称"
+          :placeholder="isSceneSelection ? '搜索场景 ID、场景名称' : '搜索用例 ID、用例名称'"
         >
           <template #prefix><icon-search /></template>
         </a-input>
         <a-select v-model="statusFilter" allow-clear placeholder="执行状态" :style="{ width: '150px' }">
-          <a-option value="not_started">未执行</a-option>
-          <a-option value="waiting">等待执行</a-option>
-          <a-option value="running">执行中</a-option>
-          <a-option value="passed">已完成</a-option>
-          <a-option value="failed">已失败</a-option>
-          <a-option value="cancelled">已取消</a-option>
+          <a-option value="排队中">排队中</a-option>
+          <a-option value="启动中">启动中</a-option>
+          <a-option value="执行中">执行中</a-option>
+          <a-option value="取消中">取消中</a-option>
+          <a-option value="已完成">已完成</a-option>
+          <a-option value="已取消">已取消</a-option>
         </a-select>
         <a-select v-model="resultFilter" allow-clear placeholder="上次结果" :style="{ width: '140px' }">
-          <a-option value="passed">通过</a-option>
-          <a-option value="failed">失败</a-option>
-          <a-option value="cancelled">取消</a-option>
+          <a-option value="未执行">未执行</a-option>
+          <a-option value="全部通过">全部通过</a-option>
+          <a-option value="不通过">不通过</a-option>
+          <a-option value="阻塞">阻塞</a-option>
+          <a-option value="跳过">跳过</a-option>
+          <a-option value="已取消">已取消</a-option>
         </a-select>
-        <a-space>
-          <a-button :disabled="filteredCases.length === 0" @click="selectFilteredCases">全选当前结果</a-button>
+        <a-space v-if="!selectionDisabled">
+          <a-button :disabled="filteredRows.length === 0" @click="selectFilteredCases">全选当前结果</a-button>
           <a-button :disabled="selectedCaseKeys.length === 0" @click="selectedCaseKeys = []">清空</a-button>
         </a-space>
       </div>
 
       <a-table
         v-model:selected-keys="selectedCaseKeys"
-        :data="filteredCases"
+        :data="filteredRows"
+        :loading="loading"
         :pagination="{ pageSize: 10, showTotal: true, showPageSize: true }"
-        :row-selection="{ type: 'checkbox', showCheckedAll: true }"
-        row-key="caseId"
+        :row-selection="selectionDisabled ? undefined : { type: 'checkbox', showCheckedAll: true }"
+        row-key="rowKey"
         size="small"
         :scroll="{ y: 430 }"
       >
         <template #columns>
-          <a-table-column title="用例 ID" data-index="caseId" :width="170" ellipsis tooltip />
-          <a-table-column title="用例名称" data-index="name" ellipsis tooltip />
-          <a-table-column title="步骤数" data-index="stepTotal" :width="82" align="center" />
+          <template v-if="isSceneSelection">
+            <a-table-column title="场景 ID" data-index="sceneId" :width="170" ellipsis tooltip />
+            <a-table-column title="场景名称" data-index="sceneName" ellipsis tooltip />
+            <a-table-column title="用例数" data-index="caseTotal" :width="82" align="center" />
+          </template>
+          <template v-else>
+            <!-- <a-table-column title="场景 ID" data-index="sceneId" :width="150" ellipsis tooltip />
+            <a-table-column title="场景名称" data-index="sceneName" :width="150" ellipsis tooltip />
+            <a-table-column title="场景用例数" data-index="sceneCaseTotal" :width="90" align="center" /> -->
+            <a-table-column title="用例 ID" data-index="caseId" :width="170" ellipsis tooltip />
+            <a-table-column title="用例名称" data-index="name" ellipsis tooltip />
+            <a-table-column title="步骤数" data-index="stepTotal" :width="82" align="center" />
+          </template>
           <a-table-column title="执行状态" :width="105" align="center">
             <template #cell="{ record }">
               <a-tag :color="executionStatusColor(record.executeStatus)">
@@ -61,7 +77,7 @@
           <a-table-column title="上次结果" :width="100" align="center">
             <template #cell="{ record }">
               <a-tag v-if="record.lastResult" :color="executionResultColor(record.lastResult)">
-                {{ executionResultLabel(record.lastResult) }}
+                {{ executionAggregateResultLabel(record.lastResult) }}
               </a-tag>
               <span v-else>-</span>
             </template>
@@ -74,7 +90,20 @@
       </a-table>
 
       <div class="case-select-summary">
-        已选择 <strong>{{ selectedCaseKeys.length }}</strong> 个用例，共 {{ cases.length }} 个可执行用例
+        <template v-if="isSceneSelection">
+          <template v-if="selectionDisabled">
+            {{ sceneSelectionSummary || '本次将执行测试计划指定的' }} <strong>{{ sceneRows.length }}</strong> 个场景
+          </template>
+          <template v-else>
+            已选择 <strong>{{ selectedCaseKeys.length }}</strong> 个场景，共 {{ sceneRows.length }} 个可执行场景
+          </template>
+        </template>
+        <template v-else-if="selectionDisabled">
+          本次将执行测试计划指定的 <strong>{{ cases.length }}</strong> 个用例
+        </template>
+        <template v-else>
+          已选择 <strong>{{ selectedCaseKeys.length }}</strong> 个用例，共 {{ cases.length }} 个可执行用例
+        </template>
       </div>
     </div>
 
@@ -82,7 +111,7 @@
       <a-space>
         <a-button @click="visible = false">取消</a-button>
         <a-button type="primary" :disabled="selectedCaseKeys.length === 0" @click="nextStep">
-          下一步：执行配置
+          下一步
         </a-button>
       </a-space>
     </template>
@@ -90,20 +119,32 @@
 </template>
 
 <script setup lang="ts">
+import { Message } from '@arco-design/web-vue'
 import {
+  type ExecutionCaseOpenOptions,
+  type ExecutionContext,
   type ExecutionType,
+  type ExecutionHistoryCaseRow,
   type LiveExecutionCase,
   executionResultColor,
+  executionAggregateResultLabel,
   executionResultLabel,
   executionStatusColor,
   executionStatusLabel,
   executionTypeLabel,
   formatExecutionDuration,
-  getDebugExecutionHistoryRows,
+  getExecutionBatchRows,
+  getExecutionHistoryRows,
   isExecutableCase,
 } from '../execution'
+import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 
 interface SelectableCase {
+  rowKey: string
+  sceneKey: string
+  sceneId: string
+  sceneName: string
+  sceneCaseTotal: number
   caseId: string
   name: string
   stepTotal: number
@@ -113,10 +154,25 @@ interface SelectableCase {
   executionId: string
 }
 
-interface CaseSelectionPayload {
+interface SelectableScene {
+  rowKey: string
+  sceneKey: string
+  sceneId: string
+  sceneName: string
+  caseTotal: number
+  caseIds: string[]
+  executeStatus: unknown
+  lastResult: unknown
+  duration: unknown
+  executionId: string
+}
+
+interface CaseSelectionPayload extends ExecutionContext {
   scene: any
   executionType: Exclude<ExecutionType, 'jenkins'>
   caseIds: string[]
+  sceneIds?: string[]
+  selectionDisabled?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -127,6 +183,7 @@ const emit = defineEmits<{
 }>()
 
 const visible = ref(false)
+const loading = ref(false)
 const scene = ref<any>()
 const executionType = ref<Exclude<ExecutionType, 'jenkins'>>('extension-cdp')
 const keyword = ref('')
@@ -134,11 +191,25 @@ const statusFilter = ref('')
 const resultFilter = ref('')
 const selectedCaseKeys = ref<Array<string | number>>([])
 const cases = ref<SelectableCase[]>([])
+const sceneRows = ref<SelectableScene[]>([])
+const executionContext = ref<ExecutionContext>({})
+const selectionDisabled = ref(false)
+const sceneSelection = ref(false)
+const sceneSelectionSummary = ref('')
+const isSceneSelection = computed(() => sceneSelection.value)
 
 const casesWithLiveStatus = computed(() => {
-  const liveByCase = new Map(props.liveExecutions.map((item) => [item.caseId, item]))
+  const recordSource = executionContext.value.recordSource || 'debug'
+  const liveByCase = new Map(props.liveExecutions
+    .filter((item) => (
+      (item.recordSource || 'debug') === recordSource
+      && (recordSource !== 'test'
+        || String(item.testPlanId || '') === String(executionContext.value.testPlanId || ''))
+    ))
+    .map((item) => [`${String(item.sceneKey || item.sceneId || '')}:${item.caseId}`, item]))
   return cases.value.map((item) => {
-    const live = liveByCase.get(item.caseId)
+    const live = liveByCase.get(`${item.sceneKey}:${item.caseId}`)
+      || liveByCase.get(`:${item.caseId}`)
     if (!live) return item
     const terminal = ['passed', 'failed', 'cancelled'].includes(live.status)
     return {
@@ -153,61 +224,198 @@ const casesWithLiveStatus = computed(() => {
 const filteredCases = computed(() => {
   const search = keyword.value.trim().toLowerCase()
   return casesWithLiveStatus.value.filter((item) => (
-    (!search || item.caseId.toLowerCase().includes(search) || item.name.toLowerCase().includes(search))
-    && (!statusFilter.value || String(item.executeStatus || '').toLowerCase() === statusFilter.value)
-    && (!resultFilter.value || String(item.lastResult || '').toLowerCase() === resultFilter.value)
+    (!search
+      || item.sceneId.toLowerCase().includes(search)
+      || item.sceneName.toLowerCase().includes(search)
+      || item.caseId.toLowerCase().includes(search)
+      || item.name.toLowerCase().includes(search))
+    && (!statusFilter.value || executionStatusLabel(item.executeStatus) === statusFilter.value)
+    && matchesResultFilter(item.lastResult)
   ))
 })
+const filteredScenes = computed(() => {
+  const search = keyword.value.trim().toLowerCase()
+  return sceneRows.value.filter((item) => (
+    (!search || item.sceneId.toLowerCase().includes(search) || item.sceneName.toLowerCase().includes(search))
+    && (!statusFilter.value || executionStatusLabel(item.executeStatus) === statusFilter.value)
+    && matchesResultFilter(item.lastResult)
+  ))
+})
+const filteredRows = computed(() => isSceneSelection.value ? filteredScenes.value : filteredCases.value)
 
-function onOpen(
+function matchesResultFilter(value: unknown) {
+  if (!resultFilter.value) return true
+  const label = executionAggregateResultLabel(value)
+  if (resultFilter.value === '未执行') return label === '未执行'
+  if (resultFilter.value === '全部通过') return label === '全部通过'
+  if (resultFilter.value === '不通过') return label === '不通过'
+  if (resultFilter.value === '跳过') {
+    const rawLabel = executionResultLabel(value)
+    return rawLabel === '跳过' || rawLabel === '已取消'
+  }
+  return false
+}
+
+async function onOpen(
   record: any,
   type: Exclude<ExecutionType, 'jenkins'>,
-  options?: { caseIds?: string[] },
+  options: ExecutionCaseOpenOptions = {},
 ) {
-  scene.value = record
   executionType.value = type
+  executionContext.value = {
+    recordSource: options.recordSource || 'debug',
+    testPlanId: options.testPlanId,
+  }
   keyword.value = ''
   statusFilter.value = ''
   resultFilter.value = ''
-  const latestByCase = new Map<string, ReturnType<typeof getDebugExecutionHistoryRows>[number]>()
-  getDebugExecutionHistoryRows(record).forEach((item) => {
-    if (item.caseId !== '-' && !latestByCase.has(item.caseId)) latestByCase.set(item.caseId, item)
-  })
-  cases.value = (Array.isArray(record?.caseList) ? record.caseList : [])
-    .filter(isExecutableCase)
-    .map((item: any) => {
-      const caseId = String(item.id)
-      const latest = latestByCase.get(caseId)
-      return {
-        caseId,
-        name: item.name || caseId,
-        stepTotal: Array.isArray(item.stepList) ? item.stepList.length : 0,
-        executeStatus: latest?.executeStatus || 'not_started',
-        lastResult: latest?.executeResult || '',
-        duration: latest?.duration,
-        executionId: latest?.executionId || '-',
-      }
-    })
-  const preferredIds = new Set((options?.caseIds || []).map(String))
-  selectedCaseKeys.value = cases.value
-    .filter((item) => preferredIds.has(item.caseId))
-    .map((item) => item.caseId)
+  selectedCaseKeys.value = []
+  cases.value = []
+  sceneRows.value = []
+  selectionDisabled.value = Boolean(options.selectionDisabled)
+  sceneSelection.value = Boolean(options.sceneSelection || (options.selectionDisabled && record?.__planAggregate))
+  sceneSelectionSummary.value = options.sceneSelectionSummary || ''
   visible.value = true
+  loading.value = true
+  try {
+    const detail = record?.__planAggregate || record?.__sceneAggregate
+      ? record
+      : record?.id ? (await getAutomationUiScene(String(record.id))).data : record
+    scene.value = detail || record
+    loadSelectionRows(scene.value, options.caseIds || [])
+  } catch (error: any) {
+    scene.value = record
+    loadSelectionRows(record, options.caseIds || [])
+    Message.error(error?.message || '读取场景用例和执行记录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+function loadSelectionRows(record: any, preferredCaseIds: string[]) {
+  if (isSceneSelection.value) {
+    loadScenes(record)
+    return
+  }
+  loadCases(record, preferredCaseIds)
+}
+
+function loadScenes(record: any) {
+  const sourceScenes = Array.isArray(record?.__planScenes) && record.__planScenes.length
+    ? record.__planScenes
+    : [record]
+  sceneRows.value = sourceScenes.map((sourceScene: any) => {
+    const sceneKey = getSceneKey(sourceScene)
+    const sceneId = String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-')
+    const sceneName = String(sourceScene?.name || sourceScene?.sceneName || sceneId)
+    const caseIds = (Array.isArray(sourceScene?.caseList) ? sourceScene.caseList : [])
+      .filter(isExecutableCase)
+      .map((item: any) => String(item.id))
+    const latest = getExecutionBatchRows(
+      sourceScene,
+      executionContext.value.recordSource || 'debug',
+      executionContext.value.testPlanId,
+    ).find((item) => item.executionType === executionType.value)
+    return {
+      rowKey: sceneKey,
+      sceneKey,
+      sceneId,
+      sceneName,
+      caseTotal: caseIds.length,
+      caseIds,
+      executeStatus: latest?.executeStatus || sourceScene?.executeStatus || 'not_started',
+      lastResult: latest?.executeResult || sourceScene?.executeResult || '',
+      duration: latest?.duration ?? sourceScene?.duration,
+      // 场景级执行编号使用批次号，避免把某一个用例的编号误当作场景编号。
+      executionId: latest?.batchId || sourceScene?.executionId || '-',
+    }
+  }).filter((item) => item.caseIds.length > 0)
+  selectedCaseKeys.value = sceneRows.value.map((item) => item.rowKey)
+}
+
+function loadCases(record: any, preferredCaseIds: string[]) {
+  const sourceScenes = Array.isArray(record?.__planScenes) && record.__planScenes.length
+    ? record.__planScenes
+    : [record]
+  const latestByCase = new Map<string, ExecutionHistoryCaseRow>()
+  sourceScenes.forEach((sourceScene: any) => {
+    const sceneKey = getSceneKey(sourceScene)
+    getExecutionHistoryRows(
+      sourceScene,
+      executionContext.value.recordSource || 'debug',
+      executionContext.value.testPlanId,
+    )
+      .filter((item) => item.executionType === executionType.value)
+      .forEach((item) => {
+        const key = `${sceneKey}:${item.caseId}`
+        if (item.caseId !== '-' && !latestByCase.has(key)) latestByCase.set(key, item)
+      })
+  })
+  const preferredIds = new Set(preferredCaseIds.map(String))
+  cases.value = sourceScenes.flatMap((sourceScene: any) => {
+    const sceneKey = getSceneKey(sourceScene)
+    const sceneId = String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-')
+    const sceneName = String(sourceScene?.name || sourceScene?.sceneName || sceneId)
+    const executableCases = (Array.isArray(sourceScene?.caseList) ? sourceScene.caseList : [])
+      .filter(isExecutableCase)
+    return executableCases
+      .filter((item: any) => !selectionDisabled.value || !preferredIds.size || preferredIds.has(String(item.id)))
+      .map((item: any) => {
+        const caseId = String(item.id)
+        const latest = latestByCase.get(`${sceneKey}:${caseId}`)
+        return {
+          rowKey: `${sceneKey}:${caseId}`,
+          sceneKey,
+          sceneId,
+          sceneName,
+          sceneCaseTotal: executableCases.length,
+          caseId,
+          name: item.name || caseId,
+          stepTotal: Array.isArray(item.stepList) ? item.stepList.length : 0,
+          executeStatus: latest?.executeStatus || 'not_started',
+          lastResult: latest?.executeResult || '',
+          duration: latest?.duration,
+          executionId: latest?.executionId || '-',
+        }
+      })
+  })
+  selectedCaseKeys.value = selectionDisabled.value
+    ? cases.value.map((item) => item.rowKey)
+    : cases.value.filter((item) => preferredIds.has(item.caseId)).map((item) => item.rowKey)
 }
 
 function selectFilteredCases() {
   const selected = new Set(selectedCaseKeys.value.map(String))
-  filteredCases.value.forEach((item) => selected.add(item.caseId))
+  filteredRows.value.forEach((item) => selected.add(item.rowKey))
   selectedCaseKeys.value = [...selected]
 }
 
 function nextStep() {
+  const selectedRows = selectedCaseKeys.value.map(String)
   emit('next', {
     scene: scene.value,
     executionType: executionType.value,
-    caseIds: selectedCaseKeys.value.map(String),
+    caseIds: isSceneSelection.value
+      ? sceneRows.value
+        .filter((item) => selectedRows.includes(item.rowKey))
+        .flatMap((item) => item.caseIds)
+      : selectedRows
+        .map((key) => cases.value.find((item) => item.rowKey === key)?.caseId)
+        .filter((caseId): caseId is string => Boolean(caseId)),
+    sceneIds: isSceneSelection.value
+      ? sceneRows.value
+        .filter((item) => selectedRows.includes(item.rowKey))
+        .map((item) => item.sceneKey)
+      : undefined,
+    selectionDisabled: selectionDisabled.value,
+    ...executionContext.value,
   })
   visible.value = false
+}
+
+function getSceneKey(record: any) {
+  // Runner/CDP 的实时事件使用业务场景 ID，优先使用 sceneId 保证历史状态与实时状态能对应。
+  return String(record?.sceneId || record?.id || record?.sceneKey || record?.name || 'scene-unknown')
 }
 
 defineExpose({ onOpen })

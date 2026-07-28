@@ -44,11 +44,38 @@ export interface TestPlanQuery {
 
 export interface TestPlanPageQuery extends TestPlanQuery, PageQuery {}
 
+export type TestExecutionEngine = 'SELENIUM' | 'PLAYWRIGHT_RUNNER' | 'CHROME_DEVTOOLS_PROTOCOL'
+
+export interface TestPlanSceneExecution {
+  sceneKey: string
+  sceneId?: string
+  sceneName?: string
+  caseIds: string[]
+  status: 'WAITING' | 'SKIPPED'
+  reason?: string
+}
+
+export interface TestPlanExecuteReq {
+  projectEnvironmentId: string
+  automationEnvironmentId?: string
+  /** 缺省表示执行计划全部关联场景，传值表示按计划关联顺序执行指定子集。 */
+  sceneIds?: string[]
+  executionEngine?: TestExecutionEngine
+  runnerOptions?: Record<string, unknown>
+  cdpOptions?: Record<string, unknown>
+  executeName?: string
+  executeEmail?: string
+}
+
 export interface TestPlanExecuteResp {
   testReportId?: string
+  reportType?: TestExecutionEngine
+  dispatchMode?: 'SERVER' | 'CLIENT_CDP'
+  status?: string
   buildNumber?: number
   consoleUrl?: string
   testReportUrl?: string
+  sceneExecutions?: TestPlanSceneExecution[]
 }
 
 export function listTestPlan(query?: TestPlanPageQuery) {
@@ -87,6 +114,10 @@ export function removeTestPlanScenes(id: string, sceneIds: string[]) {
   return http.post(`${BASE_URL}/${id}/removeScenes`, { sceneIds })
 }
 
-export function executeTestPlan(id: string, data: any) {
+export function executeTestPlan(id: string, data: TestPlanExecuteReq) {
   return http.post<TestPlanExecuteResp>(`${BASE_URL}/${id}/execute`, data)
+}
+
+export function cancelTestPlanExecution(id: string, reportId: string) {
+  return http.post<void>(`${BASE_URL}/${id}/executions/${reportId}/cancel`)
 }

@@ -7,26 +7,34 @@
     :tree-data="treeList"
     :field-names="{ key: 'treeKey', title: 'name', children: 'children' }"
     :loading="loading"
+    :disabled="readonly || mutationLoading"
+    :draggable="!readonly && !mutationLoading && selectionMode !== 'batch-delete'"
+    :allow-node-drop="canDrop"
     :selected-keys="selectedKeys"
+    :checked-keys="checkedKeys"
     allow-deselect
-    :multiple="multiple"
+    :multiple="selectionMode === 'batch-delete'"
+    :check-strictly="false"
     :on-save="onMenuClick"
     @update:selected-keys="val => selectedKeys = val"
+    @update:checked-keys="val => checkedKeys = val"
     @node-click="onNodeClick"
     @node-drop="onNodeDrop"
     @menu-click="onMenuClick"
     @tree-node-click="onTreeNodeClick"
-    @focus="onTreeFocus"
+    @focusin="onTreeFocus"
+    @batch-delete-cancel="exitBatchDeleteMode"
   >
-    <template #right-menu="{ node, treeData, onMenuItemClick, onTreeNodeClick }">
+    <template #right-menu="{ node, onMenuItemClick, onTreeNodeClick }">
       <GiMenu
-        :tree-data="treeData"
+        :tree-data="getMoveTargetTree(node)"
         :recording-options="getRecordingMenuOptions(node)"
         @on-menu-item-click="mode => onMenuItemClick(mode, node)"
         @on-tree-node-click="onTreeNodeClick"
       />
     </template>
   </GiTree>
+  <!-- 测试阶段批量删除采用父子级联：勾选最上层用例时自动勾选全部步骤。 -->
   <GiFormModal
     max-body-height="80vh"
     v-model:visible="modalConfig.visible"
@@ -45,18 +53,13 @@
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, h, nextTick, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, defineEmits, defineProps, h, nextTick, reactive, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { M } from 'node_modules/vite/dist/node/types.d-aGj9QkWt'
-import Tree from './components/tree/index.vue'
-import TabList from './components/tab/tabList.vue'
-import AddOrEditForm from './components/AddOrEditForm.vue'
-import AutomationUiScene from './components/automationUiScene.vue'
 import GiMenu from '@/components/GiMenu/index.vue'
-import { type AutomationUiSceneResp, addCase, addStep, deleteCase, deleteStep, dragCase, dragStep, updateCase, updateStep } from '@/apis/automation/automationUiScene'
+import { type AutomationUiCase, type AutomationUiTreeNodeRef, addCase, addStep, copyCaseTree, deleteCaseTree, moveCaseTree, updateCase, updateStep } from '@/apis/automation/automationUiScene'
+import { buildCaseTree, canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, toMovePosition, type AutomationUiCaseTreeNode } from '../caseTree'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
-import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, getProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
 import { useDict } from '@/hooks/app'
 import AiEditor from '@/components/GiEditor/AiEditor.vue'
 import KeyValuePairForm from '@/components/KeyValuePairForm'
@@ -64,8 +67,10 @@ import KeyValuePairForm from '@/components/KeyValuePairForm'
 defineOptions({ name: 'AutomationUiSceneAddCase' })
 
 const props = defineProps<{
-  caseList: Array<object>
+  caseList: AutomationUiCase[]
+  definitionVersion: number
   readonly?: boolean
+  refreshScene?: (selection?: AutomationUiTreeNodeRef) => Promise<void>
 }>()
 
 const emit = defineEmits<{
@@ -76,13 +81,14 @@ const emit = defineEmits<{
   (e: 'recording', data: { mode: string, node: any }): void
 }>()
 
-const { sort_type, status_type, automation_operation_type, automation_operation_method } = useDict('sort_type', 'status_type', 'automation_operation_type', 'automation_operation_method')
+const { status_type, automation_operation_type, automation_operation_method } = useDict('status_type', 'automation_operation_type', 'automation_operation_method')
 
 const uiStore = useUiStore()
 
-const selectedKeys = ref()
+const selectedKeys = ref<string[]>([])
 const selectionInitialized = ref(false)
-const multiple = ref()
+const selectionMode = ref<'single' | 'batch-delete'>('single')
+const checkedKeys = ref<string[]>([])
 const modalData = ref()
 const giTreeRef = ref()
 
@@ -93,59 +99,77 @@ const onTreeFocus = () => {
 }
 
 const loading = ref(false)
-type TreeCateItem = AutomationUiSceneResp['caseList'][number] & {
-  treeKey?: string
-  switcherIcon?: (node: TreeCateItem) => VNode
-  icon?: (node: TreeCateItem) => VNode
-  popupVisible?: boolean
-  isEdit?: boolean
-}
+type TreeCateItem = AutomationUiCaseTreeNode & { popupVisible?: boolean, isEdit?: boolean }
 const treeList = ref<TreeCateItem[]>([])
-const buildCaseTree = (caseList: any[]) => {
-  return (Array.isArray(caseList) ? caseList : []).map((caseItem: any, caseIndex: number) => {
-    const caseId = String(caseItem?.id ?? caseIndex)
-    const steps = Array.isArray(caseItem?.stepList) ? caseItem.stepList : []
-    return {
-      ...caseItem,
-      type: 'case',
-      treeKey: `case:${caseId}`,
-      key: `case:${caseId}`,
-      title: caseItem?.name,
-      children: steps.map((step: any, stepIndex: number) => {
-        const stepId = String(step?.id ?? stepIndex)
-        const stepOrder = String(step?.order ?? stepIndex + 1)
-        return {
-          ...step,
-          type: 'step',
-          pid: step?.pid || caseItem?.id,
-          treeKey: `step:${caseId}:${stepId}:${stepOrder}:${stepIndex}`,
-          key: `step:${caseId}:${stepId}:${stepOrder}:${stepIndex}`,
-          title: step?.name,
-          popupVisible: false,
-          isEdit: false,
-        }
-      }),
-      popupVisible: false,
-      isEdit: false,
-    }
-  })
+const mutationLoading = ref(false)
+const decorateTreeNode = (node: AutomationUiCaseTreeNode): TreeCateItem => ({
+  ...node,
+  popupVisible: false,
+  isEdit: false,
+  children: node.children?.map(decorateTreeNode),
+})
+const buildUiTree = (caseList: AutomationUiCase[]) => buildCaseTree(caseList).map(decorateTreeNode)
+const normalizeSelectionRef = (data?: any): AutomationUiTreeNodeRef | null => {
+  const node = data?.selectedNode || data?.node || data
+  if (!node) return null
+  const type = String(node.type || '').toUpperCase()
+  const caseId = String(node.caseId || node.pid || (type === 'CASE' ? node.id : '') || '')
+  if (type === 'CASE' && caseId) return { type: 'CASE', caseId }
+  const stepId = String(node.stepId || node.id || '')
+  if (type === 'STEP' && caseId && stepId) return { type: 'STEP', caseId, stepId }
+  return null
+}
+const findTreeNode = (ref: AutomationUiTreeNodeRef) => {
+  const caseNode = treeList.value.find(node => String(node.caseId) === String(ref.caseId))
+  return ref.type === 'CASE'
+    ? caseNode
+    : caseNode?.children?.find(node => String(node.stepId) === String(ref.stepId))
+}
+const refreshTree = async (selection?: AutomationUiTreeNodeRef) => {
+  if (props.refreshScene) {
+    await props.refreshScene(selection)
+    return
+  }
+  emit('get-scene-info', selection)
+}
+const getCreatedNodeId = (payload: any) => {
+  if (typeof payload === 'string' || typeof payload === 'number') return String(payload)
+  return String(payload?.stepId ?? payload?.caseId ?? payload?.id ?? '')
+}
+const getStepInsertMax = () => {
+  const parentId = String(modalConfig.form?.pid || modalData.value?.caseId || '')
+  const parent = props.caseList.find(item => String(item.id) === parentId)
+  return (parent?.stepList?.length || 0) + 1
 }
 const getTreeCaseList = async (data?: any) => {
+  let nodeToSelect: TreeCateItem | undefined
+  let selectFirstCase = false
   try {
     loading.value = true
     // const res = await getAutomationUiScene(uiStore.activeId)
     // console.log('caseList', props.caseList)
-    treeList.value = buildCaseTree(props.caseList as any) as TreeCateItem[]
-    if (data) {
-      onNodeClick(data)
+    treeList.value = buildUiTree(props.caseList)
+    // 先让树接收最新节点数据，再写入选中 key；否则新增步骤时选中状态会被旧树覆盖。
+    await nextTick()
+    const selection = normalizeSelectionRef(data)
+    const selectedNode = selection ? findTreeNode(selection) : undefined
+    if (selectedNode) {
+      nodeToSelect = selectedNode
     } else if (!selectionInitialized.value) {
-      const firstCase = treeList.value.find((item) => item.type === 'case')
-      if (firstCase) onNodeClick({ node: firstCase, selected: true })
+      selectFirstCase = true
     }
     // this.moduleId = this.treeList[0].id
     // this.moduleId = JSON.parse(localStorage.getItem('ui-store') ?? '{}').moduleId ?? this.treeList[0]?.id
   } finally {
     loading.value = false
+  }
+  // GiTree 在 loading 时会禁用内部 a-tree；在解除禁用后的下一帧恢复选中，确保新增节点可见且真正高亮。
+  await nextTick()
+  if (nodeToSelect) {
+    onNodeClick({ node: nodeToSelect, selected: true })
+  } else if (selectFirstCase) {
+    const firstCase = treeList.value.find((item) => item.type === 'case')
+    if (firstCase) onNodeClick({ node: firstCase, selected: true })
   }
 }
 
@@ -153,15 +177,13 @@ const modalConfig = reactive({
   title: '新增用例',
   visible: ref(false),
   form: {},
-  caseForm: { id: '', name: '', remark: '', sortType: '', order: 1, itemOrder: null, status: 1 },
+  caseForm: { id: '', name: '', remark: '', order: 1, status: 1 },
   stepForm: {
     pid: '',
     id: '',
     name: '',
     remark: '',
-    sortType: '',
     order: 1,
-    itemOrder: null,
     operationType: '',
     operationName: '',
     operationValue: '',
@@ -206,9 +228,9 @@ const modalConfig = reactive({
           modalConfig.form.id = value
         },
       },
-      disabled: (form: any) => {
-        // 例如 modalConfig.title 包含 "编辑" 字样时为编辑模式
-        return modalConfig.title === '修改用例1'
+      disabled: () => {
+        // 稳定业务 ID 不允许通过编辑表单修改；复制时不会展示该字段。
+        return modalConfig.title === '修改用例'
       },
     },
     {
@@ -220,6 +242,23 @@ const modalConfig = reactive({
         maxLength: 64,
         onInput: (value: any) => {
           modalConfig.form.name = value
+        },
+      },
+    },
+    {
+      label: '序号',
+      field: 'order',
+      type: 'input-number',
+      required: true,
+      show: () => modalConfig.title === '新增用例',
+      props: {
+        min: 1,
+        max: props.caseList.length + 1,
+        precision: 0,
+        mode: 'button',
+        allowClear: false,
+        onChange: (value: number) => {
+          modalConfig.form.order = value
         },
       },
     },
@@ -238,56 +277,6 @@ const modalConfig = reactive({
           },
           'readonly': true,
         }),
-      },
-    },
-    {
-      label: '用例排序',
-      field: 'sortType',
-      span: 24,
-      required: false,
-      type: 'select',
-      props: {
-        options: computed(() => {
-          return sort_type.value.map((item) => ({
-            ...item,
-            label: `${item.label}（${JSON.parse(item.extra ?? '{}').description || ''}）`.trim(),
-          }))
-        }),
-        onChange: (value: any) => {
-          modalConfig.form.sortType = value
-        },
-        allowClear: true,
-        allowSearch: true,
-      },
-    },
-    {
-      label: '当前序号',
-      field: 'order',
-      type: 'input-number',
-      required: true,
-      props: {
-        maxLength: 64,
-        onInput: (value: any) => {
-          modalConfig.form.order = value
-        },
-      },
-      hide: (form: any) => {
-        return !form.sortType
-      },
-    },
-    {
-      label: '目标序号',
-      field: 'itemOrder',
-      type: 'input-number',
-      required: true,
-      props: {
-        maxLength: 64,
-        onInput: (value: any) => {
-          modalConfig.form.itemOrder = value
-        },
-      },
-      hide: (form: any) => {
-        return !form.sortType
       },
     },
     {
@@ -336,6 +325,23 @@ const modalConfig = reactive({
         },
       },
     },
+    {
+      label: '序号',
+      field: 'order',
+      type: 'input-number',
+      required: true,
+      show: () => modalConfig.title === '新增步骤',
+      props: {
+        min: 1,
+        max: getStepInsertMax(),
+        precision: 0,
+        mode: 'button',
+        allowClear: false,
+        onChange: (value: number) => {
+          modalConfig.form.order = value
+        },
+      },
+    },
     // { label: '步骤备注', field: 'remark', type: 'textarea', required: false, props: { maxLength: 255, autoSize: true, allowClear: true } },
     {
       label: '步骤备注',
@@ -351,56 +357,6 @@ const modalConfig = reactive({
           },
           'readonly': true,
         }),
-      },
-    },
-    {
-      label: '步骤排序',
-      field: 'sortType',
-      span: 24,
-      required: false,
-      type: 'select',
-      props: {
-        options: computed(() => {
-          return sort_type.value.map((item) => ({
-            ...item,
-            label: `${item.label}（${JSON.parse(item.extra ?? '{}').description || ''}）`.trim(),
-          }))
-        }),
-        onChange: (value: any) => {
-          modalConfig.form.sortType = value
-        },
-        allowClear: true,
-        allowSearch: true,
-      },
-    },
-    {
-      label: '当前步骤序号',
-      field: 'order',
-      type: 'input-number',
-      required: true,
-      props: {
-        maxLength: 64,
-        onInput: (value: any) => {
-          modalConfig.form.order = value
-        },
-      },
-      hide: (form: any) => {
-        return !form.sortType
-      },
-    },
-    {
-      label: '目标步骤序号',
-      field: 'itemOrder',
-      type: 'input-number',
-      required: true,
-      props: {
-        maxLength: 64,
-        onInput: (value: any) => {
-          modalConfig.form.itemOrder = value
-        },
-      },
-      hide: (form: any) => {
-        return !form.sortType
       },
     },
     {
@@ -514,43 +470,58 @@ const handleSave = async (data: any) => {
   }
   console.warn('handleSave', data)
   // console.log(modalData.value)
+  let selection: AutomationUiTreeNodeRef | undefined
   try {
+    mutationLoading.value = true
     if (modalConfig.title === '新增用例') {
-      await addCase({ ...data, type: 'case' }, uiStore.activeId)
+      const response = await addCase({ ...data, type: 'case', expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      data.id = response.data || data.id
+      selection = { type: 'CASE', caseId: String(data.id) }
       Message.success('新增成功')
-      // emit('get-scene-info', { ...data, id: `${data.id}${String(data.itemOrder || data.order || '').padStart(3, '0')}` })
     } else if (modalConfig.title === '修改用例') {
-      await updateCase({ ...data }, uiStore.activeId)
+      const source = nodeRefOf(modalData.value)
+      await updateCase({ ...data, id: source.caseId, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      selection = source
       Message.success('修改成功')
-      // emit('get-scene-info', data)
     } else if (modalConfig.title === '复制用例') {
-      await addCase(data, uiStore.activeId)
-      Message.success('复制成功')
+      const source = nodeRefOf(modalData.value)
+      const response = await copyCaseTree({ source, name: data.name, remark: data.remark, position: source.type === 'CASE' ? 'LAST' : 'INSIDE_LAST', anchor: source.type === 'STEP' ? { type: 'CASE', caseId: source.caseId } : undefined, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      if (response.data?.changed) {
+        selection = response.data.selectedNode || undefined
+        Message.success('复制成功')
+      }
     } else if (modalConfig.title === '新增步骤') {
       const res = await addStep({
         ...data,
+        expectedDefinitionVersion: props.definitionVersion,
         // operationType: automation_operation_type.value.find((item: any) => item.value === data.operationType)?.label,
         type: 'step',
       }, uiStore.activeId)
-      data.id = res.data || ''
+      data.id = getCreatedNodeId(res.data)
+      // GiFormModal 会复制表单对象；保存时优先取提交数据，缺失时回退到打开菜单时的父节点。
+      const caseId = String(data.pid || modalData.value?.caseId || '')
+      if (!caseId || !data.id) throw new Error('新增步骤后未取得可定位的节点标识')
+      selection = { type: 'STEP', caseId, stepId: data.id }
       Message.success('新增成功')
     } else if (modalConfig.title === '修改步骤') {
-      await updateStep({ ...data }, uiStore.activeId)
+      const source = nodeRefOf(modalData.value)
+      await updateStep({ ...data, id: source.stepId, pid: source.caseId, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      selection = source
       Message.success('修改成功')
     } else if (modalConfig.title === '复制步骤') {
-      const res = await addStep({ ...data }, uiStore.activeId)
-      data.id = res.data || ''
-      Message.success('复制成功')
+      const source = nodeRefOf(modalData.value)
+      const response = await copyCaseTree({ source, name: data.name, remark: data.remark, position: 'INSIDE_LAST', anchor: { type: 'CASE', caseId: source.caseId }, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      if (response.data?.changed) {
+        selection = response.data.selectedNode || undefined
+        Message.success('复制成功')
+      }
     }
-
-    if (modalConfig.title.includes('用例')) {
-      emit('get-scene-info', { ...data, id: `${data.id}${String(data.itemOrder || data.order || '').padStart(3, '0')}`, type: 'case' })
-    } else if (modalConfig.title.includes('步骤')) {
-      emit('get-scene-info', { ...data, type: 'step' })
-    }
+    if (selection) await refreshTree(selection)
   } catch (error) {
     console.error(error)
     return false
+  } finally {
+    mutationLoading.value = false
   }
 }
 const handleClose = () => {
@@ -568,39 +539,58 @@ const onNodeClick = (data?: any) => {
     return
   }
   selectionInitialized.value = true
-  selectedKeys.value = [node.treeKey || node.id]
-  if (data?.type === 'step' || data?.node?.type === 'step') {
-    emit('get-step', data)
-  } else if (data?.type === 'case' || data?.node?.type === 'case') {
-    emit('get-case', node.id)
+  selectedKeys.value = [node.treeKey]
+  if (node.type === 'step') {
+    emit('get-step', { node: { ...findNodeDetail(props.caseList, nodeRefOf(node)), pid: node.caseId, id: node.stepId, type: 'step' } })
+  } else if (node.type === 'case') {
+    emit('get-case', node.caseId)
   }
 }
 const clearSelection = () => {
   selectionInitialized.value = true
   selectedKeys.value = []
+  checkedKeys.value = []
   emit('selection-clear')
+}
+const exitBatchDeleteMode = () => {
+  checkedKeys.value = []
+  selectionMode.value = 'single'
 }
 const onNodeDrop = async (data?: any) => {
   if (props.readonly) {
     Message.warning('当前为只读模式，无法拖拽')
     return false
   }
-  if (!data?.dragNode) return false
-  console.warn('onNodeDrop', data)
+  if (!data?.dragNode || !data?.dropNode || mutationLoading.value) return false
+  const position = toMovePosition(data.dropPosition)
+  if (!position || !canDrop(data.dragNode, data.dropNode, data.dropPosition)) return false
   try {
-    if (data.dragNode?.type === 'case' && data.dropNode?.type === 'step') return Message.warning('场景用例不可移动到步骤')
-    if (data.dragNode?.pid !== data.dropNode?.pid && data.dropNode?.pid) return Message.warning('场景步骤不可跨用例移动')
-    if (data.dragNode?.type === 'case') {
-      await dragCase(data, uiStore.activeId)
-    } else if (data.dragNode?.type === 'step') {
-      await dragStep(data, uiStore.activeId)
+    mutationLoading.value = true
+    const response = await moveCaseTree({ source: nodeRefOf(data.dragNode), target: nodeRefOf(data.dropNode), position, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+    if (response.data?.changed) {
+      await refreshTree(response.data.selectedNode || undefined)
+      Message.success('移动成功')
     }
-    emit('get-scene-info', { ...data, id: data.dragNode?.type === 'case' ? data.dropNode?.id : data.dragNode?.id, type: data.dragNode?.type })
-    Message.success('移动成功')
   } catch (error) {
     console.error(error)
     return false
+  } finally { mutationLoading.value = false }
+}
+
+const canDrop = (source: TreeCateItem, target: TreeCateItem, position: number) => !props.readonly && !mutationLoading.value && selectionMode.value !== 'batch-delete' && canDropCaseTreeNode(source, target, position)
+
+const getMoveTargetTree = (sourceData: any): TreeCateItem[] => {
+  const source = (sourceData?.node || sourceData) as TreeCateItem
+  if (!source) return []
+  if (source.type === 'case') {
+    return treeList.value
+      .filter(node => node.type === 'case' && node.treeKey !== source.treeKey)
+      .map(node => ({ ...node, children: [] }))
   }
+  return treeList.value.map(node => ({
+    ...node,
+    children: node.children?.filter(child => child.treeKey !== source.treeKey),
+  }))
 }
 
 const editMethod = ref('弹窗编辑')
@@ -633,6 +623,7 @@ const onMenuClick = async (data?: any) => {
     Message.warning('当前为只读模式，无法修改')
     return false
   }
+  if (mutationLoading.value) return false
   console.warn('onMenuClick', data)
   try {
     if (typeof data?.mode === 'string' && data.mode.startsWith('recording:')) {
@@ -652,9 +643,9 @@ const onMenuClick = async (data?: any) => {
         modalConfig.form = data.node?.type === 'case'
           ? {
               ...modalConfig.stepForm,
-              pid: data.node.id,
+              pid: data.node.caseId,
               id: `CASE_STEP_`,
-              order: data.node.stepList?.length + 1,
+              order: (findNodeDetail(props.caseList, nodeRefOf(data.node)) as any)?.stepList?.length + 1,
             }
           : {
               ...modalConfig.caseForm,
@@ -669,76 +660,71 @@ const onMenuClick = async (data?: any) => {
         if (editMethod.value === '弹窗编辑') {
           modalConfig.columns = data.node?.type === 'case' ? modalConfig.caseColumns : modalConfig.stepColumns
           modalConfig.visible = true
-          modalConfig.form = { ...data.node, sortType: String(data.node.sortType ?? '') }
-          modalConfig.form.id = data.node?.type === 'case' ? 'SCENE_CASE_' : data.node?.id
-          modalConfig.form.sortType = ''
-          modalConfig.form.itemOrder = null
+          const detail = findNodeDetail(props.caseList, nodeRefOf(data.node)) as any
+          modalConfig.form = { ...detail }
+          modalConfig.form.id = data.node?.type === 'case' ? data.node.caseId : data.node?.stepId
+          modalConfig.form.status = normalizeAutomationNodeStatus(detail?.status)
           modalData.value = data.node
         }
         break
       case 'copy':
         modalConfig.title = data.node?.type === 'case' ? '复制用例' : '复制步骤'
         if (editMethod.value === '弹窗编辑') {
-          modalConfig.columns = data.node?.type === 'case' ? modalConfig.caseColumns : modalConfig.stepColumns
+          // 复制由服务端深复制业务数据并生成新 ID，弹窗只允许覆盖名称和备注。
+          modalConfig.columns = (data.node?.type === 'case' ? modalConfig.caseColumns : modalConfig.stepColumns)
+            .filter((column: ColumnItem) => column.field === 'name' || column.field === 'remark')
           modalConfig.visible = true
-          modalConfig.form = { ...data.node, sortType: String(data.node.sortType ?? ''), order: data.node.stepList?.length + 1 || props.caseList.length + 1 }
-          modalConfig.form.id = data.node?.type === 'case' ? 'SCENE_CASE_' : 'CASE_STEP_'
-          modalConfig.form.sortType = ''
+          const detail = findNodeDetail(props.caseList, nodeRefOf(data.node)) as any
+          modalConfig.form = { name: detail?.name, remark: detail?.remark, type: data.node.type }
           modalData.value = data.node
         }
         break
       case 'delete': {
-        // 处理单个节点或多个节点的删除
-        const nodes = Array.isArray(data.node) ? data.node : [data.node]
-
-        const cases = nodes.filter((item: any) => item.type === 'case')
-        const steps = nodes.filter((item: any) => item.type === 'step')
-
-        const caseIds = cases.length > 0 ? cases.map((item: any) => item.id).join(',') : ''
-        const stepIds = steps.length > 0 ? steps.map((item: any) => item.id).join(',') : ''
-
-        if (caseIds) {
-          await deleteCase({ mode: data.mode, id: caseIds }, uiStore.activeId)
-          emit('get-scene-info')
+        const nodes = selectionMode.value === 'batch-delete'
+          ? checkedKeys.value.map(key => treeList.value.flatMap(item => [item, ...(item.children || [])]).find(item => item.treeKey === key)).filter(Boolean)
+          : Array.isArray(data.node) ? data.node : [data.node]
+        mutationLoading.value = true
+        const response = await deleteCaseTree({ nodes: nodes.map((item: TreeCateItem) => nodeRefOf(item)), expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+        if (response.data?.changed) {
+          const selected = response.data.selectedNode
+          await refreshTree(selected || undefined)
+          Message.success('删除成功')
         }
-
-        if (stepIds) {
-          // 对于步骤，使用第一个步骤的 pid 作为父级ID
-          const pid = steps[0]?.pid
-          await deleteStep({ mode: data.mode, id: stepIds, pid }, uiStore.activeId)
-          emit('get-scene-info', { id: pid, node: { type: 'case' } })
-        }
-        Message.success('删除成功')
+        mutationLoading.value = false
+        checkedKeys.value = []
+        selectionMode.value = 'single'
         break
       }
       case 'delete2':
-        // multiple.value = true
+        selectionMode.value = 'batch-delete'
+        // 从右键节点进入批量删除时，先勾选当前节点，避免用户重复定位一次目标。
+        checkedKeys.value = data.node?.treeKey ? [data.node.treeKey] : []
         break
       case 'move':
-        // console.log('move', data)
+        // 目标节点由右键菜单内的原有树选择器传回，不能在这里打开额外弹窗。
         break
     }
     return true
   } catch (error) {
     console.error(error)
     return false
+  } finally {
+    mutationLoading.value = false
   }
 }
 const onTreeNodeClick = (data?: any) => {
-  // console.log('onTreeNodeClick', data)
-  onNodeDrop(data)
+  if (!data?.dragNode || !data?.dropNode) return
+  // 原交互只选择目标节点，没有位置选择器：用例/步骤目标默认插入其后；
+  // 步骤选择用例时仍表示移入该用例末尾。
+  const source = data.dragNode as TreeCateItem
+  const target = data.dropNode as TreeCateItem
+  const dropPosition = source.type === 'step' && target.type === 'case' ? 0 : 1
+  if (!canDrop(source, target, dropPosition)) {
+    Message.warning('当前节点不能移动到所选目标位置')
+    return
+  }
+  onNodeDrop({ ...data, dropPosition })
 }
-
-// 初始化
-onMounted(async () => {
-  // await getTreeCaseList()
-
-  // 延迟一下，确保 GiTree 组件完全挂载后再设置激活状态
-  nextTick(() => {
-    // console.warn(`[AutomationUiSceneAddCase] 组件挂载完成，手动设置树组件激活状态`)
-    giTreeRef.value?.setActive()
-  })
-})
 
 defineExpose({
   onMenuClick,

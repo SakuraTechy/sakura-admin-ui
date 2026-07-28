@@ -8,11 +8,11 @@
     @before-ok="save"
     @close="reset"
   >
-    <a-tabs v-model:active-key="activeKey">
-      <a-tab-pane key="1" title="生成配置">
+    <a-tabs v-model:active-key="activeKey" class="gen-config-tabs">
+      <a-tab-pane key="1" title="生成配置" class="gen-config-form-pane">
         <GiForm ref="formRef" v-model="form" :columns="formColumns" />
       </a-tab-pane>
-      <a-tab-pane key="2" title="字段配置">
+      <a-tab-pane key="2" title="字段配置" class="gen-config-field-pane">
         <GiTable
           row-key="tableName"
           :data="dataList"
@@ -293,6 +293,33 @@ defineExpose({ onOpen })
 </script>
 
 <style scoped lang="scss">
+.gen-config-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+
+  :deep(.arco-tabs-content) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  :deep(.arco-tabs-content-list),
+  :deep(.arco-tabs-pane) {
+    height: 100%;
+    min-height: 0;
+  }
+
+  :deep(.gen-config-form-pane) {
+    overflow: auto;
+  }
+
+  :deep(.gen-config-field-pane) {
+    overflow: hidden;
+  }
+}
+
 :deep(.gen-config.arco-form) {
   width: 50%;
 }

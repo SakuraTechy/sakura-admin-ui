@@ -72,6 +72,9 @@
           <template #executeMode="{ record }">
             {{ getDictLabel(executeOptions, record.executeMode) }}
           </template>
+          <template #reportType="{ record }">
+            {{ getDictLabel(reportTypeOptions, record.reportType || 'SELENIUM') }}
+          </template>
           <template #status="{ record }">
             <GiCellTag v-if="record.status" :value="record.status" :dict="test_report_status" />
             <span v-else>-</span>
@@ -86,8 +89,10 @@
                   <icon-down class="more-link__caret" />
                 </a-link>
                 <template #content>
-                  <a-doption @click="openFuncDetail(record)">功能测试报告</a-doption>
-                  <a-doption @click="openUiDetail(record)">UI自动化测试报告</a-doption>
+                  <a-doption v-if="(record.reportType || 'SELENIUM') === 'SELENIUM'" @click="openFuncDetail(record)">功能测试报告</a-doption>
+                  <a-doption v-if="(record.reportType || 'SELENIUM') === 'SELENIUM'" @click="openUiDetail(record)">Selenium 自动化报告</a-doption>
+                  <a-doption v-if="record.reportType === 'PLAYWRIGHT_RUNNER'" @click="openPlaywrightDetail(record)">Playwright Runner 自动化报告</a-doption>
+                  <a-doption v-if="record.reportType === 'CHROME_DEVTOOLS_PROTOCOL'" @click="openPlaywrightDetail(record)">Chrome DevTools Protocol 自动化报告</a-doption>
                 </template>
               </a-dropdown>
             </a-space>
@@ -107,6 +112,10 @@
           />
           <TestReportUiDetail
             v-else-if="tab.type === 'ui'"
+            :detail-data="tab.detailData"
+          />
+          <TestReportPlaywrightDetail
+            v-else-if="tab.type === 'playwright'"
             :detail-data="tab.detailData"
           />
       </a-tab-pane>
@@ -170,6 +179,11 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
+            <a-form-item field="reportType" label="报告类型" required>
+              <a-select v-model="formState.reportType" :options="reportTypeOptions" placeholder="请选择" />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
             <a-form-item field="status" label="状态" required>
               <a-select v-model="formState.status" :options="statusOptions" placeholder="请选择" />
             </a-form-item>
@@ -187,6 +201,7 @@
 
 <script setup lang="tsx">
 import { Message, Modal, type FormInstance, type TableInstance } from '@arco-design/web-vue'
+import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   addTestReport,
@@ -203,6 +218,7 @@ import { getProjectConfigList, type ProjectConfigResp } from '@/apis/project/pro
 import { listTestPlan, type TestPlanResp } from '@/apis/test/testPlan'
 import TestReportFuncDetail from './components/TestReportFuncDetail.vue'
 import TestReportUiDetail from './components/TestReportUiDetail.vue'
+import TestReportPlaywrightDetail from './components/TestReportPlaywrightDetail.vue'
 import { useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
 import { toIdString } from '@/utils/id'
@@ -216,11 +232,7 @@ const router = useRouter()
 
 const { test_report_status } = useDict('test_report_status')
 
-const statusOptions = [
-  { label: '执行中', value: 'RUNNING' },
-  { label: '通过', value: 'PASSED' },
-  { label: '失败', value: 'FAILED' },
-]
+const statusOptions = computed(() => test_report_status.value)
 const triggerOptions = [
   { label: '手动', value: 'MANUAL' },
   { label: '定时', value: 'SCHEDULE' },
@@ -228,6 +240,11 @@ const triggerOptions = [
 const executeOptions = [
   { label: '调试', value: 'DEBUG' },
   { label: '计划执行', value: 'PLAN' },
+]
+const reportTypeOptions = [
+  { label: 'Selenium 自动化报告', value: 'SELENIUM' },
+  { label: 'Playwright Runner 自动化报告', value: 'PLAYWRIGHT_RUNNER' },
+  { label: 'Chrome DevTools Protocol 自动化报告', value: 'CHROME_DEVTOOLS_PROTOCOL' },
 ]
 
 const getDictLabel = (options: { label: string; value: string }[], value?: string) => {
@@ -242,6 +259,7 @@ const queryForm = reactive<TestReportQuery>({
   status: undefined,
   triggerMode: undefined,
   executeMode: undefined,
+  reportType: undefined,
   sort: ['createTime,desc'],
 })
 
@@ -362,7 +380,18 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
     field: 'status',
     span: planQueryFieldSpan,
     props: {
-      options: statusOptions,
+      options: statusOptions.value,
+      placeholder: '请选择',
+      allowClear: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '报告类型',
+    field: 'reportType',
+    span: planQueryFieldSpan,
+    props: {
+      options: reportTypeOptions,
       placeholder: '请选择',
       allowClear: true,
     },
@@ -373,6 +402,7 @@ const columns: TableInstance['columns'] = [
   { title: '所属项目', dataIndex: 'projectName', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '所属计划', dataIndex: 'testPlanName', width: 240, ellipsis: true, tooltip: true },
   { title: '报告名称', dataIndex: 'name', width: 340, ellipsis: true, tooltip: true },
+  { title: '报告类型', dataIndex: 'reportType', slotName: 'reportType', width: 200, align: 'center' },
   { title: '触发方式', dataIndex: 'triggerMode', slotName: 'triggerMode', width: 90, align: 'center' },
   { title: '执行方式', dataIndex: 'executeMode', slotName: 'executeMode', width: 90, align: 'center' },
   {
@@ -395,7 +425,7 @@ const isDetailTabActive = computed(() => activeTab.value !== 'report-list')
 interface DetailTab {
   key: string
   title: string
-  type: 'func' | 'ui'
+  type: 'func' | 'ui' | 'playwright'
   reportId: string
   detailData?: TestReportDetailResp
 }
@@ -434,6 +464,36 @@ const openUiDetail = async (record: TestReportResp) => {
   activeTab.value = key
 }
 
+const openPlaywrightDetail = async (record: TestReportResp) => {
+  const key = `playwright-${record.id}`
+  let tab = detailTabs.value.find(item => item.key === key)
+  const { data } = await getTestReport(record.id)
+  if (!tab) {
+    tab = { key, title: `${record.name}`, type: 'playwright', reportId: record.id, detailData: data }
+    detailTabs.value.push(tab)
+  } else {
+    tab.detailData = data
+  }
+  activeTab.value = key
+}
+
+const openReportDetailById = async (value: unknown) => {
+  const reportId = toIdString(value as string | number | undefined)
+  if (!reportId) return
+  try {
+    const { data } = await getTestReport(reportId)
+    if (!data) return
+    const fromPlanHistory = String(route.query.returnView || '') === 'scene-history'
+    if (fromPlanHistory || data.reportType === 'PLAYWRIGHT_RUNNER' || data.reportType === 'CHROME_DEVTOOLS_PROTOCOL') {
+      await openPlaywrightDetail(data)
+    } else {
+      await openUiDetail(data)
+    }
+  } catch {
+    Message.error('加载测试报告详情失败')
+  }
+}
+
 const onTabDelete = (key: string) => {
   closeTab(String(key))
 }
@@ -454,39 +514,51 @@ const formState = reactive<any>({
   description: '',
   triggerMode: 'MANUAL',
   executeMode: 'PLAN',
+  reportType: 'SELENIUM',
   status: 'RUNNING',
 })
 
 const goBackToPlan = async () => {
-  if (!queryForm.testPlanId) return
+  const planId = toIdString(route.query.testPlanId as string | undefined) || toIdString(queryForm.testPlanId)
+  if (!planId) return
+  const returnView = String(route.query.returnView || '')
   await router.push({
     path: '/test/testPlan',
-    query: { id: String(queryForm.testPlanId) },
+    query: {
+      id: planId,
+      ...(returnView === 'scene-history' ? { view: returnView } : {}),
+    },
   })
 }
 
 const reset = () => {
+  queryForm.id = undefined
   queryForm.name = undefined
   queryForm.projectId = undefined
   queryForm.testPlanId = undefined
   queryForm.status = undefined
   queryForm.triggerMode = undefined
   queryForm.executeMode = undefined
+  queryForm.reportType = undefined
   void router.replace({ path: '/test/testReport', query: {} })
   search()
 }
 
-const syncRouteQuery = async () => {
+const syncRouteQuery = () => {
+  const reportId = toIdString(route.query.id as string | undefined)
   const planId = toIdString(route.query.testPlanId as string | undefined)
+  queryForm.id = reportId || undefined
   queryForm.testPlanId = planId || undefined
 }
 
 watch(
   () => route.query,
-  () => {
+  async () => {
     syncRouteQuery()
-    search()
+    await search()
+    if (route.query.id) await openReportDetailById(route.query.id)
   },
+  { immediate: true },
 )
 
 const openForm = (record?: TestReportResp) => {
@@ -500,6 +572,7 @@ const openForm = (record?: TestReportResp) => {
   formState.description = record?.description || ''
   formState.triggerMode = record?.triggerMode || 'MANUAL'
   formState.executeMode = record?.executeMode || 'PLAN'
+  formState.reportType = record?.reportType || 'SELENIUM'
   formState.status = record?.status || 'RUNNING'
   formVisible.value = true
 }
@@ -521,6 +594,7 @@ const submitForm = async (): Promise<boolean> => {
     description: formState.description?.trim(),
     triggerMode: formState.triggerMode,
     executeMode: formState.executeMode,
+    reportType: formState.reportType,
     status: formState.status,
   }
   try {
@@ -621,8 +695,9 @@ const formatDateTime = (value?: string | null) => {
   }
 
   :deep(.arco-tabs-pane) {
-    /* height: 100%; */
-    overflow: visible;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
   }
 
   &--detail {
@@ -636,10 +711,11 @@ const formatDateTime = (value?: string | null) => {
 
 .detail-tab-pane {
   display: flex;
+  flex: 1;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  min-height: calc(100vh - 220px);
+  min-height: 0;
 }
 
 .report-query-top-slot {

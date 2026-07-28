@@ -144,6 +144,7 @@ import { Message, type TableInstance } from '@arco-design/web-vue'
 import type { TestPlanResp } from '@/apis/test/testPlan'
 import { getTestPlan, relateTestPlanScenes } from '@/apis/test/testPlan'
 import {
+  getAutomationUiSceneList,
   listAutomationUiScene,
   type AutomationUiSceneQuery,
   type AutomationUiSceneResp,
@@ -495,12 +496,8 @@ const handleOk = async () => {
 }
 
 const onRelateAll = async () => {
-  const { data } = await listAutomationUiScene({
-    ...buildSceneQuery(),
-    page: 1,
-    size: 1000,
-  } as any)
-  const list = Array.isArray(data?.list) ? data.list : []
+  const { data } = await getAutomationUiSceneList(buildSceneQuery() as any)
+  const list = Array.isArray(data) ? data : []
   await relateByIds(list.map((row: AutomationUiSceneResp) => toIdString(row.id)))
 }
 
@@ -582,8 +579,8 @@ export default {}
 
 <style scoped lang="scss">
 .relate-scene-layout {
-  height: 62vh;
-  min-height: 700px;
+  height: min(700px, calc(100vh - 180px));
+  min-height: 0;
 
   :deep(.gi-page-layout) {
     display: flex;
@@ -680,9 +677,11 @@ export default {}
 .relate-scene-body {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   width: 100%;
   min-width: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .scene-type-bar {
@@ -716,7 +715,8 @@ export default {}
   min-height: 0;
 
   :deep(.gi-table) {
-    min-height: 48vh;
+    height: 100%;
+    min-height: 0;
     padding: 0;
   }
 }

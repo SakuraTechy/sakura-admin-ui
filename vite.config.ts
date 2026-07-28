@@ -33,8 +33,9 @@ export default defineConfig(({ command, mode }) => {
       port: Number.parseInt(env.VITE_DEV_PORT || '5173', 10),
        // 是否严格检查端口是否被占用，默认false，占用时Vite 自动换端口
       strictPort: false,
-      // 服务启动时是否自动打开浏览器
-      open: true,
+      // 后端 Debug 启动会先等待调试器，自动开页会在 8000 端口监听前触发初始化请求。
+      // 关闭自动开页，待前后端都启动完成后再手动访问开发地址。
+      open: false,
       // 本地跨域代理 -> 代理到服务器的接口地址
       proxy: {
         [env.VITE_API_PREFIX]: {

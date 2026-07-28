@@ -222,6 +222,7 @@ interface OpenOptions {
   mode?: 'selected' | 'all'
   query?: Record<string, any>
   source?: 'ui' | 'plan'
+  testPlanId?: string
 }
 
 interface ProjectEnvironmentOption {
@@ -256,6 +257,7 @@ interface AutomationEnvironmentOption {
 type SelectChangeValue = string | number | boolean | Record<string, any> | (string | number | boolean | Record<string, any>)[]
 
 const emit = defineEmits<{
+  (e: 'started'): void
   (e: 'success'): void
 }>()
 
@@ -490,17 +492,13 @@ const handleAutomationEnvironmentChange = async (value: SelectChangeValue) => {
 
 const getLastDebugRecord = (record: SceneRow) => {
   if (sceneSource.value === 'plan') {
-    if (Array.isArray(record.testRecord) && record.testRecord.length > 0)
-      return record.testRecord[0]
-    if (Array.isArray(record.debugRecord) && record.debugRecord.length > 0)
-      return record.debugRecord[0]
-  } else {
-    if (Array.isArray(record.debugRecord) && record.debugRecord.length > 0)
-      return record.debugRecord[0]
-    if (Array.isArray(record.testRecord) && record.testRecord.length > 0)
-      return record.testRecord[0]
+    return Array.isArray(record.testRecord)
+      ? record.testRecord.find(item => String(item.testPlanId || '') === String(form.testPlanId || ''))
+      : undefined
   }
-  return undefined
+  return Array.isArray(record.debugRecord) && record.debugRecord.length > 0
+    ? record.debugRecord[0]
+    : undefined
 }
 
 const getSceneExecuteFieldValue = (record: SceneRow, field: 'executeStatus' | 'executeResult') => {
@@ -567,6 +565,7 @@ const onOpen = async (rows: SceneRow[], options: OpenOptions = {}) => {
   sceneSource.value = options.source ?? 'ui'
   sceneQuery.value = options.query ?? {}
   form.sceneIds = rows.map(item => item.id)
+  form.testPlanId = options.testPlanId
   form.executeName = userStore.userInfo.nickname || userStore.userInfo.username
   form.executeEmail = userStore.userInfo.email
   visible.value = true
@@ -610,7 +609,7 @@ const handleOk = async () => {
   }
 
   try {
-    const request = openMode.value === 'all'
+    const request = openMode.value === 'all' && sceneSource.value === 'ui'
       ? execAllAutomationUiScene({
           projectId: sceneList.value[0]?.projectId || sceneQuery.value.projectId,
           versionId: sceneList.value[0]?.versionId || sceneQuery.value.versionId,
@@ -623,10 +622,12 @@ const handleOk = async () => {
           automationEnvironmentId: form.automationEnvironmentId,
           executeName: form.executeName,
           executeEmail: form.executeEmail,
+          testPlanId: form.testPlanId,
         } as AutomationUiSceneExecAllReq)
       : execAutomationUiScene(form as AutomationUiSceneExecReq)
     const { data } = await request
     if (data?.buildNumber && data.consoleUrl) {
+      emit('started')
       Message.success('执行成功，正在跳转 Jenkins 控制台')
       window.open(data.consoleUrl)
       emit('success')
@@ -648,6 +649,7 @@ const handleClose = () => {
   projectName.value = '-'
   versionName.value = '-'
   form.sceneIds = []
+  form.testPlanId = undefined
   form.projectEnvironmentId = ''
   form.automationEnvironmentId = ''
 }

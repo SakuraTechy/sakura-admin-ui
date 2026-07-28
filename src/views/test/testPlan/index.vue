@@ -81,6 +81,9 @@
           <template #status="{ record }">
             <GiCellTag :value="record.status" :dict="planStatusOptions" />
           </template>
+          <template #executeResult="{ record }">
+            <GiCellTag :value="resolvePlanExecuteResult(record)" :dict="planExecuteResultOptions" />
+          </template>
           <template #progress="{ record }">
             <div class="progress-cell">
               <a-progress :percent="Number(record.testProgress || 0)" size="mini" />
@@ -107,6 +110,7 @@
                   <a-doption @click="openDetail(record)">详情</a-doption>
                   <a-doption @click="goToReports(record)">报告</a-doption>
                   <a-doption @click="openSceneModal(record)">关联场景</a-doption>
+                  <a-doption v-permission="['test:timedTask:create']" @click="timedTaskDrawerRef?.open({ plan: record })">设置定时执行</a-doption>
                   <a-doption status="danger" @click="onDelete(record)">删除</a-doption>
                 </template>
               </a-dropdown>
@@ -126,11 +130,12 @@
             :ref="(el) => setSceneWorkspaceRef(tab.key, el)"
             :plan="tab.record"
             :plan-options="scenePlanOptions"
+            :live-executions="liveExecutions"
             @switch-plan="onSwitchScenePlan"
             @relate="openRelateSceneModal(tab.record)"
-            @batch-execute="(rows) => onBatchExecuteScene(rows)"
-            @execute-all="() => onExecuteAllScene()"
-            @execute-one="(row) => onExecuteOneScene(row)"
+            @batch-execute="(rows, executionType) => onBatchExecuteScene(tab, rows, executionType)"
+            @execute-all="(executionType) => onExecuteAllScene(tab, executionType)"
+            @execute-one="(row, executionType) => onExecuteOneScene(tab, row, executionType)"
             @refresh="search"
           />
         </div>
@@ -143,7 +148,26 @@
       @success="onRelateSceneSuccess"
     />
 
-    <ExecuteSceneModal ref="executeSceneModalRef" @success="onExecuteSceneSuccess" />
+    <ExecuteSceneModal
+      ref="executeSceneModalRef"
+      @started="onSingleSceneExecutionStarted"
+      @success="onExecuteSceneSuccess"
+    />
+    <TimedTaskDrawer ref="timedTaskDrawerRef" :plans="dataList" />
+    <AutomationExecutionCaseSelectModal
+      ref="executionCaseSelectModalRef"
+      :live-executions="liveExecutions"
+      @next="openExecutionConfig"
+    />
+    <AutomationExecutionCaseModal
+      ref="executionCaseModalRef"
+      @back="reopenExecutionCaseSelect"
+      @batch-update="liveExecutions = $event"
+      @started="onSingleSceneExecutionStarted"
+      @finished="onPlaywrightExecutionFinished"
+      @plan-start="onPlanExecutionStart"
+      @startup-failed="onCdpPlanStartupFailed"
+    />
 
     <a-modal v-model:visible="formVisible" :title="formTitle" width="660px" :body-style="{ padding: '20px' }" @before-ok="submitForm">
       <a-form
@@ -206,13 +230,192 @@
       </a-form>
     </a-modal>
 
-    <a-modal v-model:visible="execVisible" title="执行测试计划" width="560px" @ok="submitExecute">
-      <a-form :model="execState" layout="vertical">
-        <a-form-item label="项目环境 ID"><a-input v-model="execState.projectEnvironmentId" style="width: 100%" allow-clear /></a-form-item>
-        <a-form-item label="自动化环境 ID"><a-input v-model="execState.automationEnvironmentId" style="width: 100%" allow-clear /></a-form-item>
-        <a-form-item label="执行人"><a-input v-model="execState.executeName" /></a-form-item>
-        <a-form-item label="执行邮箱"><a-input v-model="execState.executeEmail" /></a-form-item>
-      </a-form>
+    <a-modal
+      v-model:visible="execVisible"
+      title="执行测试计划"
+      width="920px"
+      ok-text="开始执行"
+      :mask-closable="false"
+      :esc-to-close="false"
+      @before-ok="submitExecute"
+    >
+      <a-spin :loading="execConfigLoading" style="width: 100%">
+        <div class="plan-execute-modal">
+          <a-alert type="info" show-icon>
+            {{ execScopeMode === 'selected'
+              ? `本次将执行已选中的 ${execSceneIds.length} 个场景`
+              : '本次将执行当前计划全部关联场景' }}
+          </a-alert>
+          <a-descriptions :column="2" bordered size="medium">
+            <a-descriptions-item label="测试计划">{{ currentRecord?.name || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="所属项目">{{ currentRecord?.projectName || '-' }}</a-descriptions-item>
+          </a-descriptions>
+          <a-form :model="execState" layout="vertical">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="执行引擎" required>
+                  <a-select
+                    v-model="execState.executionEngine"
+                    :options="executionEngineOptions"
+                    :disabled="execScopeMode !== 'plan'"
+                    @change="onExecEngineChange"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="产品环境" required>
+                  <a-select
+                    v-model="execState.projectEnvironmentId"
+                    placeholder="请选择在线产品环境"
+                    allow-search
+                    @change="onExecProjectEnvironmentChange"
+                  >
+                    <a-option
+                      v-for="item in execProjectEnvironmentOptions"
+                      :key="item.value"
+                      :value="item.value"
+                      :label="item.label"
+                    >
+                      <div class="exec-option-row">
+                        <span>{{ item.label }}</span>
+                        <a-tag :color="item.statusColor">{{ item.statusLabel }}</a-tag>
+                      </div>
+                    </a-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-form-item v-if="execState.executionEngine === 'SELENIUM'" label="自动化环境" required>
+              <a-select
+                v-model="execState.automationEnvironmentId"
+                placeholder="请选择空闲自动化节点"
+                allow-search
+                @change="onExecAutomationEnvironmentChange"
+              >
+                <a-option
+                  v-for="item in execAutomationEnvironmentOptions"
+                  :key="item.value"
+                  :value="item.value"
+                  :label="item.label"
+                >
+                  <div class="exec-option-row">
+                    <span>{{ item.label }}</span>
+                    <a-space size="mini">
+                      <a-tag :color="item.onlineStatusColor">{{ item.onlineStatusLabel }}</a-tag>
+                      <a-tag :color="item.useStatusColor">{{ item.useStatusLabel }}</a-tag>
+                    </a-space>
+                  </div>
+                </a-option>
+              </a-select>
+            </a-form-item>
+
+            <a-card
+              v-if="execState.executionEngine === 'PLAYWRIGHT_RUNNER'"
+              title="Playwright Runner 配置"
+              size="small"
+            >
+              <a-row :gutter="16">
+                <a-col :span="8">
+                  <a-form-item label="浏览器">
+                    <a-select v-model="execRunnerConfig.browser">
+                      <a-option value="chromium">Chromium</a-option>
+                      <a-option value="firefox">Firefox</a-option>
+                      <a-option value="webkit">WebKit</a-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="实时画面质量">
+                    <a-select v-model="execRunnerConfig.liveFrameQuality" :options="liveFrameQualityOptions" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="用例会话">
+                    <a-select v-model="execRunnerConfig.sessionMode" :options="runnerSessionModeOptions" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="显示浏览器窗口">
+                    <a-switch v-model="execRunnerConfig.headed" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="忽略 HTTPS 错误">
+                    <a-switch v-model="execRunnerConfig.ignoreHttpsErrors" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="页面错误检测">
+                    <a-switch v-model="execRunnerConfig.pageErrorCheckEnabled" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="Trace 保留策略">
+                    <a-select v-model="execRunnerConfig.trace" :options="artifactPolicyOptions" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="录屏保留策略">
+                    <a-select v-model="execRunnerConfig.video" :options="artifactPolicyOptions" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="步骤超时（ms）">
+                    <a-input-number v-model="execRunnerConfig.stepTimeoutMs" :min="1000" :max="600000" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="8">
+                  <a-form-item label="用例超时（ms）">
+                    <a-input-number v-model="execRunnerConfig.caseTimeoutMs" :min="1000" :max="3600000" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+            </a-card>
+
+            <a-card
+              v-if="execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL'"
+              title="Chrome DevTools Protocol 配置"
+              size="small"
+            >
+              <a-alert type="warning" show-icon>
+                将使用当前已连接 CueCast 的 Chrome 会话串行执行，请保持页面和浏览器连接开启。
+              </a-alert>
+              <a-form-item label="执行窗口尺寸">
+                <a-radio-group v-model="execCdpConfig.windowSizeMode">
+                  <a-radio value="maximized">默认最大化</a-radio>
+                  <a-radio value="current">当前窗口尺寸</a-radio>
+                  <a-radio value="custom">自定义尺寸</a-radio>
+                </a-radio-group>
+              </a-form-item>
+              <a-row v-if="execCdpConfig.windowSizeMode === 'custom'" :gutter="16">
+                <a-col :span="12">
+                  <a-form-item label="宽度">
+                    <a-input-number v-model="execCdpConfig.viewportWidth" :min="320" :max="10000" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="12">
+                  <a-form-item label="高度">
+                    <a-input-number v-model="execCdpConfig.viewportHeight" :min="320" :max="10000" />
+                  </a-form-item>
+                </a-col>
+              </a-row>
+              <a-form-item label="页面错误检测">
+                <a-switch v-model="execCdpConfig.pageErrorCheckEnabled" />
+              </a-form-item>
+            </a-card>
+
+            <a-row :gutter="16" class="executor-row">
+              <a-col :span="12">
+                <a-form-item label="执行人"><a-input v-model="execState.executeName" allow-clear /></a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="执行邮箱"><a-input v-model="execState.executeEmail" allow-clear /></a-form-item>
+              </a-col>
+            </a-row>
+          </a-form>
+        </div>
+      </a-spin>
     </a-modal>
 
     <a-modal v-model:visible="detailVisible" title="测试计划详情" width="1040px" :footer="false">
@@ -258,23 +461,45 @@ import { Message, Modal, type FormInstance, type TableInstance } from '@arco-des
 import { useRoute, useRouter } from 'vue-router'
 import {
   addTestPlan,
+  cancelTestPlanExecution,
   deleteTestPlan,
   executeTestPlan,
   exportTestPlan,
   getTestPlan,
   listTestPlan,
   type TestPlanExecuteResp,
+  type TestExecutionEngine,
   type TestPlanQuery,
   type TestPlanResp,
   updateTestPlan,
 } from '@/apis/test/testPlan'
 import { getProjectConfigList, type ProjectConfigResp } from '@/apis/project/projectConfig'
+import {
+  getProjectEnvironmentConfigList,
+  getProjectEnvironmentRuntimeStatus,
+} from '@/apis/project/projectEnvironmentConfig'
+import {
+  getAutomationEnvironmentConfigList,
+  getAutomationEnvironmentRuntimeStatus,
+} from '@/apis/automation/automationEnvironmentConfig'
+import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
+import { getAutomationUiSceneSelected } from '@/apis/automation/automationUiScene'
 import { getUser, listAllUser, listSystemUser, type UserResp } from '@/apis/system/user'
 import { useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
 import TestPlanSceneWorkspace from './components/TestPlanSceneWorkspace.vue'
 import TestPlanRelateSceneModal from './components/TestPlanRelateSceneModal.vue'
+import TimedTaskDrawer from '@/views/test/timedTask/components/TimedTaskDrawer.vue'
 import ExecuteSceneModal from '@/views/automation/automationUiScene/components/ExecuteSceneModal.vue'
+import AutomationExecutionCaseSelectModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseSelectModal.vue'
+import AutomationExecutionCaseModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseModal.vue'
+import {
+  type ExecutionCaseOpenOptions,
+  type ExecutionContext,
+  type ExecutionType,
+  type LiveExecutionCase,
+} from '@/views/automation/automationUiScene/execution'
+import { useUserStore } from '@/stores/modules/user'
 import { buildProjectSelectOptions, toIdString } from './utils/projectContext'
 
 defineOptions({ name: 'TestTestPlan' })
@@ -286,16 +511,24 @@ interface SceneTab {
 
 type SceneWorkspaceExpose = {
   reload?: () => Promise<void>
+  openHistory?: (sceneId?: string) => Promise<void>
 }
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const planStatusOptions = [
   { label: '未开始', value: 'NOT_STARTED' },
   { label: '进行中', value: 'RUNNING' },
   { label: '已完成', value: 'COMPLETED' },
   { label: '已归档', value: 'ARCHIVED' },
+]
+const planExecuteResultOptions = [
+  { label: '未执行', value: 'NOT_EXECUTED', extra: 'default' },
+  { label: '执行中', value: 'RUNNING', extra: 'primary' },
+  { label: '通过', value: 'PASSED', extra: 'success' },
+  { label: '失败', value: 'FAILED', extra: 'error' },
 ]
 const planTypeBaseOptions = [
   { label: '冒烟测试', value: '冒烟测试' },
@@ -526,6 +759,7 @@ const columns: TableInstance['columns'] = [
   { title: '计划成员', dataIndex: 'memberIds', slotName: 'members', width: 100, align: 'center' },
   { title: '计划负责人', dataIndex: 'principalIds', slotName: 'principals', width: 110, align: 'center' },
   { title: '计划状态', dataIndex: 'status', slotName: 'status', width: 100, align: 'center' },
+  { title: '执行结果', dataIndex: 'executeResult', slotName: 'executeResult', width: 100, align: 'center' },
   { title: '测试进度', dataIndex: 'testProgress', slotName: 'progress', width: 100, align: 'center' },
   {
     title: '计划开始时间',
@@ -592,6 +826,7 @@ interface PlanFormModel {
 }
 
 const planFormRef = ref<FormInstance>()
+const timedTaskDrawerRef = ref<InstanceType<typeof TimedTaskDrawer>>()
 const formState = reactive<PlanFormModel>({
   id: '',
   projectId: undefined,
@@ -723,16 +958,91 @@ watch(
 )
 
 const execState = reactive<{
+  executionEngine: TestExecutionEngine
   projectEnvironmentId?: string
   automationEnvironmentId?: string
   executeName: string
   executeEmail: string
 }>({
+  executionEngine: 'SELENIUM',
   projectEnvironmentId: undefined,
   automationEnvironmentId: undefined,
   executeName: '',
   executeEmail: '',
 })
+
+const fillCurrentExecutor = () => {
+  execState.executeName = userStore.userInfo.nickname || userStore.userInfo.username || ''
+  execState.executeEmail = userStore.userInfo.email || ''
+}
+
+const execScopeMode = ref<'plan' | 'selected' | 'all'>('plan')
+const execSceneIds = ref<string[]>([])
+const execConfigLoading = ref(false)
+
+interface ExecProjectEnvironmentOption {
+  value: string
+  label: string
+  statusLabel: string
+  statusColor: string
+}
+
+interface ExecAutomationEnvironmentOption {
+  value: string
+  label: string
+  onlineStatusLabel: string
+  onlineStatusColor: string
+  useStatusLabel: string
+  useStatusColor: string
+}
+
+const execProjectEnvironmentOptions = ref<ExecProjectEnvironmentOption[]>([])
+const execAutomationEnvironmentOptions = ref<ExecAutomationEnvironmentOption[]>([])
+const execRunnerConfig = reactive<AutomationPlaywrightRunnerOptions>({
+  browser: 'chromium',
+  liveFrameQuality: 'high',
+  sessionMode: 'isolated',
+  headed: false,
+  ignoreHttpsErrors: true,
+  pageErrorCheckEnabled: true,
+  trace: 'retain-on-failure',
+  video: 'retain-on-failure',
+  stepTimeoutMs: 6000,
+  caseTimeoutMs: 600000,
+  slowMoMs: 0,
+  finishDelayMs: 0,
+})
+const execCdpConfig = reactive({
+  windowSizeMode: 'maximized' as 'maximized' | 'current' | 'custom',
+  viewportWidth: 1920,
+  viewportHeight: 1080,
+  pageErrorCheckEnabled: true,
+})
+const liveFrameQualityOptions = [
+  { label: '流畅（1080P）', value: 'smooth' },
+  { label: '高清（推荐）', value: 'high' },
+  { label: '超清（4K）', value: 'ultra' },
+  { label: '8K', value: '8k' },
+]
+const runnerSessionModeOptions = [
+  { label: '每条用例独立登录（默认）', value: 'isolated' },
+  { label: '复用上一条成功用例登录态', value: 'reuse-auth' },
+]
+const artifactPolicyOptions = [
+  { label: '关闭', value: 'off' },
+  { label: '始终保留', value: 'on' },
+  { label: '仅失败保留', value: 'retain-on-failure' },
+]
+const selectedExecProjectEnvironment = computed(() => execProjectEnvironmentOptions.value
+  .find(item => item.value === toIdString(execState.projectEnvironmentId)))
+const selectedExecAutomationEnvironment = computed(() => execAutomationEnvironmentOptions.value
+  .find(item => item.value === toIdString(execState.automationEnvironmentId)))
+
+const executionEngineOptions = [
+  { label: 'Selenium 自动化', value: 'SELENIUM' },
+  { label: 'Playwright Runner', value: 'PLAYWRIGHT_RUNNER' },
+  { label: 'Chrome DevTools Protocol', value: 'CHROME_DEVTOOLS_PROTOCOL' },
+]
 
 const formTitle = computed(() => {
   if (formCopyMode.value) return '复制测试计划'
@@ -810,13 +1120,179 @@ const openSceneModal = (record: TestPlanResp) => {
   openRelateSceneModal(record)
 }
 
+const isRuntimeOnline = (status: unknown) => String(status) === '5' || status === '在线'
+const isRuntimeIdle = (status: unknown) => String(status) === '7' || status === '空闲'
+
+const resetExecRuntimeConfig = () => {
+  Object.assign(execRunnerConfig, {
+    browser: 'chromium',
+    liveFrameQuality: 'high',
+    sessionMode: 'isolated',
+    headed: false,
+    ignoreHttpsErrors: true,
+    pageErrorCheckEnabled: true,
+    trace: 'retain-on-failure',
+    video: 'retain-on-failure',
+    stepTimeoutMs: 6000,
+    caseTimeoutMs: 600000,
+    slowMoMs: 0,
+    finishDelayMs: 0,
+  })
+  Object.assign(execCdpConfig, {
+    windowSizeMode: 'maximized',
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    pageErrorCheckEnabled: true,
+  })
+}
+
+const refreshExecProjectEnvironmentStatus = async (environmentId: string) => {
+  const option = execProjectEnvironmentOptions.value.find(item => item.value === environmentId)
+  if (!option) return
+  option.statusLabel = '检测中'
+  option.statusColor = 'arcoblue'
+  try {
+    const { data } = await getProjectEnvironmentRuntimeStatus(environmentId)
+    const online = isRuntimeOnline(data?.onlineStatus)
+    option.statusLabel = online ? '在线' : '离线'
+    option.statusColor = online ? 'green' : 'red'
+    if (data?.serverIp) option.label = data.serverIp
+  } catch {
+    option.statusLabel = '检测失败'
+    option.statusColor = 'red'
+  }
+}
+
+const refreshExecAutomationEnvironmentStatus = async (environmentId: string) => {
+  const option = execAutomationEnvironmentOptions.value.find(item => item.value === environmentId)
+  if (!option) return
+  try {
+    const { data } = await getAutomationEnvironmentRuntimeStatus(environmentId)
+    const online = isRuntimeOnline(data?.onlineStatus)
+    const idle = isRuntimeIdle(data?.useStatus)
+    option.onlineStatusLabel = online ? '在线' : '离线'
+    option.onlineStatusColor = online ? 'green' : 'red'
+    option.useStatusLabel = idle ? '空闲' : String(data?.useStatus) === '8' ? '使用中' : '不可用'
+    option.useStatusColor = idle ? 'green' : 'orange'
+    if (data?.nodeName) option.label = data.nodeName
+  } catch {
+    option.onlineStatusLabel = '检测失败'
+    option.onlineStatusColor = 'red'
+    option.useStatusLabel = '不可用'
+    option.useStatusColor = 'red'
+  }
+}
+
+const loadExecProjectEnvironments = async (projectId: string) => {
+  // 项目 ID 为空时不要把空字符串作为 EQ 条件发送，否则后端会返回空列表。
+  const { data } = await getProjectEnvironmentConfigList({
+    id: undefined,
+    projectId: projectId || undefined,
+    name: undefined,
+    status: 1,
+    sort: ['name,asc'],
+  })
+  const environments = Array.isArray(data)
+    ? data
+    : Array.isArray((data as any)?.list) ? (data as any).list : []
+  execProjectEnvironmentOptions.value = environments.map((item: any) => {
+    const servers = Array.isArray(item?.serverConfig) ? item.serverConfig : []
+    const server = servers.find((candidate: any) => Number(candidate?.status) === 1) || servers[0] || {}
+    return {
+      value: toIdString(item.id),
+      label: server.ip || item.name || toIdString(item.id),
+      statusLabel: '未检测',
+      statusColor: 'gray',
+    }
+  })
+  execState.projectEnvironmentId = execProjectEnvironmentOptions.value[0]?.value
+  if (execState.projectEnvironmentId) {
+    await refreshExecProjectEnvironmentStatus(execState.projectEnvironmentId)
+  }
+}
+
+const loadExecAutomationEnvironments = async () => {
+  const { data } = await getAutomationEnvironmentConfigList({
+    status: 1,
+    sort: ['name,asc'],
+  })
+  execAutomationEnvironmentOptions.value = (Array.isArray(data) ? data : []).map((item: any) => {
+    const nodes = Array.isArray(item?.nodeConfig) ? item.nodeConfig : []
+    const node = nodes.find((candidate: any) => Number(candidate?.status) === 1) || nodes[0] || {}
+    return {
+      value: toIdString(item.id),
+      label: node.name || item.name || toIdString(item.id),
+      onlineStatusLabel: '未检测',
+      onlineStatusColor: 'gray',
+      useStatusLabel: '未检测',
+      useStatusColor: 'gray',
+    }
+  })
+  execState.automationEnvironmentId = execAutomationEnvironmentOptions.value[0]?.value
+  if (execState.automationEnvironmentId) {
+    await refreshExecAutomationEnvironmentStatus(execState.automationEnvironmentId)
+  }
+}
+
+const loadExecEnvironmentOptions = async (record: TestPlanResp) => {
+  execConfigLoading.value = true
+  execProjectEnvironmentOptions.value = []
+  execAutomationEnvironmentOptions.value = []
+  try {
+    // 列表行可能没有带完整项目字段，打开执行弹窗时重新读取计划详情，确保环境按真实项目查询。
+    let source = record
+    if (record?.id) {
+      try {
+        const { data } = await getTestPlan(record.id)
+        if (data) source = data
+      } catch {
+        // 详情读取失败时继续使用列表行，避免阻断弹窗。
+      }
+    }
+    const tasks: Promise<void>[] = [loadExecProjectEnvironments(toIdString(source.projectId))]
+    if (execState.executionEngine === 'SELENIUM') tasks.push(loadExecAutomationEnvironments())
+    await Promise.all(tasks)
+  } catch {
+    Message.error('加载执行环境失败，请检查环境配置后重试')
+  } finally {
+    execConfigLoading.value = false
+  }
+}
+
+const onExecProjectEnvironmentChange = async (value: unknown) => {
+  const environmentId = toIdString(value)
+  if (environmentId) await refreshExecProjectEnvironmentStatus(environmentId)
+}
+
+const onExecAutomationEnvironmentChange = async (value: unknown) => {
+  const environmentId = toIdString(value)
+  if (environmentId) await refreshExecAutomationEnvironmentStatus(environmentId)
+}
+
+const onExecEngineChange = async () => {
+  if (execState.executionEngine === 'SELENIUM' && !execAutomationEnvironmentOptions.value.length) {
+    execConfigLoading.value = true
+    try {
+      await loadExecAutomationEnvironments()
+    } catch {
+      Message.error('加载自动化环境失败，请检查环境配置后重试')
+    } finally {
+      execConfigLoading.value = false
+    }
+  }
+}
+
 const openExecModal = (record: TestPlanResp) => {
   currentRecord.value = record
+  execScopeMode.value = 'plan'
+  execSceneIds.value = []
+  execState.executionEngine = 'SELENIUM'
   execState.projectEnvironmentId = undefined
   execState.automationEnvironmentId = undefined
-  execState.executeName = ''
-  execState.executeEmail = ''
+  fillCurrentExecutor()
+  resetExecRuntimeConfig()
   execVisible.value = true
+  void loadExecEnvironmentOptions(record)
 }
 
 const setSceneWorkspaceRef = (key: string, el: unknown) => {
@@ -839,33 +1315,311 @@ const onRelateSceneSuccess = async () => {
 }
 
 const executeSceneModalRef = ref()
-const onBatchExecuteScene = (rows: any[]) => {
-  executeSceneModalRef.value?.onOpen(rows, { mode: 'selected', source: 'plan' })
+const executionCaseSelectModalRef = ref<{
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options?: ExecutionCaseOpenOptions,
+  ) => void
+}>()
+const executionCaseModalRef = ref<{
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options?: ExecutionCaseOpenOptions,
+  ) => Promise<void>
+}>()
+const liveExecutions = ref<LiveExecutionCase[]>([])
+const activeExecutionTabKey = ref('')
+const pendingHistorySceneId = ref('')
+const cdpPlanDispatch = ref<{
+  plan: TestPlanResp
+  reportId: string
+  projectEnvironmentId: string
+  queue: Array<{ scene: any, caseIds: string[] }>
+} | null>(null)
+
+interface PlanExecutionCaseSelection extends ExecutionContext {
+  scene: any
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  caseIds: string[]
+  selectionDisabled?: boolean
 }
-const onExecuteAllScene = async () => {
-  const currentKey = activeTab.value
-  const tab = sceneTabs.value.find((item) => item.key === currentKey)
-  if (!tab) return
+
+interface PlanCaseExecutionTask {
+  scene: any
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  testPlanId: string
+}
+
+const planCaseExecutionQueue = ref<PlanCaseExecutionTask[]>([])
+const planCaseExecutionMode = ref(false)
+const planCaseExecutionSceneIds = ref<string[]>([])
+
+const buildPlanExecutionScene = (scenes: any[]) => {
+  const first = scenes[0]
+  if (!first) return undefined
+  return {
+    ...first,
+    // 计划批量执行在一个配置弹窗中展示所有目标场景的可执行用例；实际执行范围仍由 sceneIds 提交。
+    __planAggregate: true,
+    // 保留场景边界，选择弹窗必须按场景读取历史，避免重复用例 ID 串场。
+    __planScenes: scenes,
+    caseList: scenes.flatMap((scene) => Array.isArray(scene?.caseList) ? scene.caseList : []),
+  }
+}
+
+const openNextPlanCaseSelection = () => {
+  const next = planCaseExecutionQueue.value.shift()
+  if (!next) return false
+  executionCaseSelectModalRef.value?.onOpen(next.scene, next.executionType, {
+    recordSource: 'test',
+    testPlanId: next.testPlanId,
+    selectionDisabled: true,
+  })
+  return true
+}
+
+const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: ExecutionType) => {
+  if (!rows.length) {
+    Message.warning('请选择场景')
+    return
+  }
+  activeExecutionTabKey.value = tab.key
+  pendingHistorySceneId.value = ''
+  planCaseExecutionQueue.value = []
+  if (executionType !== 'jenkins') {
+    const testPlanId = toIdString(tab.record.id)
+    const sceneIds = rows.map((scene) => toIdString(scene.id))
+    const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
+    const scenes = Array.isArray(sceneData) && sceneData.length ? sceneData : rows
+    const aggregateScene = buildPlanExecutionScene(scenes)
+    if (!aggregateScene) {
+      Message.warning('当前测试计划关联场景不存在，请刷新后重试')
+      return
+    }
+    planCaseExecutionMode.value = true
+    planCaseExecutionSceneIds.value = sceneIds
+    planCaseExecutionQueue.value = [{ scene: aggregateScene, executionType, testPlanId }]
+    openNextPlanCaseSelection()
+    return
+  }
+  executeSceneModalRef.value?.onOpen(rows, {
+    mode: 'selected',
+    source: 'plan',
+    testPlanId: toIdString(tab.record.id),
+  })
+}
+const onExecuteAllScene = async (tab: SceneTab, executionType: ExecutionType) => {
+  activeExecutionTabKey.value = tab.key
+  pendingHistorySceneId.value = ''
+  planCaseExecutionQueue.value = []
+  if (executionType !== 'jenkins') {
+    const plan = tab.record
+    const { data: planData } = await getTestPlan(plan.id)
+    const sceneIds: string[] = planData?.uiTestScene || plan.uiTestScene || []
+    if (!sceneIds.length) {
+      Message.warning('当前测试计划未关联 UI 自动化场景')
+      return
+    }
+    const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
+    const scenes = Array.isArray(sceneData) ? sceneData : []
+    if (!scenes.length) {
+      Message.warning('当前测试计划关联场景不存在，请刷新后重试')
+      return
+    }
+    const testPlanId = toIdString(plan.id)
+    const aggregateScene = buildPlanExecutionScene(scenes)
+    if (!aggregateScene) {
+      Message.warning('当前测试计划关联场景不存在，请刷新后重试')
+      return
+    }
+    planCaseExecutionMode.value = true
+    planCaseExecutionSceneIds.value = scenes.map((scene) => toIdString(scene.id))
+    planCaseExecutionQueue.value = [{ scene: aggregateScene, executionType, testPlanId }]
+    openNextPlanCaseSelection()
+    return
+  }
   const plan = tab.record
   const { data: planData } = await getTestPlan(plan.id)
   const sceneIds: string[] = planData?.uiTestScene || plan.uiTestScene || []
-  const { getAutomationUiSceneSelected } = await import('@/apis/automation/automationUiScene')
+  if (!sceneIds.length) {
+    Message.warning('当前测试计划未关联 UI 自动化场景')
+    return
+  }
   const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
   const scenes = Array.isArray(sceneData) ? sceneData : []
+  if (!scenes.length) {
+    Message.warning('当前测试计划关联场景不存在，请刷新后重试')
+    return
+  }
   const workspaceRef = sceneWorkspaceRefs.get(tab.key)
   const ws = workspaceRef as any
   const queryForm = ws?.queryForm
-  executeSceneModalRef.value?.onOpen(scenes, { mode: 'all', query: { ...queryForm, projectId: plan.projectId }, source: 'plan' })
+  executeSceneModalRef.value?.onOpen(scenes, {
+    mode: 'all',
+    query: { ...queryForm, projectId: plan.projectId },
+    source: 'plan',
+    testPlanId: toIdString(plan.id),
+  })
 }
-const onExecuteOneScene = (row: any) => {
-  executeSceneModalRef.value?.onOpen([row], { source: 'plan' })
+const onExecuteOneScene = async (tab: SceneTab, row: any, executionType: ExecutionType) => {
+  activeExecutionTabKey.value = tab.key
+  const sceneId = toIdString(row.id)
+  pendingHistorySceneId.value = sceneId
+  planCaseExecutionQueue.value = []
+  planCaseExecutionMode.value = false
+  planCaseExecutionSceneIds.value = []
+  const testPlanId = toIdString(tab.record.id)
+  if (executionType === 'jenkins') {
+    executeSceneModalRef.value?.onOpen([row], { source: 'plan', testPlanId })
+    return
+  }
+  executionCaseSelectModalRef.value?.onOpen(row, executionType, {
+    recordSource: 'test',
+    testPlanId,
+  })
+}
+const onSingleSceneExecutionStarted = async () => {
+  const targetKey = activeExecutionTabKey.value
+  const sceneId = pendingHistorySceneId.value
+  if (!targetKey || !sceneId) return
+  await sceneWorkspaceRefs.get(targetKey)?.openHistory?.(sceneId)
+  pendingHistorySceneId.value = ''
+}
+const openExecutionConfig = (payload: PlanExecutionCaseSelection) => {
+  executionCaseModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
+    selectionDisabled: payload.selectionDisabled,
+    planExecution: planCaseExecutionMode.value,
+  })
+}
+const reopenExecutionCaseSelect = (payload: PlanExecutionCaseSelection) => {
+  executionCaseSelectModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
+    selectionDisabled: payload.selectionDisabled,
+    planExecution: planCaseExecutionMode.value,
+  })
 }
 const onExecuteSceneSuccess = async () => {
-  const currentKey = activeTab.value
-  if (currentKey && currentKey !== 'plan-list') {
-    await reloadSceneTable(currentKey)
+  const targetKey = activeExecutionTabKey.value || activeTab.value
+  const historySceneId = pendingHistorySceneId.value
+  pendingHistorySceneId.value = ''
+  if (targetKey && targetKey !== 'plan-list') {
+    if (historySceneId) {
+      // 先切换视图，再刷新数据；避免刷新过程中组件重建导致历史页跳转请求丢失。
+      await sceneWorkspaceRefs.get(targetKey)?.openHistory?.(historySceneId)
+    }
+    await reloadSceneTable(targetKey)
   }
   void search()
+}
+
+const onPlanExecutionStart = async (payload: {
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  projectEnvironmentId: string
+  runnerOptions?: AutomationPlaywrightRunnerOptions
+  cdpOptions?: Record<string, unknown>
+}) => {
+  const planTab = sceneTabs.value.find((tab) => tab.key === activeExecutionTabKey.value)
+  if (!planTab || !planCaseExecutionSceneIds.value.length) {
+    Message.error('测试计划执行范围已失效，请重新打开执行弹窗')
+    return
+  }
+  currentRecord.value = planTab.record
+  // 批量执行/执行所有不会经过计划执行配置弹窗，执行人信息需要在异步调度前重新取当前登录用户。
+  fillCurrentExecutor()
+  execScopeMode.value = 'selected'
+  execSceneIds.value = [...planCaseExecutionSceneIds.value]
+  execState.executionEngine = payload.executionType === 'playwright-runner'
+    ? 'PLAYWRIGHT_RUNNER'
+    : 'CHROME_DEVTOOLS_PROTOCOL'
+  execConfigLoading.value = true
+  try {
+    await loadExecProjectEnvironments(toIdString(planTab.record.projectId))
+  } catch {
+    Message.error('加载产品环境失败，请稍后重试')
+    planCaseExecutionMode.value = false
+    planCaseExecutionSceneIds.value = []
+    planCaseExecutionQueue.value = []
+    execConfigLoading.value = false
+    return
+  }
+  execState.projectEnvironmentId = payload.projectEnvironmentId
+  execState.automationEnvironmentId = undefined
+  execConfigLoading.value = false
+  await refreshExecProjectEnvironmentStatus(payload.projectEnvironmentId)
+  if (payload.runnerOptions) Object.assign(execRunnerConfig, payload.runnerOptions)
+  if (payload.cdpOptions) Object.assign(execCdpConfig, payload.cdpOptions)
+  planCaseExecutionMode.value = false
+  planCaseExecutionSceneIds.value = []
+  planCaseExecutionQueue.value = []
+  await submitExecute()
+}
+
+const onPlaywrightExecutionFinished = async (payload?: { cancelled?: boolean }) => {
+  if (cdpPlanDispatch.value) {
+    if (payload?.cancelled) {
+      const cancelled = cdpPlanDispatch.value
+      await cancelTestPlanExecution(cancelled.plan.id, cancelled.reportId)
+      cdpPlanDispatch.value = null
+      liveExecutions.value = []
+      Message.warning('Chrome DevTools Protocol 测试计划执行已取消')
+      await goToReports(cancelled.plan, cancelled.reportId)
+      return
+    }
+    await onExecuteSceneSuccess()
+    const next = cdpPlanDispatch.value.queue.shift()
+    if (next) {
+      void executionCaseModalRef.value?.onOpen(next.scene, 'extension-cdp', {
+        caseIds: next.caseIds,
+        recordSource: 'test',
+        testPlanId: toIdString(cdpPlanDispatch.value.plan.id),
+        testReportId: cdpPlanDispatch.value.reportId,
+        projectEnvironmentId: cdpPlanDispatch.value.projectEnvironmentId,
+        autoStart: true,
+      })
+      return
+    }
+    const completed = cdpPlanDispatch.value
+    cdpPlanDispatch.value = null
+    Message.success('Chrome DevTools Protocol 测试计划执行完成')
+    await goToReports(completed.plan, completed.reportId)
+    return
+  }
+  if (payload?.cancelled) {
+    planCaseExecutionQueue.value = []
+    await onExecuteSceneSuccess()
+    liveExecutions.value = []
+    Message.warning('测试计划场景执行已取消')
+    return
+  }
+  if (planCaseExecutionQueue.value.length) {
+    await onExecuteSceneSuccess()
+    openNextPlanCaseSelection()
+    return
+  }
+  // 完成态实时日志保留到下一次批次开始，避免历史 artifact 覆盖完整运行时日志。
+  await onExecuteSceneSuccess()
+}
+
+const onCdpPlanStartupFailed = async (error: string) => {
+  if (!cdpPlanDispatch.value) {
+    planCaseExecutionQueue.value = []
+    liveExecutions.value = []
+    Message.error(`CDP 执行启动失败：${error}`)
+    return
+  }
+  const failed = cdpPlanDispatch.value
+  await cancelTestPlanExecution(failed.plan.id, failed.reportId)
+  cdpPlanDispatch.value = null
+  liveExecutions.value = []
+  Message.error(`CDP 计划调度失败：${error}`)
+  await goToReports(failed.plan, failed.reportId)
 }
 
 const openSceneTab = async (record: TestPlanResp) => {
@@ -915,24 +1669,32 @@ const goToReports = async (record: TestPlanResp, reportId?: string) => {
     path: '/test/testReport',
     query: {
       testPlanId: record.id,
+      returnView: 'scene-history',
       ...(reportId ? { id: reportId } : {}),
     },
   })
 }
 
 watch(
-  () => route.query.id,
-  async (id) => {
+  () => [route.query.id, route.query.view] as const,
+  async ([id, view]) => {
     if (!id) return
-    const record = dataList.value.find(item => String(item.id) === String(id))
-    if (record) {
-      await openDetail(record)
+    let record = dataList.value.find(item => String(item.id) === String(id))
+    if (!record) {
+      const { data } = await getTestPlan(String(id))
+      record = data || undefined
+    }
+    if (!record) return
+    if (view === 'scene-history') {
+      await openSceneTab(record)
+      const tabKey = `scene-${record.id}`
+      for (let attempt = 0; attempt < 3 && !sceneWorkspaceRefs.has(tabKey); attempt += 1) {
+        await nextTick()
+      }
+      await sceneWorkspaceRefs.get(tabKey)?.openHistory?.()
       return
     }
-    const { data } = await getTestPlan(String(id))
-    if (!data) return
-    detailRecord.value = data
-    detailVisible.value = true
+    await openDetail(record)
   },
   { immediate: true },
 )
@@ -973,27 +1735,139 @@ const submitForm = async (): Promise<boolean> => {
   return true
 }
 
-const submitExecute = async () => {
-  if (!currentRecord.value) return
+const submitExecute = async (): Promise<boolean> => {
+  if (!currentRecord.value) return false
+  if (execConfigLoading.value) {
+    Message.warning('执行环境正在加载，请稍后')
+    return false
+  }
   const current = currentRecord.value
   const projectEnvironmentId = toIdString(execState.projectEnvironmentId)
   const automationEnvironmentId = toIdString(execState.automationEnvironmentId)
-  const { data } = await executeTestPlan(current.id, {
-    projectEnvironmentId: projectEnvironmentId || undefined,
-    automationEnvironmentId: automationEnvironmentId || undefined,
-    executeName: execState.executeName,
-    executeEmail: execState.executeEmail,
-  })
+  if (!projectEnvironmentId) {
+    Message.warning('请选择产品环境')
+    return false
+  }
+  if (execState.executionEngine === 'SELENIUM' && !automationEnvironmentId) {
+    Message.warning('请选择自动化环境')
+    return false
+  }
+  if (execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL' && cdpPlanDispatch.value) {
+    Message.warning('当前已有 Chrome DevTools Protocol 测试计划正在执行')
+    return false
+  }
+  await refreshExecProjectEnvironmentStatus(projectEnvironmentId)
+  if (selectedExecProjectEnvironment.value?.statusLabel !== '在线') {
+    Message.warning('当前产品环境服务器不在线，请切换为在线环境后再执行')
+    return false
+  }
+  if (execState.executionEngine === 'SELENIUM') {
+    await refreshExecAutomationEnvironmentStatus(automationEnvironmentId)
+    if (selectedExecAutomationEnvironment.value?.onlineStatusLabel !== '在线'
+      || selectedExecAutomationEnvironment.value?.useStatusLabel !== '空闲') {
+      Message.warning('当前自动化执行节点不在线或非空闲状态，请切换节点后再执行')
+      return false
+    }
+  }
+  if (execState.executionEngine === 'PLAYWRIGHT_RUNNER'
+    && execRunnerConfig.caseTimeoutMs < execRunnerConfig.stepTimeoutMs) {
+    Message.warning('用例总超时不能小于单步骤超时')
+    return false
+  }
+  if (execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL'
+    && execCdpConfig.windowSizeMode === 'custom'
+    && (execCdpConfig.viewportWidth < 320 || execCdpConfig.viewportHeight < 320)) {
+    Message.warning('自定义窗口宽高不能小于 320')
+    return false
+  }
+  let data: TestPlanExecuteResp | undefined
+  try {
+    const response = await executeTestPlan(current.id, {
+      executionEngine: execState.executionEngine,
+      projectEnvironmentId,
+      automationEnvironmentId: execState.executionEngine === 'SELENIUM'
+        ? automationEnvironmentId || undefined
+        : undefined,
+      sceneIds: execScopeMode.value === 'selected' ? execSceneIds.value : undefined,
+      runnerOptions: execState.executionEngine === 'PLAYWRIGHT_RUNNER'
+        ? { ...execRunnerConfig }
+        : undefined,
+      cdpOptions: execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL'
+        ? { ...execCdpConfig }
+        : undefined,
+      executeName: execState.executeName,
+      executeEmail: execState.executeEmail,
+    })
+    data = response.data
+  } catch {
+    return false
+  }
   const executeResp = (data || {}) as TestPlanExecuteResp
   const buildMessage = data?.buildNumber ? `，构建号 ${data.buildNumber}` : ''
   Message.success(`执行已触发${buildMessage}`)
-  execVisible.value = false
   await search()
   const nextRecord = dataList.value.find(item => item.id === current.id) || current
   await openSceneTab(nextRecord)
   if (detailVisible.value && detailRecord.value?.id === current.id) detailRecord.value = nextRecord
+  if (executeResp.dispatchMode === 'CLIENT_CDP' && executeResp.testReportId) {
+    const executable = (executeResp.sceneExecutions || []).filter(item => item.caseIds?.length)
+    if (!executable.length) {
+      Message.warning('当前测试计划无可执行 CDP 用例')
+      await goToReports(nextRecord, String(executeResp.testReportId))
+      return true
+    }
+    let scenes: any[] = []
+    try {
+      const { data } = await getAutomationUiSceneSelected(executable.map(item => item.sceneKey))
+      scenes = Array.isArray(data) ? data : []
+    } catch {
+      await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
+      Message.error('加载 CDP 执行场景失败，本次执行已终止')
+      await goToReports(nextRecord, String(executeResp.testReportId))
+      return true
+    }
+    const sceneMap = new Map(scenes.map(scene => [String(scene.id), scene]))
+    const queue = executable
+      .map(item => ({ scene: sceneMap.get(String(item.sceneKey)), caseIds: item.caseIds.map(String) }))
+      .filter(item => Boolean(item.scene))
+    if (queue.length !== executable.length) {
+      await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
+      Message.error('测试计划中的部分 CDP 场景已不存在，执行已终止')
+      await goToReports(nextRecord, String(executeResp.testReportId))
+      return true
+    }
+    cdpPlanDispatch.value = {
+      plan: nextRecord,
+      reportId: String(executeResp.testReportId),
+      projectEnvironmentId,
+      queue,
+    }
+    const first = cdpPlanDispatch.value.queue.shift()
+    if (first) {
+      void executionCaseModalRef.value?.onOpen(first.scene, 'extension-cdp', {
+        caseIds: first.caseIds,
+        recordSource: 'test',
+        testPlanId: toIdString(nextRecord.id),
+        testReportId: String(executeResp.testReportId),
+        projectEnvironmentId,
+        autoStart: true,
+      })
+    } else {
+      await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
+      cdpPlanDispatch.value = null
+      Message.error('测试计划中的 CDP 场景已不存在，执行已终止')
+      await goToReports(nextRecord, String(executeResp.testReportId))
+    }
+    return true
+  }
   if (executeResp.testReportId) await goToReports(nextRecord, String(executeResp.testReportId))
+  return true
 }
+
+onUnmounted(() => {
+  const active = cdpPlanDispatch.value
+  if (active) void cancelTestPlanExecution(active.plan.id, active.reportId)
+})
 
 const onDelete = (record?: TestPlanResp) => {
   const ids = selectedKeys.value.length ? selectedKeys.value.map(item => String(item)) : record ? record.id : ''
@@ -1039,6 +1913,16 @@ const formatPlanDateTime = (value?: string | null) => {
   const s = String(value).trim()
   const normalized = s.includes('T') ? s.replace('T', ' ') : s
   return normalized.length > 19 ? normalized.slice(0, 19) : normalized
+}
+
+const resolvePlanExecuteResult = (record: TestPlanResp) => {
+  const status = String(record.status || '').toUpperCase()
+  if (status === 'RUNNING') return 'RUNNING'
+  if (status === 'NOT_STARTED') return 'NOT_EXECUTED'
+  const executedCount = Number(record.executedCount || 0)
+  const passedCount = Number(record.passedCount || 0)
+  if (!executedCount) return 'NOT_EXECUTED'
+  return passedCount >= executedCount ? 'PASSED' : 'FAILED'
 }
 </script>
 
@@ -1334,9 +2218,9 @@ const formatPlanDateTime = (value?: string | null) => {
     background: var(--color-fill-1);
   }
 
-  :deep(.arco-table-td) {
-    height: 46px;
-  }
+  // :deep(.arco-table-td) {
+  //   height: 46px;
+  // }
 
   :deep(.arco-table-pagination) {
     margin-top: 14px;
@@ -1367,6 +2251,32 @@ const formatPlanDateTime = (value?: string | null) => {
 
 .mb-3 {
   margin-bottom: 12px;
+}
+
+.plan-execute-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+
+  :deep(.arco-card) {
+    margin-bottom: 16px;
+  }
+
+  :deep(.arco-input-number) {
+    width: 100%;
+  }
+}
+
+.exec-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.executor-row {
+  margin-top: 4px;
 }
 
 </style>

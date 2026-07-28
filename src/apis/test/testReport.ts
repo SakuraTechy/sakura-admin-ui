@@ -2,6 +2,8 @@ import http from '@/utils/http'
 
 const BASE_URL = '/test/testReport'
 
+export type TestReportType = 'SELENIUM' | 'PLAYWRIGHT_RUNNER' | 'CHROME_DEVTOOLS_PROTOCOL'
+
 export interface TestReportResp {
   id: string
   projectId: string
@@ -13,6 +15,7 @@ export interface TestReportResp {
   description?: string
   triggerMode?: string
   executeMode?: string
+  reportType?: TestReportType
   runTime?: number
   buildNumber?: string
   consoleUrl?: string
@@ -65,6 +68,7 @@ export interface TestReportQuery {
   name?: string
   triggerMode?: string
   executeMode?: string
+  reportType?: TestReportType
   status?: string
   sort?: Array<string>
 }

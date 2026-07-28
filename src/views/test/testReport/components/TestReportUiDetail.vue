@@ -528,6 +528,7 @@ const testPlanId = computed(() => {
   if (uiStatistic.value.testPlanId) return uiStatistic.value.testPlanId as string | undefined
   return props.detailData?.testPlanId
 })
+const testReportId = computed(() => props.detailData?.id ? String(props.detailData.id) : undefined)
 
 const allData = ref<AutomationUiSceneResp[]>([])
 const passData = ref<AutomationUiSceneResp[]>([])
@@ -603,6 +604,7 @@ const fetchSceneList = async (type: 'all' | 'pass' | 'fail' | 'skip') => {
     }
     const res = await listAutomationUiScene({
       testPlanId: testPlanId.value,
+      testReportId: testReportId.value,
       buildNumber: buildNumber.value,
       executeResultType: executeResultType as 'report' | 'debug',
       executeResult: executeResultMap[type],
@@ -645,10 +647,12 @@ watch(
 
 <style scoped lang="scss">
 .test-report-ui-detail {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  /* padding: 0px 10px 0 10px; */
+  min-height: 0;
   box-sizing: border-box;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .env-info-descriptions {
@@ -660,12 +664,39 @@ watch(
 }
 
 .tab-list-wrapper {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   margin-top: 15px;
+  overflow: hidden;
 }
 
 .inner-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+
   :deep(.arco-tabs-nav) {
+    flex: none;
     width: 100%;
+  }
+
+  :deep(.arco-tabs-content) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  :deep(.arco-tabs-content-list),
+  :deep(.arco-tabs-pane) {
+    height: 100%;
+    min-height: 0;
+  }
+
+  :deep(.arco-tabs-pane) {
+    overflow: hidden;
   }
 
   :deep(.arco-tabs-tab) {
@@ -674,6 +705,9 @@ watch(
 }
 
 .charts-wrapper {
+  height: 100%;
+  overflow: auto;
+
   .chart-flex {
     display: flex;
     height: 370px;
@@ -685,7 +719,11 @@ watch(
 }
 
 .table-wrapper {
+  display: flex;
+  height: 100%;
+  min-height: 0;
   margin-top: 0px;
+  overflow: hidden;
 }
 
 :deep(.gi-table__toolbar) {

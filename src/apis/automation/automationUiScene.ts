@@ -3,7 +3,7 @@ import http from '@/utils/http'
 const BASE_URL = '/automation/automationUiScene'
 
 export type ExecutionType = 'jenkins' | 'extension-cdp' | 'playwright-runner'
-export type ExecutionViewType = 'record' | 'log' | 'report' | 'video'
+export type ExecutionViewType = 'record' | 'log' | 'live' | 'report' | 'video'
 
 export interface AutomationExecutionRecord {
   executionType?: ExecutionType
@@ -32,21 +32,8 @@ export interface AutomationUiSceneResp {
   level: string
   status: number
   tags: Array<object>
-  caseList: [
-    {
-      id: string
-      name: string
-      remark: string
-      type: string
-      stepList: [
-        {
-          id: string
-          name: string
-          type: string
-        },
-      ]
-    },
-  ]
+  caseList: AutomationUiCase[]
+  definitionVersion: number
   testPlanId: Array<object>
   reportId: string
   debugRecord: AutomationExecutionRecord[]
@@ -71,6 +58,8 @@ export interface AutomationUiSceneResp {
   updateUser: string
   updateTime: string
   updateIp: string
+  /** 执行状态窄表的单调版本，轮询不得依赖场景定义 updateTime。 */
+  executionRevision?: number
   delFlag: number
   createUserString: string
   updateUserString: string
@@ -90,19 +79,8 @@ export interface AutomationUiSceneDetailResp {
   level: string
   status: number
   tags: Array<object>
-  caseList: [
-    {
-      id: string
-      name: string
-      remark: string
-      stepList: [
-        {
-          id: string
-          name: string
-        },
-      ]
-    },
-  ]
+  caseList: AutomationUiCase[]
+  definitionVersion: number
   testPlanId: Array<object>
   reportId: string
   debugRecord: AutomationExecutionRecord[]
@@ -127,6 +105,8 @@ export interface AutomationUiSceneDetailResp {
   updateUser: string
   updateTime: string
   updateIp: string
+  /** 执行状态窄表的单调版本，轮询不得依赖场景定义 updateTime。 */
+  executionRevision?: number
   delFlag: number
   createUserString: string
   updateUserString: string
@@ -165,6 +145,8 @@ export interface AutomationUiSceneExecReq {
   executeName?: string
   executeEmail?: string
   testPlanId?: string
+  /** 测试报告ID，用于精确隔离同一计划的多次执行 */
+  testReportId?: string
   testReportId?: string
 }
 
@@ -181,6 +163,49 @@ export interface AutomationUiSceneExecAllReq {
   engine?: 'JENKINS' | 'PLAYWRIGHT'
   executeName?: string
   executeEmail?: string
+  testPlanId?: string
+  testReportId?: string
+}
+
+export interface AutomationUiStepConfig {
+  paramsName: string
+  paramsValue: string
+}
+
+export interface AutomationUiStep {
+  pid: string
+  id: string
+  name: string
+  remark?: string
+  type: 'step'
+  operationType?: string
+  operationName?: string
+  operationValue?: string
+  configList: AutomationUiStepConfig[]
+  order: number
+  status: number | string
+}
+
+export interface AutomationUiCase {
+  id: string
+  name: string
+  remark?: string
+  type: 'case'
+  order: number
+  status: number | string
+  stepList: AutomationUiStep[]
+}
+
+export type AutomationUiTreeNodeRef =
+  | { type: 'CASE', caseId: string }
+  | { type: 'STEP', caseId: string, stepId: string }
+
+export type AutomationUiTreeMovePosition = 'BEFORE' | 'AFTER' | 'INSIDE_LAST' | 'LAST'
+
+export interface AutomationUiTreeMutationResp {
+  changed: boolean
+  selectedNode: AutomationUiTreeNodeRef | null
+  definitionVersion: number
 }
 
 export interface AutomationUiSceneExecResp {
@@ -192,6 +217,12 @@ export interface AutomationUiSceneExecResp {
 
 export interface AutomationUiSceneClearReq {
   sceneIds: Array<string | number>
+}
+
+export interface AutomationUiSceneRevisionResp {
+  id: string
+  updateTime: string
+  executionRevision?: number
 }
 
 /** @desc 分页查询自动化管理-UI自动化场景列表 */
@@ -297,6 +328,23 @@ export function execAllAutomationUiScene(data: AutomationUiSceneExecAllReq) {
 /** @desc 根据 ID 集合查询场景 */
 export function getAutomationUiSceneSelected(ids: Array<string | number>) {
   return http.post<AutomationUiSceneResp[]>(`${BASE_URL}/selected`, ids)
+}
+
+export function copyCaseTree(data: { source: AutomationUiTreeNodeRef, name?: string, remark?: string, position: AutomationUiTreeMovePosition, anchor?: AutomationUiTreeNodeRef, expectedDefinitionVersion: number }, sceneDbId: string | number) {
+  return http.post<AutomationUiTreeMutationResp>(`${BASE_URL}/${sceneDbId}/caseTree/copy`, data)
+}
+
+export function moveCaseTree(data: { source: AutomationUiTreeNodeRef, target: AutomationUiTreeNodeRef, position: Exclude<AutomationUiTreeMovePosition, 'LAST'>, expectedDefinitionVersion: number }, sceneDbId: string | number) {
+  return http.put<AutomationUiTreeMutationResp>(`${BASE_URL}/${sceneDbId}/caseTree/move`, data)
+}
+
+export function deleteCaseTree(data: { nodes: AutomationUiTreeNodeRef[], expectedDefinitionVersion: number }, sceneDbId: string | number) {
+  return http.put<AutomationUiTreeMutationResp>(`${BASE_URL}/${sceneDbId}/caseTree/delete`, data)
+}
+
+/** @desc 查询场景轻量版本，避免轮询时重复下载 caseList 和执行历史 */
+export function getAutomationUiSceneSelectedRevisions(ids: Array<string | number>) {
+  return http.post<AutomationUiSceneRevisionResp[]>(`${BASE_URL}/selected/revisions`, ids)
 }
 
 /** @desc 清空 UI 自动化场景执行结果 */

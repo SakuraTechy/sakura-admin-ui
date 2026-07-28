@@ -47,23 +47,23 @@
                   打开控制台日志
                 </a-button>
               </a-card>
-              <a-card v-else title="结构化执行日志" size="small">
-                <a-descriptions :column="2" size="small" bordered>
-                  <a-descriptions-item label="执行 ID">{{ selectedExecutionId }}</a-descriptions-item>
-                  <a-descriptions-item label="用例">{{ caseResult.case_name || caseResult.case_id || selectedRecord.caseName || selectedRecord.caseId || '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="失败步骤">{{ selectedPlaywrightResult.failed_step_index ?? '-' }}</a-descriptions-item>
-                  <a-descriptions-item label="错误">{{ caseResult.error || selectedPlaywrightResult.error || selectedRecord.playwrightError || '-' }}</a-descriptions-item>
-                </a-descriptions>
-                <a-button
-                  v-if="executionType === 'playwright-runner' && consoleArtifactUrl"
-                  style="margin-top: 12px"
-                  :loading="artifactLoading"
-                  @click="loadConsoleArtifact"
-                >
-                  读取 Runner console events
-                </a-button>
-                <pre class="json-panel">{{ logContent }}</pre>
-              </a-card>
+              <AutomationExecutionLogViewer
+                v-else
+                :job-id="selectedJobId"
+                :status="caseResult.status || selectedRecord.executeStatus"
+                :artifact-url="executionLogArtifactUrl"
+                :fallback-content="logContent"
+              />
+            </template>
+
+            <template v-else-if="viewType === 'live'">
+              <AutomationExecutionLiveView
+                v-if="executionType === 'playwright-runner'"
+                :job-id="selectedJobId"
+                :status="caseResult.status || selectedRecord.executeStatus"
+                :quality="selectedLiveFrameQuality"
+              />
+              <a-empty v-else description="当前执行方式不支持实时画面" />
             </template>
 
             <template v-else-if="viewType === 'report'">
@@ -74,20 +74,20 @@
               </a-card>
               <template v-else>
                 <a-card title="用例执行汇总" size="small">
-                  <a-descriptions :column="4" size="small" bordered>
+                  <a-descriptions :column="2" size="small" bordered>
                     <a-descriptions-item label="用例">{{ caseResult.case_name || caseResult.case_id || selectedRecord.caseName || '-' }}</a-descriptions-item>
+                    <a-descriptions-item label="耗时">{{ formatDuration(selectedCaseDuration) }}</a-descriptions-item>
                     <a-descriptions-item label="结果">
                       <a-tag :color="resultColor(caseResult.status || selectedRecord.executeResult)">
-                        {{ resultLabel(caseResult.status || selectedRecord.executeResult) }}
+                        {{ aggregateResultLabel(caseResult.status || selectedRecord.executeResult) }}
                       </a-tag>
                     </a-descriptions-item>
                     <a-descriptions-item label="通过率">{{ selectedCasePassRate }}</a-descriptions-item>
-                    <a-descriptions-item label="耗时">{{ formatDuration(selectedCaseDuration) }}</a-descriptions-item>
                   </a-descriptions>
                   <a-space v-if="executionType === 'playwright-runner'" wrap style="margin-top: 12px">
-                    <a-button v-if="reportArtifactUrl" type="primary" @click="openProtectedArtifact(reportArtifactUrl)">打开 HTML report</a-button>
-                    <a-button v-if="traceArtifactUrl" @click="openProtectedArtifact(traceArtifactUrl)">下载 Trace</a-button>
-                    <a-button v-if="screenshotArtifactUrl" @click="openProtectedArtifact(screenshotArtifactUrl)">查看失败截图</a-button>
+                    <a-button v-if="reportArtifactUrl" type="primary" @click="openHtmlReport">在线预览 HTML report</a-button>
+                    <a-button v-if="traceArtifactUrl" @click="openTracePreview">在线查看 Trace</a-button>
+                    <a-button v-if="screenshotArtifactUrl" @click="openScreenshotPreview">在线查看失败截图</a-button>
                   </a-space>
                 </a-card>
                 <a-table
@@ -140,10 +140,13 @@ import {
   matchesExecutionRecord,
   resolveJenkinsVideoUrl,
   executionResultColor as resultColor,
+  executionAggregateResultLabel as aggregateResultLabel,
   executionResultLabel as resultLabel,
   executionStatusColor as statusColor,
   executionStatusLabel as statusLabel,
 } from '../execution'
+import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
+import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { getToken } from '@/utils/auth'
 
@@ -155,13 +158,13 @@ const artifactLoading = ref(false)
 const scene = ref<any>()
 const executionType = ref<ExecutionType>('jenkins')
 const recordScope = ref<ExecutionRecordScope>('all')
+const testPlanId = ref('')
 const viewType = ref<ExecutionViewType>('record')
 const selectedRecordKey = ref('')
 const targetCaseId = ref('')
-const artifactText = ref('')
 const videoObjectUrl = ref('')
 
-const records = computed(() => getExecutionRecords(scene.value, executionType.value, recordScope.value))
+const records = computed(() => getExecutionRecords(scene.value, executionType.value, recordScope.value, testPlanId.value))
 const selectedRecord = computed<any>(() => records.value.find((item) => item.__key === selectedRecordKey.value) || records.value[0])
 const recordOptions = computed(() => records.value.map((record: any) => ({
   value: record.__key,
@@ -188,8 +191,29 @@ const selectedExecutionId = computed(() => (
   || selectedRecord.value?.executionId
   || '-'
 ))
+const selectedJobId = computed(() => String(
+  caseResult.value?.job_id
+  || caseResult.value?.jobId
+  || selectedRecord.value?.jobId
+  || '',
+))
+const selectedLiveFrameQuality = computed(() => {
+  const executionConfig = selectedPlaywrightResult.value?.execution_config
+    || selectedPlaywrightResult.value?.executionConfig
+    || selectedRecord.value?.executionConfig
+    || {}
+  return caseResult.value?.live_frame_quality
+    || caseResult.value?.liveFrameQuality
+    || executionConfig.live_frame_quality
+    || executionConfig.liveFrameQuality
+    || selectedRecord.value?.liveFrameQuality
+    || ''
+})
 const selectedCaseDuration = computed(() => (
-  caseResult.value?.duration_ms
+  caseResult.value?.wall_clock_duration_ms
+  ?? caseResult.value?.wallClockDurationMs
+  ?? selectedRecord.value?.wallClockDuration
+  ?? caseResult.value?.duration_ms
   ?? caseResult.value?.duration
   ?? selectedRecord.value?.duration
 ))
@@ -216,7 +240,7 @@ const artifactUploadErrors = computed<any[]>(() => {
     || selectedRecord.value?.artifactUploadErrors
   return Array.isArray(value) ? value : []
 })
-const consoleArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'console_log', 'console', 'logs'))
+const executionLogArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'execution_log'))
 const reportArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'report_html', 'report'))
 const videoArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'video', 'videos'))
 const traceArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'trace'))
@@ -230,7 +254,6 @@ const runnerVideoEmptyText = computed(() => {
   return '本次 Runner 执行没有可用录屏'
 })
 const logContent = computed(() => {
-  if (artifactText.value) return artifactText.value
   const record = selectedRecord.value || {}
   if (executionType.value === 'extension-cdp') {
     return prettyJson({
@@ -241,6 +264,13 @@ const logContent = computed(() => {
     })
   }
   return prettyJson({
+    execution_id: selectedExecutionId.value,
+    executor: executionType.value,
+    case_id: caseResult.value?.case_id || selectedRecord.value?.caseId,
+    case_name: caseResult.value?.case_name || selectedRecord.value?.caseName,
+    started_at: caseResult.value?.started_at || selectedRecord.value?.startedAt,
+    finished_at: caseResult.value?.finished_at || selectedRecord.value?.finishedAt,
+    status: caseResult.value?.status || selectedRecord.value?.executeStatus,
     error: caseResult.value?.error || selectedPlaywrightResult.value?.error || record.playwrightError || '',
     error_code: selectedPlaywrightResult.value?.error_code,
     error_details: selectedPlaywrightResult.value?.error_details,
@@ -266,7 +296,7 @@ const recordColumns = [
     title: '结果',
     dataIndex: 'executeResult',
     width: 90,
-    render: ({ record }: any) => <a-tag color={resultColor(record.executeResult)}>{resultLabel(record.executeResult)}</a-tag>,
+    render: ({ record }: any) => <a-tag color={resultColor(record.executeResult)}>{aggregateResultLabel(record.executeResult)}</a-tag>,
   },
   { title: '耗时', dataIndex: 'duration', width: 100, render: ({ record }: any) => formatDuration(record.duration) },
   {
@@ -284,13 +314,14 @@ const recordColumns = [
 ]
 
 const stepColumns = [
-  { title: '#', dataIndex: 'step_index', width: 60 },
-  { title: '步骤 ID', dataIndex: 'step_id', width: 140 },
-  { title: '动作', dataIndex: 'action_type', width: 130 },
+  { title: '#', dataIndex: 'step_index', width: 40 },
+  { title: '步骤 ID', dataIndex: 'step_id', width: 150 },
+  { title: '动作', dataIndex: 'action_type', width: 80 },
   { title: '描述', dataIndex: 'description', ellipsis: true, tooltip: true },
   {
     title: '结果',
     dataIndex: 'status',
+    align: 'center',
     width: 90,
     render: ({ record }: any) => <a-tag color={resultColor(record.status)}>{resultLabel(record.status)}</a-tag>,
   },
@@ -306,17 +337,17 @@ const onOpen = async (
 ) => {
   executionType.value = type
   recordScope.value = options.source || 'all'
+  testPlanId.value = options.testPlanId || ''
   viewType.value = targetView
   selectedRecordKey.value = ''
   targetCaseId.value = options.target?.caseId || ''
-  artifactText.value = ''
   releaseVideoUrl()
   visible.value = true
   loading.value = true
   try {
     const { data } = await getAutomationUiScene(sceneId)
     scene.value = data
-    const availableRecords = getExecutionRecords(data, type, recordScope.value)
+    const availableRecords = getExecutionRecords(data, type, recordScope.value, testPlanId.value)
     const targetRecord = availableRecords.find((record) => matchesExecutionRecord(record, options.target))
     selectedRecordKey.value = targetRecord?.__key || availableRecords[0]?.__key || ''
   } finally {
@@ -329,17 +360,92 @@ const openExternal = (url?: string) => {
   window.open(url, '_blank')
 }
 
-const loadProtectedBlob = async (url: string) => {
+const loadProtectedBlob = async (url: string, expectedContentType?: string) => {
   const requestUrl = resolveArtifactRequestUrl(url)
   const token = getToken()
   const response = await fetch(requestUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
   if (!response.ok) throw new Error(`读取执行产物失败（HTTP ${response.status}）`)
-  return response.blob()
+  const contentType = response.headers.get('content-type') || ''
+  const body = await response.blob()
+  const preview = (contentType.includes('json') ? body : body.slice(0, 512))
+  const previewText = await preview.text()
+  if (contentType.includes('json') || previewText.trimStart().startsWith('{')) {
+    const text = contentType.includes('json') ? previewText : await body.text()
+    let payload: any
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      throw new Error('读取执行产物失败：响应格式无效')
+    }
+    if (payload?.success === false || payload?.code === 1) {
+      throw new Error(payload.msg || payload.message || '读取执行产物失败')
+    }
+    throw new Error('读取执行产物失败：服务端返回了 JSON，而不是文件')
+  }
+  return expectedContentType ? new Blob([body], { type: expectedContentType }) : body
 }
 
-const openProtectedArtifact = async (url: string) => {
+const openHtmlReport = () => {
+  if (!reportArtifactUrl.value) return
+  return openProtectedArtifact(reportArtifactUrl.value, 'text/html;charset=UTF-8')
+}
+
+const openTracePreview = async () => {
+  if (!traceArtifactUrl.value) return
+  const requestUrl = resolveArtifactRequestUrl(traceArtifactUrl.value)
+  const traceUrl = /^https?:\/\//i.test(requestUrl)
+    ? requestUrl
+    : new URL(requestUrl, window.location.origin).href
+  const viewerWindow = window.open('', '_blank')
+  if (!viewerWindow) {
+    Message.warning('浏览器已拦截 Trace Viewer，请允许当前站点打开弹窗后重试')
+    return
+  }
+  if (isPublicHttpsUrl(traceUrl)) {
+    viewerWindow.location.href = `https://trace.playwright.dev/?trace=${encodeURIComponent(traceUrl)}`
+    return
+  }
+  artifactLoading.value = true
+  try {
+    const trace = await loadProtectedBlob(traceArtifactUrl.value, 'application/zip')
+    downloadBlob(trace, `playwright-trace-${selectedExecutionId.value || 'trace'}.zip`)
+    viewerWindow.location.href = 'https://trace.playwright.dev/'
+    Message.info('Trace 已准备完成，请在 Trace Viewer 中点击“Select file”选择刚下载的文件')
+  } catch (error: any) {
+    viewerWindow.close()
+    Message.error(error?.message || '读取 Playwright Trace 失败')
+  } finally {
+    artifactLoading.value = false
+  }
+}
+
+const openScreenshotPreview = () => {
+  if (!screenshotArtifactUrl.value) return
+  return openProtectedArtifact(screenshotArtifactUrl.value, 'image/png')
+}
+
+function isPublicHttpsUrl(url: string) {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'https:') return false
+  const hostname = parsed.hostname.toLowerCase()
+  if (hostname === 'localhost' || hostname === '::1' || hostname.endsWith('.local')) return false
+  if (/^127\./.test(hostname) || /^10\./.test(hostname) || /^192\.168\./.test(hostname)) return false
+  const private172 = hostname.match(/^172\.(\d+)\./)
+  return !private172 || Number(private172[1]) < 16 || Number(private172[1]) > 31
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+  link.download = fileName
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+}
+
+const openProtectedArtifact = async (url: string, expectedContentType?: string) => {
   const artifactWindow = window.open('', '_blank')
   if (!artifactWindow) {
     Message.warning('浏览器已拦截产物窗口，请允许当前站点打开弹窗后重试')
@@ -347,31 +453,13 @@ const openProtectedArtifact = async (url: string) => {
   }
   artifactLoading.value = true
   try {
-    const blob = await loadProtectedBlob(url)
+    const blob = await loadProtectedBlob(url, expectedContentType)
     const objectUrl = URL.createObjectURL(blob)
     artifactWindow.location.href = objectUrl
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000)
   } catch (error: any) {
     artifactWindow.close()
     Message.error(error?.message || '读取执行产物失败')
-  } finally {
-    artifactLoading.value = false
-  }
-}
-
-const loadConsoleArtifact = async () => {
-  if (!consoleArtifactUrl.value) return
-  artifactLoading.value = true
-  try {
-    const blob = await loadProtectedBlob(consoleArtifactUrl.value)
-    const text = await blob.text()
-    try {
-      artifactText.value = prettyJson(JSON.parse(text))
-    } catch {
-      artifactText.value = text
-    }
-  } catch (error: any) {
-    Message.error(error?.message || '读取 Runner console events 失败')
   } finally {
     artifactLoading.value = false
   }
@@ -405,7 +493,6 @@ function resolveArtifactRequestUrl(url: string) {
 }
 
 watch(selectedRecordKey, () => {
-  artifactText.value = ''
   releaseVideoUrl()
 })
 onUnmounted(releaseVideoUrl)

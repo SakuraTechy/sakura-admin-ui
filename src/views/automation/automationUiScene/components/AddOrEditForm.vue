@@ -1,5 +1,5 @@
 <template>
-  <GiPageLayout ref="pageLayout" :left-style="{ width: 450 }">
+  <GiPageLayout ref="pageLayout" :left-style="{ width: 440 }">
     <template #left>
       <a-tabs :active-key="activeKey" type="text" size="medium" @change="handleTabChange">
         <!-- <template #extra>
@@ -75,6 +75,8 @@
             ref="caseListRef"
             :readonly="isReadonly"
             :case-list="caseList"
+            :definition-version="sceneDetail?.definitionVersion ?? 0"
+            :refresh-scene="getSceneInfo"
             @get-scene-info="getSceneInfo"
             @get-case="getCase"
             @get-step="getStep"
@@ -116,15 +118,6 @@
                 </a-doption>
               </template>
             </a-dropdown-button>
-            <a-button
-              v-if="executionRunning"
-              v-permission="['automation:automationUiScene:execute']"
-              status="danger"
-              @click="cancelLiveBatch"
-            >
-              <template #icon><icon-stop /></template>
-              取消执行批次
-            </a-button>
           </a-space>
         </div>
       </a-card> -->
@@ -137,7 +130,7 @@
               <a-descriptions-item label="名称">{{ caseDetail?.name || stepDetail?.name }}</a-descriptions-item>
               <!-- <a-descriptions-item label="备注">{{ caseDetail?.remark }}</a-descriptions-item> -->
               <a-descriptions-item label="状态">
-                <GiCellTag :value="caseDetail?.status || stepDetail?.status" :dict="status_type" />
+                <GiCellTag :value="normalizeAutomationNodeStatus(caseDetail?.status ?? stepDetail?.status)" :dict="status_type" />
               </a-descriptions-item>
               <a-descriptions-item v-if="stepDetail && (!caseDetail || !caseDetail.type)" label="操作类型">{{ stepDetail?.operationType }}</a-descriptions-item>
               <a-descriptions-item v-if="stepDetail && (!caseDetail || !caseDetail.type)" label="操作方法">{{ stepDetail?.operationName }}</a-descriptions-item>
@@ -253,6 +246,8 @@
             :loading="sceneInfoLoading"
             :selected-case-id="selectedHistoryCaseId"
             :live-executions="liveExecutions"
+            @cancel-batch="cancelHistoryBatch"
+            @cancel-case="cancelHistoryCase"
             @refresh="getSceneInfo()"
             @show-all="showAllExecutionHistory"
           />
@@ -287,13 +282,17 @@
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, reactive, ref, watch } from 'vue'
+import { computed, defineEmits, defineProps, nextTick, reactive, ref, watch } from 'vue'
 import { add, mapTree } from 'xe-utils'
 import TagsInput from 'vue3-tags-input'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { string } from 'sql-formatter/dist/cjs/lexer/regexFactory'
 
 import {
+  type ExecutionCaseOpenOptions,
+  type ExecutionContext,
+  type ExecutionHistoryBatchRow,
+  type ExecutionHistoryCaseRow,
   type ExecutionType,
   type LiveExecutionCase,
   executionTypeOptions,
@@ -315,8 +314,13 @@ import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
 import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
 import { type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { normalizeAutomationNodeStatus } from '../caseTree'
 import { findNodePath } from '@/utils/sakura'
 import http from '@/utils/http'
+import {
+  cancelAutomationPlaywrightBatch,
+  cancelAutomationPlaywrightBatchCase,
+} from '@/apis/automation/automationPlaywrightRunner'
 
 defineOptions({ name: 'Ui' })
 
@@ -712,7 +716,7 @@ const openExecuteModal = async () => {
   executeSceneModalRef.value?.onOpen([data], { source: 'ui' })
 }
 
-interface ExecutionCaseSelection {
+interface ExecutionCaseSelection extends ExecutionContext {
   scene: any
   executionType: Exclude<ExecutionType, 'jenkins'>
   caseIds: string[]
@@ -724,16 +728,17 @@ const executionCaseSelectModalRef = ref<{
   onOpen: (
     record: any,
     type: Exclude<ExecutionType, 'jenkins'>,
-    options?: { caseIds?: string[] },
+    options?: ExecutionCaseOpenOptions,
   ) => void
 }>()
 const executionCaseModalRef = ref<{
   onOpen: (
     record: any,
     type: Exclude<ExecutionType, 'jenkins'>,
-    options: { caseIds: string[] },
+    options: ExecutionCaseOpenOptions,
   ) => void
   cancelBatch: () => Promise<void>
+  cancelActiveCase: () => Promise<void>
 }>()
 const handleUnifiedExecutionSelect = async (value: string) => {
   const type = value as ExecutionType
@@ -753,12 +758,16 @@ const handleUnifiedExecutionSelect = async (value: string) => {
 function openExecutionConfig(payload: ExecutionCaseSelection) {
   executionCaseModalRef.value?.onOpen(payload.scene, payload.executionType, {
     caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
   })
 }
 
 function reopenExecutionCaseSelect(payload: ExecutionCaseSelection) {
   executionCaseSelectModalRef.value?.onOpen(payload.scene, payload.executionType, {
     caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
   })
 }
 
@@ -770,14 +779,39 @@ function handleExecutionStarted() {
 async function handleExecutionFinished() {
   try {
     await getSceneInfo()
-  } finally {
+    // 最终结果已落库并包含步骤明细，移除临时实时行，报告立即切换到完整历史记录。
     liveExecutions.value = []
+  } finally {
     executionRunning.value = false
   }
 }
 
-async function cancelLiveBatch() {
-  await executionCaseModalRef.value?.cancelBatch()
+const cancelHistoryBatch = (batch: ExecutionHistoryBatchRow, markCancelling?: () => void) => {
+  if (!batch.sceneKey || !batch.batchId) return
+  Modal.warning({
+    title: '确认取消执行批次',
+    content: '取消后当前批次中尚未完成的用例将不再执行，是否确认？',
+    onOk: async () => {
+      markCancelling?.()
+      await cancelAutomationPlaywrightBatch(batch.sceneKey, batch.batchId)
+      Message.success('已发起取消执行批次')
+      await getSceneInfo()
+    },
+  })
+}
+
+const cancelHistoryCase = (row: ExecutionHistoryCaseRow, markCancelling?: () => void) => {
+  if (!row.sceneKey || !row.batchId || !row.caseId || row.caseId === '-') return
+  Modal.warning({
+    title: '确认取消当前用例',
+    content: `取消用例“${row.caseName}”不会影响同批次其他用例，是否确认？`,
+    onOk: async () => {
+      markCancelling?.()
+      await cancelAutomationPlaywrightBatchCase(row.sceneKey, row.batchId, row.caseId)
+      Message.success('已发起取消当前用例')
+      await getSceneInfo()
+    },
+  })
 }
 
 const handleCancel = () => {
@@ -850,6 +884,7 @@ const caseList = ref([])
 const stepList = ref([])
 const sceneDetail = ref<AutomationUiSceneDetailResp>()
 const sceneInfoLoading = ref(false)
+let sceneInfoRequestSequence = 0
 const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp, options?: RecordingOpenOptions) => void }>()
 
 const currentScene = computed<AutomationUiSceneResp | null>(() => {
@@ -869,21 +904,27 @@ const currentScene = computed<AutomationUiSceneResp | null>(() => {
     status: form.status,
     tags: Array.isArray(form.tags) ? form.tags : [],
     caseList: caseList.value as AutomationUiSceneResp['caseList'],
+    definitionVersion: sceneDetail.value?.definitionVersion ?? 0,
   } as AutomationUiSceneResp
 })
 
 const getSceneInfo = async (data1?: any) => {
   if (!uiStore.activeId) return
+  const requestSequence = ++sceneInfoRequestSequence
+  const activeSceneId = String(uiStore.activeId)
   sceneInfoLoading.value = true
   try {
-    const { data } = await getAutomationUiScene(uiStore.activeId)
+    const { data } = await getAutomationUiScene(activeSceneId)
+    if (requestSequence !== sceneInfoRequestSequence || String(uiStore.activeId || '') !== activeSceneId) return
     sceneDetail.value = data
     Object.assign(form, data)
     form.executeStatus = resolveSceneStatusValue(data.executeStatus, status_type.value) ?? '10'
     // 先清空数组，再添加新元素
     caseList.value.splice(0)
     Object.assign(caseList.value, data.caseList ?? [])
-    caseListRef.value?.getTreeCaseList(data1)
+    // 等待 caseList/definitionVersion 传入子树后再恢复节点，避免用旧 props 重建树。
+    await nextTick()
+    await caseListRef.value?.getTreeCaseList(data1)
     console.log('caseList', caseList.value)
     // stepTotal.value = data.caseList.reduce((total: number, item: any) => total + item.stepList.length, 0)
     stepList.value = caseList.value.reduce((list: any, item: any) => {
@@ -891,7 +932,7 @@ const getSceneInfo = async (data1?: any) => {
     }, [])
     console.log('stepList', stepList.value)
   } finally {
-    sceneInfoLoading.value = false
+    if (requestSequence === sceneInfoRequestSequence) sceneInfoLoading.value = false
   }
 }
 
@@ -907,15 +948,17 @@ const stepDetail = ref()
 const selectedHistoryCaseId = ref('')
 const getCase = async (id: string) => {
   console.log('getCase', id)
-  caseDetail.value = caseList.value.find((item: any) => item.id === id)
+  caseDetail.value = caseList.value.find((item: any) => String(item.id) === String(id))
   stepDetail.value = undefined
   selectedHistoryCaseId.value = String(id || '')
 }
 
 const getStep = async (data: any) => {
   console.log('getStep', data)
-  const parentCase = caseList.value.find((item: any) => item.id === (data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid))
-  stepDetail.value = parentCase?.stepList?.find((item: any) => item.id === (data?.id || data.node?.id))
+  const parentCaseId = data.node?.caseId || data.dropNode?.caseId || data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid
+  const stepId = data.node?.stepId || data.dropNode?.stepId || data?.id || data.node?.id
+  const parentCase = caseList.value.find((item: any) => String(item.id) === String(parentCaseId))
+  stepDetail.value = parentCase?.stepList?.find((item: any) => String(item.id) === String(stepId))
   // console.log('caseDetail', caseDetail.value, 'stepDetail', stepDetail.value)
   caseDetail.value = undefined
   selectedHistoryCaseId.value = String(parentCase?.id || '')
@@ -948,8 +991,10 @@ const openChromeRecordingFromNode = (data: { mode: RecordingMode, node: any }) =
   const node = data.node || {}
   const isCase = node.type === 'case'
   const isStep = node.type === 'step'
-  const targetCaseId = isCase ? String(node.id || '') : String(node.pid || '')
-  const targetStepId = isStep ? String(node.id || '') : undefined
+  const targetCaseId = isCase
+    ? String(node.caseId || node.id || '')
+    : String(node.caseId || node.pid || '')
+  const targetStepId = isStep ? String(node.stepId || node.id || '') : undefined
   openChromeRecording({
     allowedModes: [data.mode],
     defaultMode: data.mode,
@@ -958,8 +1003,8 @@ const openChromeRecordingFromNode = (data: { mode: RecordingMode, node: any }) =
     fixedTargetStep: data.mode === 'replaceStep' && isStep,
     targetCaseId: data.mode === 'appendCase' ? undefined : targetCaseId,
     targetStepId,
-    appendAfterCaseId: data.mode === 'appendCase' && isCase ? String(node.id || '') : undefined,
-    appendAfterStepId: data.mode === 'appendStep' && isStep ? String(node.id || '') : undefined,
+    appendAfterCaseId: data.mode === 'appendCase' && isCase ? String(node.caseId || node.id || '') : undefined,
+    appendAfterStepId: data.mode === 'appendStep' && isStep ? String(node.stepId || node.id || '') : undefined,
   })
 }
 
@@ -1096,10 +1141,11 @@ export default {}
 
 .detail-panel {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   box-sizing: border-box;
   overflow-y: auto;
-  overflow-x: auto;
+  overflow-x: hidden;
   scrollbar-gutter: stable;
 }
 
@@ -1130,10 +1176,19 @@ export default {}
     gap: 5px;
 }
 .tabs {
-  margin: 0 20px 0 20px;
+  width: auto;
+  min-width: 0;
+  margin: 0 10px 0 10px;
 
   :deep(.arco-tabs-nav-tab) {
     justify-content: left;
+  }
+
+  :deep(.arco-tabs-content),
+  :deep(.arco-tabs-content-list),
+  :deep(.arco-tabs-pane) {
+    min-width: 0;
+    max-width: 100%;
   }
 }
 

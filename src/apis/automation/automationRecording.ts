@@ -54,6 +54,7 @@ export interface PlaywrightRecordedCaseReq {
 export interface AutomationRecordingImportReq {
   mode: 'createScene' | 'appendCase' | 'replaceCase' | 'appendStep' | 'replaceStep'
   targetSceneDbId?: string | number
+  expectedDefinitionVersion?: number
   targetCaseId?: string
   targetStepId?: string
   appendPosition?: 'FIRST' | 'LAST' | 'AFTER'

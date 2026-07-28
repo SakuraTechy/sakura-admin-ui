@@ -427,7 +427,7 @@ defineExpose({
     :deep(.arco-table-pagination) {
       display: flex;
       align-items: baseline;
-      margin-top: 12px;
+      margin-top: 0px;
       justify-content: flex-end;
     }
 

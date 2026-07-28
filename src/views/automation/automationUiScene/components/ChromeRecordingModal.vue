@@ -1147,6 +1147,7 @@ const buildRecordingImport = () => {
     enabled: true,
     mode: form.mode,
     targetSceneDbId: form.mode === 'createScene' ? undefined : activeTargetScene?.id,
+    expectedDefinitionVersion: form.mode === 'createScene' ? undefined : activeTargetScene?.definitionVersion,
     targetCaseId: targetCaseModes.includes(form.mode) ? form.targetCaseId : undefined,
     targetStepId: form.mode === 'replaceStep' ? form.targetStepId : undefined,
     appendPosition: form.mode === 'appendCase' ? appendPosition.position : undefined,

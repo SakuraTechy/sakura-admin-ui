@@ -52,7 +52,7 @@
             show-line
             size="mini"
             :data="props.treeData"
-            :field-names="{ key: 'id', title: 'name' }"
+            :field-names="treeFieldNames"
             @select="onTreeSelect"
           >
             <template #title="node">
@@ -94,6 +94,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import type { TreeInstance } from '@arco-design/web-vue'
 
 defineOptions({ name: 'GiMenu' })
@@ -110,6 +111,9 @@ const emit = defineEmits([
 ])
 
 const popupVisible = ref(false)
+const treeFieldNames = computed(() => props.treeData.some((item: any) => item?.treeKey)
+  ? { key: 'treeKey', title: 'name', children: 'children' }
+  : { key: 'id', title: 'name', children: 'children' })
 
 const onClick = (mode: any) => {
   emit('on-menu-item-click', mode)

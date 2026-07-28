@@ -52,16 +52,22 @@
           :key="sceneKey"
           ref="automationUiSceneRef"
           @update-scene="addTab"
+          @open-history="openExecutionHistory"
           @execute-scene="executeScene"
           @execute-scenes="executeScenes"
           @execute-all-scenes="executeAllScenes"
+          @execution-started="openExecutionHistory"
+          @batch-update="liveExecutions = $event"
         />
+      </template>
+      <template #history>
+        <AutomationUiSceneHistoryWorkspace ref="historyWorkspaceRef" :live-executions="liveExecutions" />
       </template>
       <template #content>
         <AddOrEditForm ref="addOrEditFormRef" @add-tab="addTab" @remove-tab="removeTab" @update-tab="updateTab" />
       </template>
     </TabList>
-    <ExecuteSceneModal ref="executeSceneModalRef" @success="refresh" />
+    <ExecuteSceneModal ref="executeSceneModalRef" @started="openExecutionHistory" @success="refresh" />
   </GiPageLayout>
 </template>
 
@@ -72,9 +78,11 @@ import { mapTree } from 'xe-utils'
 import TabList from './components/tab/tabList.vue'
 import AddOrEditForm from './components/AddOrEditForm.vue'
 import AutomationUiScene from './components/AutomationUiScene.vue'
+import AutomationUiSceneHistoryWorkspace from './components/AutomationUiSceneHistoryWorkspace.vue'
 import ExecuteSceneModal from './components/ExecuteSceneModal.vue'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
+import type { LiveExecutionCase } from './execution'
 import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
 
 defineOptions({ name: 'Ui' })
@@ -272,15 +280,35 @@ const updateTab = (record: any) => {
 }
 
 const executeSceneModalRef = ref()
-const executeScene = (record: any) => {
+const pendingHistorySceneId = ref<string | undefined>()
+const liveExecutions = ref<LiveExecutionCase[]>([])
+const historyWorkspaceRef = ref<{ openHistory: (sceneId?: string) => Promise<void> }>()
+const openExecutionHistory = async (sceneId?: string) => {
+  const targetSceneId = sceneId ?? pendingHistorySceneId.value
+  pendingHistorySceneId.value = undefined
+  tabListRef.value?.openHistoryTab()
+  await nextTick()
+  await historyWorkspaceRef.value?.openHistory(targetSceneId)
+}
+const executeScene = (record: any, executionType: string) => {
+  if (executionType !== 'jenkins') return
+  pendingHistorySceneId.value = String(record.id)
   executeSceneModalRef.value?.onOpen([record], { source: 'ui' })
 }
-const executeScenes = (records: any[]) => {
+const executeScenes = (records: any[], executionType: string) => {
+  if (executionType !== 'jenkins') return
+  pendingHistorySceneId.value = undefined
   executeSceneModalRef.value?.onOpen(records, { mode: 'selected', source: 'ui' })
 }
-const executeAllScenes = (records: any[], query: any) => {
+const executeAllScenes = (records: any[], query: any, executionType: string) => {
+  if (executionType !== 'jenkins') return
+  pendingHistorySceneId.value = undefined
   executeSceneModalRef.value?.onOpen(records, { mode: 'all', query, source: 'ui' })
 }
+
+watch(() => uiStore.activeKey, (activeKey) => {
+  if (activeKey === 'history') void historyWorkspaceRef.value?.openHistory()
+})
 
 // const updateScene = async (record: any) => {
 //   tabListRef.value?.addTab(record)
@@ -338,7 +366,7 @@ onMounted(async () => {
   flex-wrap: nowrap;
 }
 :deep(.gi-page-layout__body) {
-  padding: 16px 0px 0px 0px !important;
+  padding: 6px 0px 0px 0px !important;
   flex-direction: row;
 }
 :deep(.gi-page-layout--margin){

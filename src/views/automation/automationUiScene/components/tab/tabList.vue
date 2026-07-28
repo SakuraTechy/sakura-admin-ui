@@ -76,7 +76,8 @@
             </a-dropdown>
           </a-tooltip>
         </template>
-        <slot name="content" :content="{ ...pane, activeKey }"></slot>
+        <slot v-if="pane.kind === 'history'" name="history"></slot>
+        <slot v-else name="content" :content="{ ...pane, activeKey }"></slot>
       </a-tab-pane>
     </a-tabs>
   </div>
@@ -96,6 +97,7 @@ interface Pane {
   id: string
   readonly?: boolean
   copy?: boolean
+  kind?: 'history'
 }
 
 const emit = defineEmits<{
@@ -126,6 +128,7 @@ watch(() => uiStore.activeKey, (val) => {
     uiStore.activeCopy = false
   } else {
     emit('collapsed', true)
+    uiStore.activeId = ''
     uiStore.activeReadonly = false
     uiStore.activeCopy = false
   }
@@ -144,8 +147,25 @@ watch(() => uiStore.activeKey, (val) => {
 watch(() => uiStore.projectId, (val) => {
   if (val) {
     panes.value = []
+    uiStore.activeKey = '0'
   }
 })
+
+const openHistoryTab = () => {
+  const historyPane = panes.value.find(pane => pane.kind === 'history')
+  if (!historyPane) {
+    panes.value.push({
+      title: '执行历史',
+      content: null,
+      key: 'history',
+      closable: true,
+      path: '',
+      id: '',
+      kind: 'history',
+    })
+  }
+  uiStore.activeKey = 'history'
+}
 
 const handleUpdateCase = (record: any, updateTitle: string) => {
   panes.value = panes.value.map((item) => {
@@ -200,7 +220,8 @@ const addTab = (record?: any) => {
     })
 
     // 如果已存在相同标签页，直接激活该标签页并返回
-    if (samePane.length > 0) {
+    // 复制场景需要保留源场景 ID 用于调用复制接口，不能复用已打开的编辑标签页。
+    if (samePane.length > 0 && !record.copy) {
       panes.value = panes.value.map((pane) => {
         if (pane.key === samePane[0].key) {
           return {
@@ -317,6 +338,7 @@ defineExpose({
   addTab,
   removeTab,
   updateTab,
+  openHistoryTab,
 })
 </script>
 
@@ -326,9 +348,22 @@ export default {}
 
 <style lang="less" scoped>
 .tab-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   position: relative;
   box-sizing: border-box;
+  overflow: hidden;
+}
+:deep(.arco-tabs) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
 }
 :deep(.arco-tabs-tab) {
   text-align: center;
@@ -359,9 +394,17 @@ export default {}
   margin: 0 0 4px 0;
 }
 :deep(.arco-tabs-content) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   border: 0px solid var(--color-border-2);
   border-top: none;
   padding-top: 0px;
+}
+:deep(.arco-tabs-content-list),
+:deep(.arco-tabs-pane) {
+  height: 100%;
+  min-height: 0;
 }
 :deep(.gi_table_page){
   margin-top: 20px;

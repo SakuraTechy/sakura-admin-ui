@@ -1,5 +1,5 @@
 ﻿<template>
-  <div style="padding: 20px;">
+  <div class="automation-ui-scene">
     <GiTable
       ref="tableRef"
       v-model:selected-keys="selectedKeys"
@@ -9,7 +9,7 @@
       :data="tableData"
       :columns="columns"
       :loading="loading"
-      :scroll="{ x: '100%', y: '100%' }"
+      :scroll="{ x: '100%', y: '100%'}"
       :pagination="pagination"
       :disabled-tools="['']"
       :disabled-column-keys="['name']"
@@ -79,25 +79,37 @@
           <template #icon><icon-download /></template>
           <template #default>导出全部 XML</template>
         </a-button> -->
-        <a-button
+        <a-dropdown trigger="click" @select="onBatchExecutionSelect">
+          <a-button
           v-permission="['automation:automationUiScene:execute']"
           type="primary"
           :disabled="!selectedKeys.length"
           :title="!selectedKeys.length ? '请选择数据' : ''"
-          @click="onBatchExecute"
         >
           <template #icon><icon-select-all /></template>
           <template #default>批量执行</template>
-        </a-button>
-        <a-button
+          </a-button>
+          <template #content>
+            <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </a-doption>
+          </template>
+        </a-dropdown>
+        <a-dropdown trigger="click" @select="onExecuteAllSelect">
+          <a-button
           v-permission="['automation:automationUiScene:execute']"
           type="primary"
           status="success"
-          @click="onExecuteAll"
         >
           <template #icon><icon-play-arrow /></template>
           <template #default>执行全部</template>
-        </a-button>
+          </a-button>
+          <template #content>
+            <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+              {{ item.label }}
+            </a-doption>
+          </template>
+        </a-dropdown>
         <a-button
           v-permission="['automation:automationUiScene:update']"
           status="warning"
@@ -129,7 +141,12 @@
             </template>
           </a-dropdown>
           <a-dropdown>
-            <a-button v-if="has.hasPermOr(['automation:automationUiScene:delete'])" type="text" size="mini" title="更多">
+            <a-button
+              v-if="has.hasPermOr(['automation:automationUiScene:get', 'automation:automationUiScene:update', 'automation:automationUiScene:delete', 'automation:automationUiScene:export'])"
+              type="text"
+              size="mini"
+              title="更多"
+            >
               <template #icon>
                 <icon-more :size="16" />
               </template>
@@ -156,7 +173,13 @@
               >
                 导出
               </a-doption>
-              <a-dsubmenu
+              <a-doption
+                v-permission="['automation:automationUiScene:get']"
+                @click="onOpenHistory(record)"
+              >
+                历史
+              </a-doption>
+              <!-- <a-dsubmenu
                 v-for="view in executionViewOptions"
                 :key="view.value"
                 v-permission="['automation:automationUiScene:get']"
@@ -171,7 +194,7 @@
                     {{ item.label }}
                   </a-doption>
                 </template>
-              </a-dsubmenu>
+              </a-dsubmenu> -->
             </template>
           </a-dropdown>
         </a-space>
@@ -180,15 +203,24 @@
 
     <AutomationUiSceneAddModal ref="AutomationUiSceneAddModalRef" @save-success="search" />
     <ChromeRecordingModal ref="chromeRecordingModalRef" :scene-options="tableData" @recording-finished="search" />
-    <AutomationExecutionCaseModal ref="executionCaseModalRef" @success="search" />
+    <AutomationExecutionCaseSelectModal ref="executionCaseSelectModalRef" @next="openExecutionConfig" />
+    <AutomationExecutionCaseModal
+      ref="executionCaseModalRef"
+      @back="reopenExecutionCaseSelect"
+      @batch-update="onBatchUpdate"
+      @started="onCaseExecutionStarted"
+      @finished="onCaseExecutionFinished"
+      @success="search"
+    />
     <AutomationExecutionResultDrawer ref="executionResultDrawerRef" />
   </div>
 </template>
 
 <script setup lang="tsx">
-import type { TableInstance } from '@arco-design/web-vue'
+import { Message, type TableInstance } from '@arco-design/web-vue'
 import AutomationUiSceneAddModal from './AutomationUiSceneAddModal.vue'
 import ChromeRecordingModal from './ChromeRecordingModal.vue'
+import AutomationExecutionCaseSelectModal from './AutomationExecutionCaseSelectModal.vue'
 import AutomationExecutionCaseModal from './AutomationExecutionCaseModal.vue'
 import AutomationExecutionResultDrawer from './AutomationExecutionResultDrawer.vue'
 import {
@@ -199,6 +231,7 @@ import {
   exportAllAutomationUiSceneXml,
   exportAutomationUiScene,
   exportAutomationUiSceneXml,
+  getAutomationUiSceneList,
   getAutomationUiSceneSelected,
   listAutomationUiScene,
 } from '@/apis/automation/automationUiScene'
@@ -212,6 +245,9 @@ import { useUiStore } from '@/stores/modules/uiStore'
 import { formatDuration } from '@/utils/sakura'
 import { filterSceneResultOptions, filterSceneStatusOptions, pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 import {
+  type ExecutionCaseOpenOptions,
+  type ExecutionContext,
+  type LiveExecutionCase,
   type ExecutionType,
   type ExecutionViewType,
   executionTypeOptions,
@@ -222,9 +258,12 @@ defineOptions({ name: 'AutomationUiScene' })
 
 const emit = defineEmits<{
   (e: 'update-scene', record: any): void
-  (e: 'execute-scene', record: any): void
-  (e: 'execute-scenes', records: any[]): void
-  (e: 'execute-all-scenes', records: any[], query: any): void
+  (e: 'open-history', sceneId: string): void
+  (e: 'execute-scene', record: any, executionType: ExecutionType): void
+  (e: 'execute-scenes', records: any[], executionType: ExecutionType): void
+  (e: 'execute-all-scenes', records: any[], query: any, executionType: ExecutionType): void
+  (e: 'execution-started', sceneId?: string): void
+  (e: 'batch-update', rows: LiveExecutionCase[]): void
 }>()
 
 const uiStore = useUiStore()
@@ -244,7 +283,7 @@ const [queryForm, resetForm] = useResetReactive<AutomationUiSceneQuery>({
   createUser: undefined,
   updateUser: undefined,
   createTime: [],
-  sort: ['createTime,desc'],
+  sort: ['createTime,asc'],
 })
 
 const {
@@ -479,20 +518,44 @@ const onExportAllXml = async () => {
   })
 }
 
-const onBatchExecute = async () => {
-  const { data } = await getAutomationUiSceneSelected(selectedKeys.value)
-  emit('execute-scenes', data)
+const resolveExecutionType = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = String(value || '') as ExecutionType
+  return executionTypeOptions.some(item => item.value === executionType) ? executionType : undefined
 }
 
-const onExecuteAll = async () => {
+const onBatchExecute = async (executionType: ExecutionType) => {
+  const { data } = await getAutomationUiSceneSelected(selectedKeys.value)
+  const records = Array.isArray(data) ? data : []
+  if (executionType === 'jenkins') {
+    emit('execute-scenes', records, executionType)
+    return
+  }
+  void beginQueuedCaseExecution(records, executionType)
+}
+
+const onExecuteAll = async (executionType: ExecutionType) => {
   const targetQuery = {
     ...queryForm,
     projectId: uiStore.projectId,
     versionId: queryForm.versionId || uiStore.versionId,
   }
-  const { data } = await listAutomationUiScene({ ...targetQuery, page: 1, size: 1000 } as any)
-  const records = Array.isArray(data?.list) ? data.list : []
-  emit('execute-all-scenes', records, targetQuery)
+  const { data } = await getAutomationUiSceneList(targetQuery as any)
+  const records = Array.isArray(data) ? data : []
+  if (executionType === 'jenkins') {
+    emit('execute-all-scenes', records, targetQuery, executionType)
+    return
+  }
+  void beginQueuedCaseExecution(records, executionType)
+}
+
+const onBatchExecutionSelect = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = resolveExecutionType(value)
+  if (executionType) void onBatchExecute(executionType)
+}
+
+const onExecuteAllSelect = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = resolveExecutionType(value)
+  if (executionType) void onExecuteAll(executionType)
 }
 
 const onClearResults = async () => {
@@ -524,26 +587,148 @@ const onUpdate = (record: AutomationUiSceneResp) => {
 const onCopy = (record: AutomationUiSceneResp) => {
   emit('update-scene', { ...record, readonly: false, copy: true })
 }
-const onExecute = (record: AutomationUiSceneResp) => {
-  emit('execute-scene', record)
+const onOpenHistory = (record: AutomationUiSceneResp) => {
+  emit('open-history', String(record.id))
+}
+const onExecute = (record: AutomationUiSceneResp, executionType: ExecutionType) => {
+  emit('execute-scene', record, executionType)
 }
 
 const executionViewOptions = (Object.entries(executionViewLabels) as Array<[ExecutionViewType, string]>).map(([value, label]) => ({
   value,
   label,
 }))
-const executionCaseModalRef = ref<{ onOpen: (record: any, type: Exclude<ExecutionType, 'jenkins'>) => void }>()
+interface ExecutionCaseSelection extends ExecutionContext {
+  scene: any
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  caseIds: string[]
+  sceneIds?: string[]
+}
+
+const executionCaseSelectModalRef = ref<{
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options?: ExecutionCaseOpenOptions,
+  ) => void
+}>()
+const executionCaseModalRef = ref<{
+  onOpen: (
+    record: any,
+    type: Exclude<ExecutionType, 'jenkins'>,
+    options?: ExecutionCaseOpenOptions,
+  ) => void
+}>()
 const executionResultDrawerRef = ref<{
   onOpen: (sceneId: string, type: ExecutionType, view: ExecutionViewType) => void
 }>()
 
 const onExecutionSelect = (record: AutomationUiSceneResp, value: string | number | Record<string, any> | undefined) => {
-  const type = String(value) as ExecutionType
+  const type = resolveExecutionType(value)
+  if (!type) return
   if (type === 'jenkins') {
-    onExecute(record)
+    onExecute(record, type)
     return
   }
-  executionCaseModalRef.value?.onOpen(record, type)
+  queuedSceneIds.value = [String(record.id)]
+  executionCaseSelectModalRef.value?.onOpen(record, type)
+}
+
+const executionQueue = ref<Array<{
+  scene: AutomationUiSceneResp
+  executionType: Exclude<ExecutionType, 'jenkins'>
+  caseIds: string[]
+}>>([])
+const queuedSceneIds = ref<string[]>([])
+
+const beginQueuedCaseExecution = async (
+  records: AutomationUiSceneResp[],
+  executionType: Exclude<ExecutionType, 'jenkins'>,
+) => {
+  if (!records.length) {
+    Message.warning('当前范围内没有可执行场景')
+    return
+  }
+  // 全部执行的列表接口是轻量数据，场景选择和执行配置必须使用完整 caseList。
+  let executionScenes: AutomationUiSceneResp[]
+  try {
+    const { data } = await getAutomationUiSceneSelected(records.map(record => record.id))
+    if (!Array.isArray(data) || !data.length) throw new Error('未读取到可执行场景')
+    executionScenes = data
+  } catch (error: any) {
+    Message.error(error?.message || '读取完整场景数据失败，请刷新后重试')
+    return
+  }
+  executionCaseSelectModalRef.value?.onOpen(buildSceneSelectionRecord(executionScenes), executionType, {
+    sceneSelection: true,
+    // 批量/全部入口已经确定执行范围，和测试计划保持只读确认交互，避免二次勾选改变范围。
+    selectionDisabled: true,
+    sceneSelectionSummary: '本次将执行当前范围内的',
+  })
+}
+
+const buildSceneSelectionRecord = (records: AutomationUiSceneResp[]) => ({
+  ...records[0],
+  // 复用测试计划的场景选择弹窗，但 UI 场景执行仍按场景分别建立执行批次。
+  __sceneAggregate: true,
+  __planScenes: records,
+})
+
+const queueSelectedScenes = (payload: ExecutionCaseSelection) => {
+  const selectedSceneKeys = new Set((payload.sceneIds || []).map(String))
+  const selectedScenes = (Array.isArray(payload.scene?.__planScenes) ? payload.scene.__planScenes : [])
+    .filter((scene: AutomationUiSceneResp) => selectedSceneKeys.has(String(scene.sceneId || scene.id)))
+  if (!selectedScenes.length) {
+    Message.warning('请选择至少一个可执行场景')
+    return
+  }
+  queuedSceneIds.value = selectedScenes.map(scene => String(scene.id))
+  executionQueue.value = selectedScenes.map(scene => ({
+    scene,
+    executionType: payload.executionType,
+    caseIds: (Array.isArray(scene.caseList) ? scene.caseList : [])
+      .filter(caseItem => Array.isArray(caseItem.stepList) && caseItem.stepList.length > 0)
+      .map(caseItem => String(caseItem.id)),
+  }))
+  openNextQueuedCaseExecution()
+}
+
+const openNextQueuedCaseExecution = () => {
+  const next = executionQueue.value.shift()
+  if (!next) return
+  executionCaseModalRef.value?.onOpen(next.scene, next.executionType, { caseIds: next.caseIds })
+}
+
+const onCaseExecutionStarted = () => {
+  emit('execution-started', queuedSceneIds.value.length === 1 ? queuedSceneIds.value[0] : undefined)
+}
+
+const onCaseExecutionFinished = () => {
+  openNextQueuedCaseExecution()
+}
+
+const onBatchUpdate = (rows: LiveExecutionCase[]) => {
+  emit('batch-update', rows)
+}
+
+function openExecutionConfig(payload: ExecutionCaseSelection) {
+  if (payload.scene?.__sceneAggregate) {
+    queueSelectedScenes(payload)
+    return
+  }
+  executionCaseModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
+  })
+}
+
+function reopenExecutionCaseSelect(payload: ExecutionCaseSelection) {
+  executionCaseSelectModalRef.value?.onOpen(payload.scene, payload.executionType, {
+    caseIds: payload.caseIds,
+    recordSource: payload.recordSource,
+    testPlanId: payload.testPlanId,
+  })
 }
 
 const openExecutionResult = (record: AutomationUiSceneResp, type: ExecutionType, view: ExecutionViewType) => {
@@ -566,6 +751,20 @@ export default {}
 </script>
 
 <style scoped lang="scss">
+.automation-ui-scene {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding: 20px;
+  overflow: hidden;
+
+  :deep(.gi-table) {
+    min-height: 0;
+  }
+}
+
 :deep(.arco-space) {
   display: flex;
 }

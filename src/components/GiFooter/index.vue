@@ -1,5 +1,5 @@
 <template>
-  <div class="gi-footer">{{ appStore.getCopyright() }}{{ appStore.getForRecord() ? ` · ${appStore.getForRecord()}` : '' }}</div>
+  <!-- <div class="gi-footer">{{ appStore.getCopyright() }}{{ appStore.getForRecord() ? ` · ${appStore.getForRecord()}` : '' }}</div> -->
 </template>
 
 <script setup lang="ts">

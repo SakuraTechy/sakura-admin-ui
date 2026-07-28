@@ -8,6 +8,11 @@ import messageErrorWrapper from '@/utils/message-error-wrapper'
 import notificationErrorWrapper from '@/utils/notification-error-wrapper'
 import router from '@/router'
 
+export type SilentAxiosRequestConfig = AxiosRequestConfig & {
+  /** 轮询和可回退的资源请求由业务组件展示局部状态，避免全局重复提示。 */
+  silentError?: boolean
+}
+
 interface ICodeMessage {
   [propName: number]: string
 }
@@ -47,9 +52,11 @@ const handleError = (msg: string) => {
   })
 }
 
+const shouldHandleError = (config?: SilentAxiosRequestConfig) => config?.silentError !== true
+
 // 请求拦截器
 http.interceptors.request.use(
-  (config: AxiosRequestConfig) => {
+  (config: SilentAxiosRequestConfig) => {
     const token = getToken()
     if (token) {
       if (!config.headers) {
@@ -104,36 +111,45 @@ http.interceptors.response.use(
         },
       })
     } else {
-      handleError(msg)
+      if (shouldHandleError(response.config)) handleError(msg)
     }
     return Promise.reject(new Error(msg || '服务器端错误'))
   },
   (error: AxiosError) => {
+    const config = error.config as SilentAxiosRequestConfig | undefined
+    if (error.code === AxiosError.ERR_CANCELED) return Promise.reject(error)
     if (!error.response) {
-      handleError('网络连接失败，请检查您的网络')
+      const message = error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED'
+        ? '请求超时，请稍后重试'
+        : navigator.onLine === false
+          ? '无法连接服务，请检查服务状态和网络'
+          : '无法连接服务，请检查服务状态和网络'
+      if (shouldHandleError(config)) handleError(message)
       return Promise.reject(error)
     }
     const status = error.response?.status
-    const errorMsg = StatusCodeMessage[status] || '服务器暂时未响应，请刷新页面并重试。若无法解决，请联系管理员'
-    handleError(errorMsg)
+    const errorMsg = status === 401
+      ? '登录已失效，请重新登录'
+      : StatusCodeMessage[status] || '服务器暂时未响应，请刷新页面并重试。若无法解决，请联系管理员'
+    if (shouldHandleError(config)) handleError(errorMsg)
     return Promise.reject(error)
   },
 )
 
-const request = async <T = unknown>(config: AxiosRequestConfig): Promise<ApiRes<T>> => {
+const request = async <T = unknown>(config: SilentAxiosRequestConfig): Promise<ApiRes<T>> => {
   return http.request<T>(config)
     .then((res: AxiosResponse) => res.data)
     .catch((err: { msg: string }) => Promise.reject(err))
 }
 
-const requestNative = async <T = unknown>(config: AxiosRequestConfig): Promise<AxiosResponse> => {
+const requestNative = async <T = unknown>(config: SilentAxiosRequestConfig): Promise<AxiosResponse> => {
   return http.request<T>(config)
     .then((res: AxiosResponse) => res)
     .catch((err: { msg: string }) => Promise.reject(err))
 }
 
 const createRequest = (method: string) => {
-  return <T = any>(url: string, params?: object, config?: AxiosRequestConfig): Promise<ApiRes<T>> => {
+  return <T = any>(url: string, params?: object, config?: SilentAxiosRequestConfig): Promise<ApiRes<T>> => {
     return request({
       method,
       url,
@@ -148,7 +164,7 @@ const createRequest = (method: string) => {
   }
 }
 
-const download = (url: string, params?: object, config?: AxiosRequestConfig): Promise<AxiosResponse> => {
+const download = (url: string, params?: object, config?: SilentAxiosRequestConfig): Promise<AxiosResponse> => {
   return requestNative({
     method: 'get',
     url,

@@ -1,5 +1,5 @@
 <template>
-  <div class="gi-tree">
+  <div ref="treeContainerRef" class="gi-tree" tabindex="-1" @pointerdown="onTreePointerDown" @focusin="onFocusIn" @focusout="onFocusOut">
     <div v-if="searchable" class="gi-tree__search">
       <a-input v-model="inputValue" size="small" allow-clear :maxlength="20" :placeholder="placeholder">
         <template #prefix><icon-search /></template>
@@ -10,9 +10,11 @@
         <a-tree
           ref="treeRef"
           v-model:selected-keys="selectedKeys"
-          v-model:checked-keys="selectedKeys"
+          v-model:checked-keys="checkedKeys"
           :size="size"
-          :draggable="draggable"
+          :draggable="draggable && !disabled && !loading"
+          :allow-drop="allowNodeDropProxy"
+          :disabled="disabled || loading"
           :block-node="blockNode"
           :show-line="showLine"
           :data="filteredData"
@@ -22,10 +24,14 @@
           :check-strictly="checkStrictly"
           @select="onSelect"
           @drop="onDrop"
+          @drag-start="onDragStart"
+          @drag-end="onDragEnd"
+          @check="onCheck"
         >
           <template #title="node">
             <a-trigger
-              :popup-visible="node === contextmenuNode && node.popupVisible"
+              :popup-visible="isContextmenuVisible(node)"
+              @popup-visible-change="visible => onPopupVisibleChange(node, visible)"
               trigger="contextMenu"
               align-point
               animation-name="slide-dynamic-origin"
@@ -36,7 +42,7 @@
               <div
                 v-if="!node.isEdit"
                 style="width: 100%; margin-right: 10px;"
-                @contextmenu="onContextmenu(node)"
+                @contextmenu.prevent="onContextmenu(node)"
                 @dblclick="() => onNodeDblClick(node)"
               >
                 <a-typography-paragraph :ellipsis="{ rows: 1, showTooltip: true, css: true }">
@@ -98,7 +104,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
-import { debounce } from 'lodash-es'
 import GiMenu from '@/components/GiMenu/index.vue'
 import GiLoading from '@/components/GiLoading/index.vue'
 
@@ -119,6 +124,8 @@ const props = defineProps({
   },
   size: { type: String, default: 'mini' },
   draggable: { type: Boolean, default: true },
+  allowNodeDrop: { type: Function, default: undefined },
+  disabled: { type: Boolean, default: false },
   blockNode: { type: Boolean, default: true },
   showLine: { type: Boolean, default: true },
   onSave: Function,
@@ -127,10 +134,16 @@ const props = defineProps({
 
 const emit = defineEmits([
   'update:selectedKeys',
+  'update:checkedKeys',
   'node-click',
   'node-drop',
   'menu-click',
   'tree-node-click',
+  'drag-start',
+  'drag-end',
+  'focusin',
+  'focusout',
+  'batch-delete-cancel',
 ])
 
 // 全局事件管理器
@@ -219,13 +232,12 @@ class GlobalKeydownManager {
   private startListening() {
     if (this.isListening) return
 
-    // 检查是否已经有其他监听器
-    if ((window as any).__giTreeKeydownListener) {
-      // console.warn(`[GlobalKeydownManager] 检测到重复的监听器，跳过注册`)
-      return
+    // HMR 或上一个树实例卸载后可能遗留标记；只认当前实例的监听函数，避免后续实例无法重新监听。
+    const oldListener = (window as any).__giTreeKeydownListener
+    if (oldListener && oldListener !== this.handleGlobalKeydown) {
+      window.removeEventListener('keydown', oldListener)
     }
 
-    // console.warn(`[GlobalKeydownManager] 开始监听全局键盘事件`)
     this.isListening = true
     window.addEventListener('keydown', this.handleGlobalKeydown)
 
@@ -235,9 +247,11 @@ class GlobalKeydownManager {
 
   private stopListening() {
     if (!this.isListening) return
-    // console.warn(`[GlobalKeydownManager] 停止监听全局键盘事件`)
     this.isListening = false
     window.removeEventListener('keydown', this.handleGlobalKeydown)
+    if ((window as any).__giTreeKeydownListener === this.handleGlobalKeydown) {
+      delete (window as any).__giTreeKeydownListener
+    }
   }
 
   private handleGlobalKeydown = (e: KeyboardEvent) => {
@@ -269,13 +283,18 @@ class GlobalKeydownManager {
   }
 }
 
-const selectedKeys = ref()
-const multiple = ref(props.multiple)
+const selectedKeys = ref<any[]>(props.selectedKeys as any[])
+const checkedKeys = ref<any[]>(props.checkedKeys as any[])
+const hasFocusWithin = ref(false)
+const multiple = computed(() => props.multiple)
+const currentDragNode = ref<any>(null)
 const inputValue = ref('')
+const treeContainerRef = ref<HTMLElement>()
 const treeRef = ref()
 const inputNodeRef = ref()
 const editCacheValue = ref('')
 const contextmenuNode = ref<any>(null)
+const contextmenuNodeKey = ref('')
 // const localSelectedKeys = ref(props.selectedKeys)
 
 watch(() => props.treeData, (val) => {
@@ -290,14 +309,13 @@ watch(() => props.selectedKeys, (val) => {
   selectedKeys.value = val
 })
 
+watch(() => props.checkedKeys, (val) => {
+  checkedKeys.value = Array.isArray(val) ? val : []
+})
+
 // watch(() => selectedKeys.value, (val) => {
 //   console.log('selectedKeys.value', val)
 // })
-
-watch(() => props.multiple, (val) => {
-//   console.log('props.multiple', val)
-  // multiple.value = val
-})
 
 // 过滤节点树
 const filteredData = computed(() => {
@@ -331,6 +349,7 @@ const clearSelection = () => {
 }
 
 const onSelect = (keys: any[], data: any) => {
+  setActive()
   const node = data?.node || data
   const nodeKey = node?.[props.fieldNames.key]
   const selectedBeforeClick = props.selectedKeys?.map(String).includes(String(nodeKey))
@@ -348,15 +367,73 @@ const onDrop = (data: any) => {
   emit('node-drop', data)
 }
 
+const onCheck = (keys: any[]) => {
+  checkedKeys.value = keys
+  emit('update:checkedKeys', keys)
+}
+
+const onFocusIn = (event: FocusEvent) => {
+  hasFocusWithin.value = true
+  setActive()
+  emit('focusin', event)
+}
+
+const onFocusOut = (event: FocusEvent) => {
+  hasFocusWithin.value = false
+  emit('focusout', event)
+}
+
+const onTreePointerDown = (event: PointerEvent) => {
+  setActive()
+  const target = event.target as HTMLElement | null
+  if (target?.closest('input, textarea, [contenteditable="true"]')) return
+  treeContainerRef.value?.focus({ preventScroll: true })
+}
+
+const onDragStart = (event: DragEvent, node: any) => {
+  currentDragNode.value = node
+  emit('drag-start', { event, dragNode: node })
+}
+
+const onDragEnd = (event: DragEvent, node: any) => {
+  currentDragNode.value = null
+  emit('drag-end', { event, dragNode: node })
+}
+
+const allowNodeDropProxy = (options: { dropNode: any, dropPosition: number }) => {
+  if (!currentDragNode.value || !props.allowNodeDrop) return false
+  return props.allowNodeDrop(currentDragNode.value, options.dropNode, options.dropPosition)
+}
+
 // 保存当前右键的节点
+const nodeKeyOf = (node: any) => String(node?.[props.fieldNames.key] ?? '')
+const isContextmenuVisible = (node: any) => {
+  const nodeKey = nodeKeyOf(node)
+  return Boolean(nodeKey) && nodeKey === contextmenuNodeKey.value
+}
 const onContextmenu = (node: any) => {
-  console.log('onContextmenu', node)
+  setActive()
+  if (contextmenuNode.value && contextmenuNode.value !== node) {
+    contextmenuNode.value.popupVisible = false
+  }
   if (contextmenuNode.value?.isEdit !== undefined) {
     contextmenuNode.value.isEdit = false
   }
   contextmenuNode.value = node
+  contextmenuNodeKey.value = nodeKeyOf(node)
+  node.popupVisible = true
   selectedKeys.value = [node[props.fieldNames.key]]
 //   if (!multiple.value) emit('node-click', node)
+}
+
+const onPopupVisibleChange = (node: any, visible: boolean) => {
+  if (visible) {
+    contextmenuNode.value = node
+    contextmenuNodeKey.value = nodeKeyOf(node)
+  } else if (isContextmenuVisible(node)) {
+    contextmenuNodeKey.value = ''
+  }
+  node.popupVisible = visible
 }
 
 // 节点双击操作
@@ -421,6 +498,14 @@ const closeRightMenu = () => {
   if (contextmenuNode.value?.popupVisible) {
     contextmenuNode.value.popupVisible = false
   }
+  contextmenuNodeKey.value = ''
+}
+
+/** 退出批量删除时只清空勾选，不篡改当前详情节点选中状态。 */
+const cancelBatchDeleteSelection = () => {
+  checkedKeys.value = []
+  emit('update:checkedKeys', [])
+  emit('batch-delete-cancel')
 }
 
 // 右键菜单项点击
@@ -449,8 +534,7 @@ const onMenuItemClick = (mode?: any, node?: any) => {
     emit('menu-click', { mode, node: contextmenuNode.value })
   }
   if (mode === 'move') {
-    // Message.info(`${mode}-${contextmenuNode.value?.name ?? ''}`)
-    // emit('menu-click', { mode, node: contextmenuNode.value })
+    emit('menu-click', { mode, node: contextmenuNode.value })
   }
   if (mode === 'delete') {
     Modal.warning({
@@ -461,22 +545,16 @@ const onMenuItemClick = (mode?: any, node?: any) => {
       onBeforeOk: () => {
         // new Promise((resolve) => setTimeout(() => resolve(true), 300))
         if (props.onSave) {
-          return props.onSave({ mode, node: contextmenuNode.value }).then((result: boolean) => {
-            //   console.log('Promise 结果:', result) // 这里就是 [[PromiseResult]]
-            multiple.value = !result
-          })
+          return props.onSave({ mode, node: contextmenuNode.value })
         }
       },
       onCancel: () => {
-        multiple.value = false
         // treeRef.value.selectAll(false)
       },
     })
   }
   if (mode === 'delete2') {
-    multiple.value = true
-    // treeRef.value.selectAll(false)
-    // emit('menu-click', { mode })
+    emit('menu-click', { mode, node: contextmenuNode.value })
   }
   if (typeof mode === 'string' && mode.startsWith('recording:')) {
     emit('menu-click', { mode, node: contextmenuNode.value })
@@ -500,61 +578,61 @@ const onTreeNodeClick = (data: any) => {
 }
 
 // 定义 handleKeyDown 函数
-const handleKeyDown = debounce((e?: any) => {
-// function handleKeyDown(e: KeyboardEvent) {
-  // console.warn(`[GiTree ${componentId.value}] 响应键盘事件: ${e.key}`)
+const handleKeyDown = (e: KeyboardEvent) => {
+  const isDelete = e.key === 'Delete' || e.key === 'Del'
+  const isEscape = e.key === 'Escape' || e.key === 'Esc'
+  if (!isDelete && !isEscape) return
 
-  if ((e.key === 'Delete' || e.key === 'Del')) {
-    // 检查当前组件是否应该响应这个事件
-    if (!treeRef.value || !props.onSave) return
+  // 文本输入框中的 Delete 必须保留输入行为，不能触发树节点删除。
+  const target = e.target as HTMLElement | null
+  if (isDelete && target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
 
-    console.log(treeRef.value.getSelectedNodes())
+  if (isEscape && multiple.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    cancelBatchDeleteSelection()
+    return
+  }
 
-    if (treeRef.value.getSelectedNodes().length > 0) {
-      const selected = treeRef.value.getSelectedNodes().map((item: any) => item)
-      const selectedIds = treeRef.value.getSelectedNodes().map((item: any) => item.id).join(',')
-      const selectedNames = treeRef.value.getSelectedNodes().map((item: any) => item.name).join(',')
-      // const selecte = { id: selectedIds, name: selectedNames, node: selected }
-      Modal.warning({
-        title: '温馨提示',
-        content: `是否确认删除「${selectedNames}」？`,
-        hideCancel: false,
-        okButtonProps: { status: 'danger' },
-        onBeforeOk: () => {
-          if (props.onSave) {
-            return props.onSave({ mode: 'delete', node: selected }).then((result: boolean) => {
-              //   console.log('Promise 结果:', result) // 这里就是 [[PromiseResult]]
-              multiple.value = !result
-            })
-          }
-        },
-        onCancel: () => {
-          multiple.value = false
-          // if (treeRef.value.getSelectedNodes().length > 1) {
-          //   treeRef.value.selectAll(false)
-          // }
-          emit('node-click', treeRef.value.getSelectedNodes()[0])
-        },
+  if (isDelete) {
+    e.preventDefault()
+    e.stopPropagation()
+    // 全局管理器已限定当前激活树；批量模式允许右键菜单关闭后继续响应，单选模式仍要求焦点位于树内。
+    if (!treeRef.value || !props.onSave || props.disabled || props.loading || (!multiple.value && !hasFocusWithin.value)) return
+    const keyName = props.fieldNames.key
+    const deleteKeys = multiple.value ? checkedKeys.value : selectedKeys.value
+    const keySet = new Set(deleteKeys.map(String))
+    const selectedNodes: any[] = []
+    const collectSelectedNodes = (nodes: any[]) => {
+      nodes.forEach((node) => {
+        if (keySet.has(String(node?.[keyName] ?? ''))) selectedNodes.push(node)
+        const children = node?.[props.fieldNames.children]
+        if (Array.isArray(children)) collectSelectedNodes(children)
       })
-    } else {
+    }
+    collectSelectedNodes(props.treeData as any[])
+    if (selectedNodes.length === 0) {
       Message.warning(`请选择左侧要删除的${props.title}`)
+      return
     }
+    const selectedNames = selectedNodes.map((item: any) => item.name).join('、')
+    Modal.warning({
+      title: '温馨提示',
+      content: `是否确认删除「${selectedNames}」？`,
+      hideCancel: false,
+      okButtonProps: { status: 'danger' },
+      onBeforeOk: () => props.onSave?.({ mode: 'delete', node: selectedNodes }),
+      onCancel: () => {
+        if (multiple.value) cancelBatchDeleteSelection()
+      },
+    })
+    return
   }
-  if (e.key === 'Escape' || e.key === 'Esc') {
-    // console.log('用户按下了 Esc 键')
-    if (inputNodeRef.value) {
-      inputNodeRef.value.blur()
-    }
-    multiple.value = false
-    // if (treeRef.value.getSelectedNodes().length > 1) {
-    //   treeRef.value.selectAll(false)
-    // }
-    emit('node-click', treeRef.value.getSelectedNodes()[0])
-    // if (treeRef.value) {
-    //   treeRef.value.selectAll(false)
-    // }
+
+  if (isEscape && inputNodeRef.value) {
+    inputNodeRef.value.blur()
   }
-}, 100)
+}
 
 // 生成唯一的组件ID
 const componentId = ref(`gi-tree-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`)
@@ -569,14 +647,6 @@ onMounted(() => {
   // 使用全局事件管理器，传入组件ID
   GlobalKeydownManager.getInstance().addListener(componentId.value, handleKeyDown)
 
-  // 延迟一下，确保组件完全挂载后再设置激活状态
-  nextTick(() => {
-    // 如果是子页面组件（弹窗编辑），自动设置为激活状态
-    if (props.editMethod === '弹窗编辑') {
-      // console.warn(`[GiTree ${componentId.value}] 子页面组件自动设置激活状态`)
-      setActive()
-    }
-  })
 })
 
 onBeforeUnmount(() => {
@@ -598,6 +668,7 @@ export default {}
   .gi-tree {
     flex: 1;
     overflow: hidden;
+    outline: none;
     position: relative;
     display: flex;
     flex-direction: column;

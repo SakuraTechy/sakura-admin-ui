@@ -1,5 +1,6 @@
 <template>
   <GiPageLayout
+    ref="pageLayoutRef"
     :default-collapsed="true"
     :margin="false"
     :padding="false"
@@ -52,10 +53,34 @@
 
     <div class="scene-workspace-body">
       <div class="scene-type-bar">
-        <span class="scene-type-bar__item scene-type-bar__item--active">UI 自动化测试</span>
+        <button
+          type="button"
+          class="scene-type-bar__item"
+          :class="{ 'scene-type-bar__item--active': activeWorkspaceView === 'scenes' }"
+          @click="showScenes"
+        >
+          UI 自动化测试
+        </button>
+        <button
+          v-if="historyTabOpen"
+          type="button"
+          class="scene-type-bar__item"
+          :class="{ 'scene-type-bar__item--active': activeWorkspaceView === 'history' }"
+          @click="openAllHistory"
+        >
+          <span>执行历史</span>
+          <span
+            class="scene-type-bar__close"
+            title="关闭执行历史"
+            @click.stop="closeHistoryTab"
+          >
+            <icon-close />
+          </span>
+        </button>
       </div>
 
       <GiTable
+        v-if="activeWorkspaceView === 'scenes'"
         v-model:selected-keys="tableSelectedKeys"
         class="scene-table"
         size="medium"
@@ -107,18 +132,28 @@
             <template #icon><icon-delete /></template>
             批量删除
           </a-button>
-          <a-button
-            type="primary"
-            :disabled="!tableSelectedKeys.length"
-            @click="emit('batch-execute', selectedSceneRows)"
-          >
-            <template #icon><icon-select-all /></template>
-            批量执行
-          </a-button>
-          <a-button type="primary" status="success" @click="emit('execute-all')">
-            <template #icon><icon-play-arrow /></template>
-            执行所有
-          </a-button>
+          <a-dropdown trigger="click" @select="onBatchExecutionSelect">
+            <a-button type="primary" :disabled="!tableSelectedKeys.length">
+              <template #icon><icon-select-all /></template>
+              批量执行
+            </a-button>
+            <template #content>
+              <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-doption>
+            </template>
+          </a-dropdown>
+          <a-dropdown trigger="click" @select="onExecuteAllSelect">
+            <a-button type="primary" status="success">
+              <template #icon><icon-play-arrow /></template>
+              执行所有
+            </a-button>
+            <template #content>
+              <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-doption>
+            </template>
+          </a-dropdown>
         </template>
 
         <template #executeStatus="{ record }">
@@ -140,13 +175,40 @@
         <template #sceneAction="{ record }">
           <a-space>
             <a-link @click="onRemoveOne(record)">删除</a-link>
-            <a-link @click="emit('execute-one', record)">执行</a-link>
+            <a-dropdown trigger="click" @select="value => onExecuteOne(record, value)">
+              <a-link>执行</a-link>
+              <template #content>
+                <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                  {{ item.label }}
+                </a-doption>
+              </template>
+            </a-dropdown>
+            <a-link @click="openSceneHistory(record)">历史</a-link>
             <a-link @click="openLink(record, 'consoleUrl', '获取控制台日志失败，请先执行场景')">日志</a-link>
             <a-link @click="openLink(record, 'testReportUrl', '获取测试报告失败，请先执行场景')">报告</a-link>
             <a-link @click="openLink(record, 'videoUrl', '获取测试视频失败，请先执行场景')">回放</a-link>
           </a-space>
         </template>
       </GiTable>
+
+      <div v-else class="plan-history-view">
+        <AutomationExecutionHistoryPanel
+          class="plan-history-panel"
+          :scenes="displayHistoryScenes"
+          :loading="historyLoading"
+          record-source="test"
+          :test-plan-id="toIdString(plan.id)"
+          :multi-scene="historySceneKey === ALL_HISTORY_SCENES"
+          aggregate-plan-batches
+          :scene-filter-value="historySceneKey"
+          :scene-filter-options="historySceneOptions"
+          :live-executions="liveExecutions"
+          @scene-change="historySceneKey = $event"
+          @cancel-batch="cancelHistoryBatch"
+          @cancel-case="cancelHistoryCase"
+          @refresh="fetchHistoryScenes(true)"
+        />
+      </div>
     </div>
   </GiPageLayout>
 </template>
@@ -154,11 +216,26 @@
 <script setup lang="tsx">
 import { Message, Modal, type TableInstance } from '@arco-design/web-vue'
 import type { TestPlanResp } from '@/apis/test/testPlan'
-import { getTestPlan, removeTestPlanScenes } from '@/apis/test/testPlan'
+import { cancelTestPlanExecution, getTestPlan, removeTestPlanScenes } from '@/apis/test/testPlan'
 import {
+  cancelAutomationPlaywrightBatch,
+  cancelAutomationPlaywrightBatchCase,
+} from '@/apis/automation/automationPlaywrightRunner'
+import {
+  getAutomationUiSceneList,
+  getAutomationUiSceneSelected,
+  getAutomationUiSceneSelectedRevisions,
   listAutomationUiScene,
   type AutomationUiSceneResp,
 } from '@/apis/automation/automationUiScene'
+import AutomationExecutionHistoryPanel from '@/views/automation/automationUiScene/components/AutomationExecutionHistoryPanel.vue'
+import {
+  type ExecutionType,
+  type ExecutionHistoryBatchRow,
+  type ExecutionHistoryCaseRow,
+  type LiveExecutionCase,
+  executionTypeOptions,
+} from '@/views/automation/automationUiScene/execution'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { TreeCateItem } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
@@ -188,13 +265,14 @@ export type PlanSceneRow = AutomationUiSceneResp & { planRecord?: Record<string,
 const props = defineProps<{
   plan: TestPlanResp
   planOptions: LabelValueState[]
+  liveExecutions?: LiveExecutionCase[]
 }>()
 
 const emit = defineEmits<{
   (e: 'relate'): void
-  (e: 'batch-execute', rows: PlanSceneRow[]): void
-  (e: 'execute-all'): void
-  (e: 'execute-one', row: PlanSceneRow): void
+  (e: 'batch-execute', rows: PlanSceneRow[], executionType: ExecutionType): void
+  (e: 'execute-all', executionType: ExecutionType): void
+  (e: 'execute-one', row: PlanSceneRow, executionType: ExecutionType): void
   (e: 'refresh'): void
   (e: 'switch-plan', planId: string): void
 }>()
@@ -314,10 +392,10 @@ const columns: TableInstance['columns'] = [
   { title: '跳过', dataIndex: 'stepSkip', width: 70, align: 'center', render: ({ record }) => record.planRecord?.stepSkip ?? '-' },
   // { title: '创建人', dataIndex: 'createByName', width: 50, align: 'center', render: ({ record }) => record.planRecord?.createByName ?? '-' },
   // { title: '责任人', dataIndex: 'principalName', width: 50, align: 'center', render: ({ record }) => record.planRecord?.principalName ?? '-' },
-  { title: '执行人', dataIndex: 'executeName', width: 110, align: 'center', render: ({ record }) => record.planRecord?.executeName ?? '-' },
-  { title: '开始时间', dataIndex: 'durationStartTime', width: 180, align: 'center', render: ({ record }) => record.planRecord?.durationStartTime ?? '-' },
-  { title: '结束时间', dataIndex: 'durationEndTime', width: 180, align: 'center', render: ({ record }) => record.planRecord?.durationEndTime ?? '-' },
-  { title: '操作', dataIndex: 'sceneAction', slotName: 'sceneAction', width: 250, align: 'center', fixed: 'right' },
+  { title: '执行人', dataIndex: 'executeName', width: 110, align: 'center', render: ({ record }) => getPlanRecordDisplayValue(record, ['executeName', 'executeUsername', 'executor']) },
+  { title: '开始时间', dataIndex: 'startedAt', width: 180, align: 'center', render: ({ record }) => formatPlanSceneDateTime(getPlanRecordDisplayValue(record, ['startedAt', 'durationStartTime'])) },
+  { title: '结束时间', dataIndex: 'finishedAt', width: 180, align: 'center', render: ({ record }) => formatPlanSceneDateTime(getPlanRecordDisplayValue(record, ['finishedAt', 'durationEndTime'])) },
+  { title: '操作', dataIndex: 'sceneAction', slotName: 'sceneAction', width: 300, align: 'center', fixed: 'right' },
 ]
 
 const { pagination, setTotal } = usePagination(() => {
@@ -327,6 +405,52 @@ const { pagination, setTotal } = usePagination(() => {
 const selectedSceneRows = computed(() =>
   allScenes.value.filter((row) => tableSelectedKeys.value.map(String).includes(String(row.id))),
 )
+
+const ALL_HISTORY_SCENES = 'all'
+const activeWorkspaceView = ref<'scenes' | 'history'>('scenes')
+// 与 UI 自动化模块一致，执行历史仅在跳转查看时创建。
+const historyTabOpen = ref(false)
+const pageLayoutRef = ref<{ toggleCollapsed: (status?: boolean) => void }>()
+const historySceneKey = ref(ALL_HISTORY_SCENES)
+const historyScenes = ref<AutomationUiSceneResp[]>([])
+const historyLoading = ref(false)
+const historyLoaded = ref(false)
+let historyPollTimer: number | undefined
+let historyRevision = ''
+const historySceneOptions = computed(() => [
+  { label: '全部场景', value: ALL_HISTORY_SCENES },
+  ...historyScenes.value.map(scene => ({
+    label: `${scene.sceneId || scene.id} - ${scene.name || '-'}`,
+    value: toIdString(scene.id),
+  })),
+])
+const displayHistoryScenes = computed(() => historySceneKey.value === ALL_HISTORY_SCENES
+  ? historyScenes.value
+  : historyScenes.value.filter(scene => toIdString(scene.id) === historySceneKey.value))
+
+const onExecuteOne = (
+  record: PlanSceneRow,
+  value: string | number | Record<string, any> | undefined,
+) => {
+  const executionType = String(value || '') as ExecutionType
+  if (!executionTypeOptions.some(item => item.value === executionType)) return
+  emit('execute-one', record, executionType)
+}
+
+const resolveExecutionType = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = String(value || '') as ExecutionType
+  return executionTypeOptions.some(item => item.value === executionType) ? executionType : undefined
+}
+
+const onBatchExecutionSelect = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = resolveExecutionType(value)
+  if (executionType) emit('batch-execute', selectedSceneRows.value, executionType)
+}
+
+const onExecuteAllSelect = (value: string | number | Record<string, any> | undefined) => {
+  const executionType = resolveExecutionType(value)
+  if (executionType) emit('execute-all', executionType)
+}
 
 const onPlanChange = (planId: string | number) => {
   emit('switch-plan', toIdString(planId))
@@ -353,22 +477,45 @@ const displayTreeList = computed(() => filterTreeByKeyword(treeList.value, treeK
 
 const getPlanRecord = (scene: AutomationUiSceneResp) => {
   const records = Array.isArray(scene.testRecord) ? scene.testRecord : []
-  return records.find((item: any) => String(item?.testPlanId) === String(props.plan.id))
+  return records.find((item: any) => String(item?.testPlanId ?? item?.test_plan_id ?? item?.planId) === String(props.plan.id))
+}
+
+const getPlanRecordDisplayValue = (record: PlanSceneRow, fields: string[]) => {
+  const planRecord = record.planRecord as Record<string, any> | undefined
+  const value = fields
+    .map((field) => planRecord?.[field])
+    .find((item) => item != null && String(item).trim() && String(item).trim() !== '-')
+  return value == null ? '-' : String(value)
+}
+
+const formatPlanSceneDateTime = (value: string) => {
+  if (!value || value === '-') return '-'
+  const normalized = value.includes('T') ? value.replace('T', ' ') : value
+  return normalized.length > 19 ? normalized.slice(0, 19) : normalized
 }
 
 const pickPlanExecuteField = (record: PlanSceneRow, field: 'executeStatus' | 'executeResult') => {
-  const raw = record.planRecord?.[field]
-  if (raw) return pickSceneExecuteField({ ...record, debugRecord: [record.planRecord] }, field, status_type.value)
-  return pickSceneExecuteField(record, field, status_type.value)
+  const planRecord = record.planRecord as Record<string, any> | undefined
+  const latestTestRecord = Array.isArray(record.testRecord)
+    ? record.testRecord[0] as Record<string, any> | undefined
+    : undefined
+  const source = planRecord || latestTestRecord || {}
+  const raw = field === 'executeStatus'
+    ? source.executeStatus ?? source.execute_status ?? source.executionStatus ?? source.execution_status ?? source.status ?? record.executeStatus
+    : source.executeResult ?? source.execute_result ?? source.result ?? source.outcome ?? source.lastResult ?? source.last_result ?? record.executeResult
+  // 计划列表使用 testRecord；不能回退到 debugRecord，否则计划执行记录会被显示成空值。
+  return pickSceneExecuteField({
+    ...record,
+    testRecord: [{ ...source, [field]: raw }],
+  }, field, status_type.value, 'report')
 }
 
 const resolveSceneLink = (record: PlanSceneRow, key: string) => {
-  const testRecord = record.testRecord?.[0] as Record<string, any> || {}
   const planRecord = record.planRecord as Record<string, any> || {}
-  if (key === 'consoleUrl') return testRecord.consoleUrl || planRecord.consoleUrl || record.consoleUrl || ''
-  if (key === 'testReportUrl') return testRecord.testReportUrl || planRecord.testReportUrl || record.testReportUrl || ''
+  if (key === 'consoleUrl') return planRecord.consoleUrl || ''
+  if (key === 'testReportUrl') return planRecord.testReportUrl || ''
   if (key === 'videoUrl') {
-    const reportUrl = testRecord.testReportUrl || planRecord.testReportUrl || record.testReportUrl
+    const reportUrl = planRecord.testReportUrl
     if (!reportUrl) return ''
     if (reportUrl.includes('/index.html')) return reportUrl.replace('/index.html', `/video/${record.sceneId}.mp4`)
     return `${reportUrl.replace(/\/$/, '')}/video/${record.sceneId}.mp4`
@@ -490,6 +637,136 @@ const ensurePlanSceneIds = async (refresh = false) => {
   return planSceneIds.value
 }
 
+const fetchHistoryScenes = async (refreshIds = false, silent = false) => {
+  if (!silent) historyLoading.value = true
+  try {
+    const sceneIds = await ensurePlanSceneIds(refreshIds)
+    if (!sceneIds.length) {
+      historyScenes.value = []
+      historySceneKey.value = ALL_HISTORY_SCENES
+      historyLoaded.value = true
+      historyRevision = ''
+      return
+    }
+    const { data } = await getAutomationUiSceneSelected(sceneIds)
+    const sceneMap = new Map((Array.isArray(data) ? data : []).map(scene => [toIdString(scene.id), scene]))
+    historyScenes.value = sceneIds.map(id => sceneMap.get(id)).filter(Boolean) as AutomationUiSceneResp[]
+    // 轮询接口只返回修订字段，首次加载也使用它作为指纹，避免不同响应结构反复触发刷新。
+    const { data: revisionData } = await getAutomationUiSceneSelectedRevisions(sceneIds)
+    historyRevision = sceneRevisionFingerprint(Array.isArray(revisionData) ? revisionData : [])
+    if (historySceneKey.value !== ALL_HISTORY_SCENES
+      && !historyScenes.value.some(scene => toIdString(scene.id) === historySceneKey.value)) {
+      historySceneKey.value = ALL_HISTORY_SCENES
+    }
+    historyLoaded.value = true
+  } finally {
+    if (!silent) historyLoading.value = false
+  }
+}
+
+const sceneRevisionFingerprint = (items: Array<{ id: string | number, updateTime?: string, executionRevision?: number }>) => items
+  .map(item => `${toIdString(item.id)}:${item.updateTime || ''}:${item.executionRevision ?? 0}`)
+  .sort()
+  .join('|')
+
+const refreshHistoryWhenChanged = async () => {
+  const sceneIds = await ensurePlanSceneIds()
+  if (!sceneIds.length) return
+  const { data } = await getAutomationUiSceneSelectedRevisions(sceneIds)
+  const nextRevision = sceneRevisionFingerprint(Array.isArray(data) ? data : [])
+  if (nextRevision !== historyRevision) await fetchHistoryScenes(false, true)
+}
+
+const stopHistoryPolling = () => {
+  if (historyPollTimer) window.clearInterval(historyPollTimer)
+  historyPollTimer = undefined
+}
+
+const startHistoryPolling = () => {
+  stopHistoryPolling()
+  historyPollTimer = window.setInterval(() => {
+    if (activeWorkspaceView.value === 'history') void refreshHistoryWhenChanged()
+  }, 1500)
+}
+
+const cancelHistoryBatch = (batch: ExecutionHistoryBatchRow, markCancelling?: () => void) => {
+  const reportId = toIdString(
+    batch.testReportId
+    || batch.cases.find((item) => item.testReportId)?.testReportId,
+  )
+  const planId = toIdString(props.plan.id)
+  const sceneKey = toIdString(batch.sceneKey)
+  const batchId = toIdString(batch.batchId)
+  if (reportId && !planId) {
+    Message.error('当前执行批次缺少测试计划标识，无法取消')
+    return
+  }
+  if (!reportId && (!sceneKey || !batchId)) {
+    Message.error('当前执行批次缺少场景或批次标识，无法取消')
+    return
+  }
+  Modal.confirm({
+    title: '确认取消执行',
+    content: reportId
+      ? '取消后当前测试计划批次及后续未执行场景都将停止，是否确认？'
+      : '取消后当前用例执行批次将立即停止，是否确认？',
+    onOk: async () => {
+      markCancelling?.()
+      if (reportId) await cancelTestPlanExecution(planId, reportId)
+      else await cancelAutomationPlaywrightBatch(sceneKey, batchId)
+      Message.success('已发起取消执行')
+      await fetchHistoryScenes(true)
+      emit('refresh')
+    },
+  })
+}
+
+const openAllHistory = async () => {
+  historyTabOpen.value = true
+  activeWorkspaceView.value = 'history'
+  historySceneKey.value = ALL_HISTORY_SCENES
+  await fetchHistoryScenes(true)
+  startHistoryPolling()
+}
+
+const closeHistoryTab = () => {
+  historyTabOpen.value = false
+  historySceneKey.value = ALL_HISTORY_SCENES
+  if (activeWorkspaceView.value === 'history') activeWorkspaceView.value = 'scenes'
+}
+
+const cancelHistoryCase = (row: ExecutionHistoryCaseRow, markCancelling?: () => void) => {
+  if (!row.sceneKey || !row.batchId || !row.caseId || row.caseId === '-') return
+  Modal.confirm({
+    title: '确认取消当前用例',
+    content: `取消用例“${row.caseName}”不会影响同批次其他用例，是否确认？`,
+    onOk: async () => {
+      markCancelling?.()
+      await cancelAutomationPlaywrightBatchCase(row.sceneKey, row.batchId, row.caseId)
+      Message.success('已发起取消当前用例')
+      await fetchHistoryScenes(true)
+      emit('refresh')
+    },
+  })
+}
+
+const openHistory = async (sceneId?: string) => {
+  historyTabOpen.value = true
+  activeWorkspaceView.value = 'history'
+  historySceneKey.value = sceneId || ALL_HISTORY_SCENES
+  await fetchHistoryScenes(true)
+  startHistoryPolling()
+}
+
+const showScenes = () => {
+  activeWorkspaceView.value = 'scenes'
+  void fetchSceneList(true)
+}
+
+const openSceneHistory = async (record: PlanSceneRow) => {
+  await openHistory(toIdString(record.id))
+}
+
 const mapPlanScenes = (list: AutomationUiSceneResp[]) =>
   (list || []).map((item) => ({
     ...item,
@@ -508,11 +785,14 @@ const fetchSceneList = async (refreshIds = false) => {
     }
 
     if (needsRemoteSceneQuery()) {
-      const { data } = await listAutomationUiScene(buildSceneListQuery() as any)
-      const list = Array.isArray(data?.list) ? data.list : []
-      setTotal(data?.total || list.length)
+      // 计划关联关系在前端按 ID 过滤，必须先取回完整筛选结果，避免服务端分页后只剩少量当前计划场景。
+      const { data } = await getAutomationUiSceneList(buildSceneListQuery() as any)
+      const list = Array.isArray(data) ? data : []
       const idSet = new Set(planSceneIds.value)
-      allScenes.value = mapPlanScenes(list.filter((item) => idSet.has(toIdString(item.id))))
+      const filteredList = list.filter((item) => idSet.has(toIdString(item.id)))
+      setTotal(filteredList.length)
+      const start = (pagination.current - 1) * pagination.pageSize
+      allScenes.value = mapPlanScenes(filteredList.slice(start, start + pagination.pageSize))
     } else {
       const { data } = await listAutomationUiScene({
         testPlanId: toIdString(props.plan.id),
@@ -540,6 +820,7 @@ const removeScenes = async (sceneIds: string[]) => {
   tableSelectedKeys.value = []
   pagination.current = 1
   await fetchSceneList(true)
+  if (historyLoaded.value) await fetchHistoryScenes()
   emit('refresh')
 }
 
@@ -587,6 +868,10 @@ watch(
   () => `${toIdString(props.plan.id)}|${toIdString(props.plan.projectId)}`,
   (planKey, prevKey) => {
     if (!planKey.split('|')[0] || !prevKey || planKey === prevKey) return
+    activeWorkspaceView.value = 'scenes'
+    historySceneKey.value = ALL_HISTORY_SCENES
+    historyScenes.value = []
+    historyLoaded.value = false
     void initWorkspace()
   },
 )
@@ -609,12 +894,25 @@ watch(
   { flush: 'sync' },
 )
 
+watch(activeWorkspaceView, (view) => {
+  // 历史为全宽阅读视图，切换时与 UI 自动化模块保持一致收起左侧树。
+  pageLayoutRef.value?.toggleCollapsed(view === 'history')
+  if (view === 'history') startHistoryPolling()
+  else stopHistoryPolling()
+})
+
 onMounted(() => {
   void initWorkspace()
 })
 
+onUnmounted(stopHistoryPolling)
+
 defineExpose({
-  reload: () => fetchSceneList(true),
+  reload: async () => {
+    await fetchSceneList(true)
+    if (historyLoaded.value || activeWorkspaceView.value === 'history') await fetchHistoryScenes()
+  },
+  openHistory,
 })
 </script>
 
@@ -740,6 +1038,12 @@ export default {}
     border-bottom: none;
     border-radius: 4px 4px 0 0;
     background: var(--color-bg-2);
+    font-family: inherit;
+    cursor: pointer;
+
+    & + & {
+      margin-left: 4px;
+    }
 
     &--active {
       margin-bottom: -1px;
@@ -748,6 +1052,37 @@ export default {}
       font-weight: 500;
     }
   }
+
+  &__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    border-radius: 2px;
+
+    &:hover {
+      color: var(--color-text-1);
+      background: var(--color-fill-2);
+    }
+  }
+}
+
+.plan-history-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.plan-history-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .scene-table {

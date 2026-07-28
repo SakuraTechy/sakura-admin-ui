@@ -1,32 +1,44 @@
 import type { LabelValueState } from '@/types/global'
 
 /** UI 场景执行状态字典 value */
-export const SCENE_STATUS_DICT_VALUES = ['10', '11', '12'] as const
+export const SCENE_STATUS_DICT_VALUES = ['10', '11', '12', '17'] as const
 
 /** UI 场景执行结果字典 value */
-export const SCENE_RESULT_DICT_VALUES = ['13', '14', '15', '16'] as const
+export const SCENE_RESULT_DICT_VALUES = ['13', '14', '15', '16', '17'] as const
 
 const STATUS_LEGACY_TO_VALUE: Record<string, string> = {
   NOT_STARTED: '10',
+  WAITING: '10',
+  QUEUED: '10',
+  STARTING: '11',
   RUNNING: '11',
+  CANCELLING: '11',
   COMPLETED: '12',
+  CANCELLED: '17',
   未开始: '10',
   进行中: '11',
   已完成: '12',
+  已取消: '17',
 }
 
 const RESULT_LEGACY_TO_VALUE: Record<string, string> = {
   NOT_EXECUTED: '13',
+  PENDING: '13',
+  WAITING: '13',
+  QUEUED: '13',
+  STARTING: '13',
+  RUNNING: '13',
   PASSED: '14',
   FAILED: '15',
   SKIPPED: '16',
-  RUNNING: '13',
+  CANCELLED: '17',
   未执行: '13',
   全部通过: '14',
   通过: '14',
   不通过: '15',
   失败: '15',
   跳过: '16',
+  已取消: '17',
   '-': '13',
 }
 
@@ -95,7 +107,14 @@ export function pickSceneExecuteField(
 ) {
   const sourceArray = executeResultType === 'report' ? record.testRecord : record.debugRecord
   const source = Array.isArray(sourceArray) && sourceArray.length > 0 ? sourceArray[0] : null
-  const raw = source?.[field]
+  const rawStatus = source?.executeStatus ?? source?.execute_status
+  const rawResult = source?.executeResult ?? source?.execute_result
+  // 历史记录可能将状态写为 "-" 或只回传取消结果；此时按同一字典值补齐，避免列表出现“状态 -、结果已取消”。
+  const raw = field === 'executeStatus'
+    ? resolveSceneStatusValue(rawStatus, dictItems) === undefined && resolveSceneResultValue(rawResult, dictItems) === '17'
+      ? '17'
+      : rawStatus
+    : rawResult
   if (field === 'executeStatus')
     return resolveSceneStatusValue(raw, dictItems)
   return resolveSceneResultValue(raw, dictItems)
