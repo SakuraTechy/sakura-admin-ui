@@ -11,7 +11,16 @@
             </a-col>
             <a-col :span="valueColSpan">
               <a-form-item :field="`items[${index}].paramsValue`" class="no-margin">
-                <a-input v-model="item.paramsValue" placeholder="参数值" allow-clear :disabled="disabled" @change="handleItemChange" />
+                <a-textarea
+                  v-if="valueTextarea"
+                  v-model="item.paramsValue"
+                  placeholder="参数值"
+                  allow-clear
+                  :auto-size="true"
+                  :disabled="disabled"
+                  @change="handleItemChange"
+                />
+                <a-input v-else v-model="item.paramsValue" placeholder="参数值" allow-clear :disabled="disabled" @change="handleItemChange" />
               </a-form-item>
             </a-col>
             <a-col :span="actionColSpan" class="item-actions">
@@ -54,6 +63,7 @@ interface Props {
   labelWidth?: number
   addKeyValue?: boolean
   disabled?: boolean
+  valueTextarea?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -65,6 +75,7 @@ const props = withDefaults(defineProps<Props>(), {
   labelWidth: 0,
   addKeyValue: true,
   disabled: false,
+  valueTextarea: false,
 })
 
 const emit = defineEmits<{
@@ -221,6 +232,10 @@ defineExpose({
   }
 
   :deep(.arco-input-wrapper) {
+    width: 100%;
+  }
+
+  :deep(.arco-textarea-wrapper) {
     width: 100%;
   }
 }

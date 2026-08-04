@@ -30,6 +30,7 @@ export interface ProjectConfigResp {
   remark?: string
   version?: string
   delFlag?: number
+  automationOperationCatalogV2?: boolean
   disabled?: boolean
 }
 

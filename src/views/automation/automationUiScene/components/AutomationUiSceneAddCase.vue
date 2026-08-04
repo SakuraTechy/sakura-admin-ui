@@ -53,11 +53,17 @@
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, h, nextTick, reactive, ref } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { computed, defineEmits, defineProps, h, nextTick, reactive, ref, watch } from 'vue'
+import { Collapse, CollapseItem, Message } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
+import { buildCaseTree, canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, toMovePosition } from '../caseTree'
+import type { AutomationUiCaseTreeNode } from '../caseTree'
+import AutomationOperationMethodForm from './AutomationOperationMethodForm.vue'
+import InfrastructureStepConfig from './InfrastructureStepConfig.vue'
 import GiMenu from '@/components/GiMenu/index.vue'
 import { type AutomationUiCase, type AutomationUiTreeNodeRef, addCase, addStep, copyCaseTree, deleteCaseTree, moveCaseTree, updateCase, updateStep } from '@/apis/automation/automationUiScene'
-import { buildCaseTree, canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, toMovePosition, type AutomationUiCaseTreeNode } from '../caseTree'
+import { getAutomationOperationCatalog } from '@/apis/automation/automationOperationCatalog'
+import type { AutomationOperationCatalog, AutomationOperationMethod, AutomationOperationType } from '@/apis/automation/automationOperationCatalog'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
 import { useDict } from '@/hooks/app'
@@ -69,6 +75,9 @@ defineOptions({ name: 'AutomationUiSceneAddCase' })
 const props = defineProps<{
   caseList: AutomationUiCase[]
   definitionVersion: number
+  projectId?: string | number
+  projectEnvironmentId?: string | number
+  executorInstanceId?: string
   readonly?: boolean
   refreshScene?: (selection?: AutomationUiTreeNodeRef) => Promise<void>
 }>()
@@ -81,9 +90,12 @@ const emit = defineEmits<{
   (e: 'recording', data: { mode: string, node: any }): void
 }>()
 
-const { status_type, automation_operation_type, automation_operation_method } = useDict('status_type', 'automation_operation_type', 'automation_operation_method')
+const { status_type } = useDict('status_type')
+// v2 关闭时显式回到旧表单；这些字典不会参与 v2 的目录协议。
+const { operation_type, operation_method } = useDict('operation_type', 'operation_method')
 
 const uiStore = useUiStore()
+const router = useRouter()
 
 const selectedKeys = ref<string[]>([])
 const selectionInitialized = ref(false)
@@ -102,6 +114,192 @@ const loading = ref(false)
 type TreeCateItem = AutomationUiCaseTreeNode & { popupVisible?: boolean, isEdit?: boolean }
 const treeList = ref<TreeCateItem[]>([])
 const mutationLoading = ref(false)
+const operationCatalog = ref<AutomationOperationCatalog>()
+const operationCatalogLoading = ref(false)
+const operationCatalogUnavailable = ref(false)
+const operationCatalogV2Enabled = ref(true)
+let operationCatalogRequestSequence = 0
+
+const isMethodAuthoringEnabled = (method: any) => {
+  const configured = method?.authoring_enabled ?? method?.authoringEnabled
+  // V2 目录必须由 Admin 明确给出 authoring_enabled；缺失时拒绝新增，不能用旧字典推导。
+  return configured === true
+}
+
+const normalizeOperationCatalog = (source: any): AutomationOperationCatalog => ({
+  catalog_version: String(source?.catalog_version ?? source?.catalogVersion ?? ''),
+  v2_enabled: source?.v2_enabled ?? source?.v2Enabled ?? true,
+  types: Array.isArray(source?.types)
+    ? source.types.map((type: any) => ({
+        type_code: String(type?.type_code ?? type?.typeCode ?? ''),
+        label: String(type?.label ?? ''),
+        sort: Number(type?.sort ?? 0),
+        methods: Array.isArray(type?.methods)
+          ? type.methods.map((method: any) => ({
+              method_code: String(method?.method_code ?? method?.methodCode ?? ''),
+              method_version: Number(method?.method_version ?? method?.methodVersion ?? 1),
+              label: String(method?.label ?? ''),
+              legacy_action: String(method?.legacy_action ?? method?.legacyAction ?? ''),
+              action_type: String(method?.action_type ?? method?.actionType ?? ''),
+              aliases: Array.isArray(method?.aliases) ? method.aliases.map(String) : [],
+              form_schema: Array.isArray(method?.form_schema ?? method?.formSchema)
+                ? method?.form_schema ?? method?.formSchema
+                : [],
+              capabilities: method?.capabilities || {},
+              requirements: method?.requirements || {},
+              implemented: method?.implemented === true,
+              runtime_ready: method?.runtime_ready === true,
+              permission_granted: method?.permission_granted === true,
+              disabled_code: method?.disabled_code ?? method?.disabledCode,
+              authoring_enabled: isMethodAuthoringEnabled(method),
+              enabled: method?.enabled === true,
+              disabled_reason: method?.disabled_reason ?? method?.disabledReason,
+            }))
+          : [],
+      }))
+    : [],
+})
+
+const loadOperationCatalog = async () => {
+  const sceneId = uiStore.activeId
+  if (!sceneId) {
+    operationCatalog.value = undefined
+    operationCatalogUnavailable.value = false
+    return
+  }
+  const requestSequence = ++operationCatalogRequestSequence
+  operationCatalog.value = undefined
+  operationCatalogV2Enabled.value = true
+  operationCatalogLoading.value = true
+  try {
+    const { data } = await getAutomationOperationCatalog(sceneId, props.projectEnvironmentId, props.executorInstanceId)
+    if (requestSequence !== operationCatalogRequestSequence) return
+    const catalog = normalizeOperationCatalog(data)
+    if (!catalog.v2_enabled) {
+      operationCatalogV2Enabled.value = false
+      operationCatalog.value = undefined
+      operationCatalogUnavailable.value = false
+      return
+    }
+    if (!catalog.catalog_version || catalog.types.length === 0) throw new Error('操作目录响应为空')
+    operationCatalog.value = catalog
+    operationCatalogV2Enabled.value = true
+    operationCatalogUnavailable.value = false
+  } catch (error) {
+    if (requestSequence !== operationCatalogRequestSequence) return
+    // V2 目录不可用时禁止新增/修改方法，不能静默回退到旧字典或 description 推导执行语义。
+    operationCatalog.value = undefined
+    operationCatalogV2Enabled.value = true
+    operationCatalogUnavailable.value = true
+    console.warn('加载 UI 自动化操作目录失败，已禁止 V2 方法编排', error)
+  } finally {
+    if (requestSequence === operationCatalogRequestSequence) operationCatalogLoading.value = false
+  }
+}
+
+watch(() => uiStore.activeId, () => {
+  void loadOperationCatalog()
+}, { immediate: true })
+
+const catalogTypes = computed(() => operationCatalog.value?.types || [])
+const catalogMethods = computed(() => catalogTypes.value.flatMap((type) => type.methods))
+const isCatalogAvailable = computed(() => Boolean(operationCatalog.value))
+const findCatalogType = (value: unknown): AutomationOperationType | undefined => {
+  const normalized = String(value || '')
+  return catalogTypes.value.find((type) => type.type_code === normalized || type.label === normalized)
+}
+const findCatalogMethod = (value: unknown): AutomationOperationMethod | undefined => {
+  const normalized = String(value || '')
+  return catalogMethods.value.find((method) => method.method_code === normalized
+    || method.legacy_action === normalized
+    || method.aliases?.includes(normalized))
+}
+const getStepConfig = (step: any, name: string) => {
+  const config = Array.isArray(step?.configList) ? step.configList.find((item: any) => item?.paramsName === name) : null
+  return config?.paramsValue == null ? '' : String(config.paramsValue)
+}
+const getSelectedCatalogMethod = (step: any): AutomationOperationMethod | undefined => {
+  if (!isCatalogAvailable.value) return undefined
+  // 只有显式 method_code 才是目录手工步骤；不能根据 legacy_action 猜测，
+  // 否则历史字典/录制步骤会被误迁移并覆盖其原始 playwright_step。
+  const methodCode = getStepConfig(step, 'method_code')
+  return methodCode ? findCatalogMethod(methodCode) : undefined
+}
+const getInfrastructureActionType = (step: any) => {
+  const actionType = getSelectedCatalogMethod(step)?.action_type
+  return ['server_command', 'database_sql', 'database_native'].includes(actionType || '') ? actionType : ''
+}
+const shouldUseInfrastructureConfig = (step: any) => Boolean(getInfrastructureActionType(step))
+// GiFormModal 保存回调可能持有打开弹窗时复制的表单对象；自定义配置组件始终更新 modalConfig.form。
+// 提交前显式取最新 configList，保证目录元数据与方法参数不会被旧表单快照覆盖。
+const withCurrentStepConfig = (data: any) => {
+  const catalogMethod = getSelectedCatalogMethod(modalConfig.form) || getSelectedCatalogMethod(data)
+  if (!catalogMethod && !shouldUseInfrastructureConfig(data) && !shouldUseInfrastructureConfig(modalConfig.form)) return data
+  const stepData = {
+    ...data,
+    configList: Array.isArray(modalConfig.form.configList)
+      ? modalConfig.form.configList.map((item: any) => ({ ...item }))
+      : [],
+  }
+  if (catalogMethod) {
+    // operationValue 是旧 XML/Jenkins/Selenium 的兼容字段，目录方法代码只放入 configList。
+    stepData.operationName = catalogMethod.label
+    stepData.operationValue = catalogMethod.legacy_action
+  }
+  return stepData
+}
+const operationTypeOptions = computed(() => {
+  if (isCatalogAvailable.value) {
+    return catalogTypes.value
+      .slice()
+      .sort((left, right) => Number(left.sort || 0) - Number(right.sort || 0))
+      .map((type) => ({ label: type.label, value: type.label }))
+  }
+  if (!operationCatalogV2Enabled.value) {
+    return (operation_type.value || []).map((item: any) => ({ label: item.label, value: item.value }))
+  }
+  return []
+})
+const getOperationMethodOptions = () => {
+  const operationType = modalConfig.form.operationType
+  if (!operationType) return []
+  if (isCatalogAvailable.value) {
+    const type = findCatalogType(operationType)
+    return (type?.methods || []).map((method) => ({
+      label: method.label,
+      value: method.method_code,
+      disabled: method.authoring_enabled === false,
+      disabledReason: method.disabled_reason,
+    }))
+  }
+  if (!operationCatalogV2Enabled.value) {
+    return (operation_method.value || []).filter((item: any) => !operationType || !item.type || item.type === operationType)
+      .map((item: any) => ({ label: item.label, value: item.value, extra: item.extra }))
+  }
+  return []
+}
+const newCatalogConfigList = (method: AutomationOperationMethod) => [
+  { paramsName: 'method_code', paramsValue: method.method_code },
+  { paramsName: 'method_version', paramsValue: String(method.method_version) },
+  { paramsName: 'method_config', paramsValue: '{}' },
+]
+const applyCatalogMethod = (method: AutomationOperationMethod) => {
+  modalConfig.form.operationName = method.label
+  // 选择控件使用 method_code；提交前转换为 legacy_action，保证 XML/Jenkins/Selenium 兼容字段不变。
+  modalConfig.form.operationValue = method.method_code
+  modalConfig.form.configList = newCatalogConfigList(method)
+}
+const normalizeCatalogStepForEdit = (step: any) => {
+  const method = getSelectedCatalogMethod(step)
+  if (!method || !getStepConfig(step, 'method_code')) return step
+  const type = catalogTypes.value.find((item) => item.methods.some((itemMethod) => itemMethod.method_code === method.method_code))
+  return {
+    ...step,
+    operationType: type?.label || step.operationType,
+    operationName: method.label,
+    operationValue: method.method_code,
+  }
+}
 const decorateTreeNode = (node: AutomationUiCaseTreeNode): TreeCateItem => ({
   ...node,
   popupVisible: false,
@@ -270,12 +468,16 @@ const modalConfig = reactive({
       required: false,
       type: 'custom',
       slots: {
-        default: () => h(AiEditor, {
-          'modelValue': modalConfig.form.remark,
-          'onUpdate:modelValue': (val: any) => {
-            modalConfig.form.remark = val
-          },
-          'readonly': true,
+        default: () => h(Collapse, { class: 'remark-editor-collapse', bordered: false, destroyOnHide: true }, {
+          default: () => h(CollapseItem, { key: 'remark-editor', header: '展开备注编辑器' }, {
+            default: () => h(AiEditor, {
+              'modelValue': modalConfig.form.remark,
+              'onUpdate:modelValue': (val: any) => {
+                modalConfig.form.remark = val
+              },
+              'readonly': true,
+            }),
+          }),
         }),
       },
     },
@@ -342,23 +544,6 @@ const modalConfig = reactive({
         },
       },
     },
-    // { label: '步骤备注', field: 'remark', type: 'textarea', required: false, props: { maxLength: 255, autoSize: true, allowClear: true } },
-    {
-      label: '步骤备注',
-      field: 'remark',
-      span: 24,
-      required: false,
-      type: 'custom',
-      slots: {
-        default: () => h(AiEditor, {
-          'modelValue': modalConfig.form.remark,
-          'onUpdate:modelValue': (value: any) => {
-            modalConfig.form.remark = value
-          },
-          'readonly': true,
-        }),
-      },
-    },
     {
       label: '操作类型',
       field: 'operationType',
@@ -366,13 +551,15 @@ const modalConfig = reactive({
       type: 'select',
       required: true,
       props: {
-        options: automation_operation_type.value,
+        options: operationTypeOptions.value,
+        loading: operationCatalogLoading.value,
+        placeholder: operationCatalogUnavailable.value ? '操作目录不可用，暂不可新增方法' : '请选择操作类型',
         allowClear: true,
         allowSearch: true,
         onChange: (value: any) => {
-          console.warn(modalConfig.form)
           modalConfig.form.operationType = value
           modalConfig.form.operationValue = ''
+          modalConfig.form.operationName = ''
           modalConfig.form.configList = []
         },
       },
@@ -384,33 +571,24 @@ const modalConfig = reactive({
       type: 'select',
       required: true,
       props: {
-        options: computed(() => {
-          const operationType = modalConfig.form.operationType
-          if (!operationType) return []
-          const selectedType = automation_operation_type.value.find((item: any) => item.value === operationType || item.label === operationType)
-          const compareType = selectedType ? selectedType.label : operationType
-          return automation_operation_method.value.filter((method: any) => {
-            try {
-              if (!method.extra) return false
-              const extraData = JSON.parse(method.extra)
-              const description = JSON.parse(extraData.description)
-              return description.type === compareType
-            } catch (e) {
-              return false
-            }
-          })
-        }),
+        options: computed(() => getOperationMethodOptions()),
+        loading: operationCatalogLoading.value,
+        placeholder: operationCatalogUnavailable.value ? '操作目录不可用，暂不可新增方法' : '请选择操作方法',
         onChange: (value: any) => {
-          modalConfig.form.operationValue = value
           try {
-            const method = automation_operation_method.value.find((m: any) => m.value === value)
-            if (method && method.extra) {
+            const method = getOperationMethodOptions().find((m: any) => m.value === value)
+            const catalogMethod = findCatalogMethod(value)
+            if (catalogMethod && isCatalogAvailable.value) {
+              applyCatalogMethod(catalogMethod)
+              return
+            }
+            modalConfig.form.operationValue = value
+            if (!operationCatalogV2Enabled.value && method?.extra) {
+              // 仅在项目明确关闭 v2 时保留旧表单兼容解析；v2 目录失败不会走这里。
               const extraData = JSON.parse(method.extra)
               const description = JSON.parse(extraData.description)
               modalConfig.form.configList = description?.configList ?? []
               modalConfig.form.operationName = method.label
-              console.warn(modalConfig.form.operationType)
-              console.warn(modalConfig.form.operationName)
             } else {
               modalConfig.form.configList = []
             }
@@ -428,7 +606,26 @@ const modalConfig = reactive({
       span: 24,
       type: 'custom',
       required: true,
+      show: () => Boolean(getSelectedCatalogMethod(modalConfig.form)) && !shouldUseInfrastructureConfig(modalConfig.form),
       slots: {
+        default: () => h(AutomationOperationMethodForm, {
+          'method': getSelectedCatalogMethod(modalConfig.form),
+          'modelValue': modalConfig.form.configList,
+          'onUpdate:modelValue': (val: any) => {
+            modalConfig.form.configList = val
+          },
+        }),
+      },
+    },
+    {
+      label: '操作步骤',
+      field: 'configList',
+      span: 24,
+      type: 'custom',
+      required: true,
+      show: () => !getSelectedCatalogMethod(modalConfig.form) && !shouldUseInfrastructureConfig(modalConfig.form),
+      slots: {
+        // 历史字典/录制步骤保留原键值配置，避免目录接口不可用时无法维护旧数据。
         default: () => h(KeyValuePairForm, {
           'modelValue': modalConfig.form.configList,
           'onUpdate:modelValue': (val: any) => {
@@ -438,6 +635,49 @@ const modalConfig = reactive({
           'valueColSpan': 13,
           'actionColSpan': 2,
           'colGap': 10,
+        }),
+      },
+    },
+    {
+      label: '操作步骤',
+      // 目标配置仅是表单输入；真正的 canonical step 由 Admin assembler 生成。
+      field: 'configList',
+      span: 24,
+      type: 'custom',
+      required: true,
+      show: () => shouldUseInfrastructureConfig(modalConfig.form),
+      slots: {
+        default: () => h(InfrastructureStepConfig, {
+          'modelValue': modalConfig.form.configList,
+          'onUpdate:modelValue': (value: any) => {
+            modalConfig.form.configList = value
+          },
+          'actionType': getInfrastructureActionType(modalConfig.form),
+          'methodCode': getSelectedCatalogMethod(modalConfig.form)?.method_code,
+          'methodVersion': getSelectedCatalogMethod(modalConfig.form)?.method_version,
+          'projectId': props.projectId,
+          'onGoTargetConfig': goInfrastructureTargetConfig,
+        }),
+      },
+    },
+    // { label: '步骤备注', field: 'remark', type: 'textarea', required: false, props: { maxLength: 255, autoSize: true, allowClear: true } },
+    {
+      label: '步骤备注',
+      field: 'remark',
+      span: 24,
+      required: false,
+      type: 'custom',
+      slots: {
+        default: () => h(Collapse, { class: 'remark-editor-collapse', bordered: false, destroyOnHide: true }, {
+          default: () => h(CollapseItem, { key: 'remark-editor', header: '展开备注编辑器' }, {
+            default: () => h(AiEditor, {
+              'modelValue': modalConfig.form.remark,
+              'onUpdate:modelValue': (value: any) => {
+                modalConfig.form.remark = value
+              },
+              'readonly': true,
+            }),
+          }),
         }),
       },
     },
@@ -462,6 +702,43 @@ const modalConfig = reactive({
   draggable: true,
   clear: ref(false),
 })
+
+const goInfrastructureTargetConfig = async (kind : 'server' | 'database') => {
+  modalConfig.visible = false
+  await router.push(kind ==='server'
+    ? {
+      path: '/project/serverConfig',
+      query: { projectId: String(props.projectId || '')},
+    }
+    : {
+      path: '/project/dataBaseConfig',
+      query: { projectId: String(props.projectId || '') },
+    })
+  // await router.push({
+  //   path: '/project/environmentConfig',
+  //   query: { projectId: String(props.projectId || '') },
+  // })
+}
+
+const validateInfrastructureTargetForSave = (step: any) => {
+  const actionType = getInfrastructureActionType(step)
+  if (!actionType) return true
+  try {
+    const methodConfig = JSON.parse(getStepConfig(step, 'method_config') || '{}')
+    const targetRef = methodConfig?.target_ref
+    const expectedKind = actionType === 'server_command' ? 'server' : 'database'
+    const configId = Number(targetRef?.config_id)
+    if (targetRef?.scope !== 'project_config' || targetRef?.kind !== expectedKind
+      || !Number.isInteger(configId) || configId <= 0) {
+      Message.warning(`请选择有效的${expectedKind === 'server' ? '目标服务器' : '目标数据库'}`)
+      return false
+    }
+    return true
+  } catch {
+    Message.warning('基础设施目标配置无效，请重新选择目标')
+    return false
+  }
+}
 
 const handleSave = async (data: any) => {
   if (props.readonly) {
@@ -491,8 +768,10 @@ const handleSave = async (data: any) => {
         Message.success('复制成功')
       }
     } else if (modalConfig.title === '新增步骤') {
+      const stepData = withCurrentStepConfig(data)
+      if (!validateInfrastructureTargetForSave(stepData)) return false
       const res = await addStep({
-        ...data,
+        ...stepData,
         expectedDefinitionVersion: props.definitionVersion,
         // operationType: automation_operation_type.value.find((item: any) => item.value === data.operationType)?.label,
         type: 'step',
@@ -505,7 +784,9 @@ const handleSave = async (data: any) => {
       Message.success('新增成功')
     } else if (modalConfig.title === '修改步骤') {
       const source = nodeRefOf(modalData.value)
-      await updateStep({ ...data, id: source.stepId, pid: source.caseId, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      const stepData = withCurrentStepConfig(data)
+      if (!validateInfrastructureTargetForSave(stepData)) return false
+      await updateStep({ ...stepData, id: source.stepId, pid: source.caseId, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
       selection = source
       Message.success('修改成功')
     } else if (modalConfig.title === '复制步骤') {
@@ -661,7 +942,9 @@ const onMenuClick = async (data?: any) => {
           modalConfig.columns = data.node?.type === 'case' ? modalConfig.caseColumns : modalConfig.stepColumns
           modalConfig.visible = true
           const detail = findNodeDetail(props.caseList, nodeRefOf(data.node)) as any
-          modalConfig.form = { ...detail }
+          modalConfig.form = data.node?.type === 'case'
+            ? { ...detail }
+            : normalizeCatalogStepForEdit({ ...detail })
           modalConfig.form.id = data.node?.type === 'case' ? data.node.caseId : data.node?.stepId
           modalConfig.form.status = normalizeAutomationNodeStatus(detail?.status)
           modalData.value = data.node
@@ -748,6 +1031,11 @@ export default {}
 :deep(.gi-tree__tree){
   // height: 11%;
   margin-bottom: 80px;
+}
+
+:global(.remark-editor-collapse .arco-collapse-item-content) {
+  padding-right: 0;
+  padding-left: 0;
 }
 // :deep(.arco-select-view-input ){
 //   font-size: 13px !important;

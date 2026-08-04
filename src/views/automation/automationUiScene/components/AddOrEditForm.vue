@@ -76,6 +76,7 @@
             :readonly="isReadonly"
             :case-list="caseList"
             :definition-version="sceneDetail?.definitionVersion ?? 0"
+            :project-id="sceneDetail?.projectId ?? form.projectId"
             :refresh-scene="getSceneInfo"
             @get-scene-info="getSceneInfo"
             @get-case="getCase"
@@ -144,6 +145,7 @@
                   :col-gap="15"
                   :add-key-value="false"
                   :disabled="true"
+                  :value-textarea="true"
                 />
               </a-descriptions-item>
             </a-descriptions>
@@ -741,7 +743,7 @@ const executionCaseModalRef = ref<{
   cancelActiveCase: () => Promise<void>
 }>()
 const handleUnifiedExecutionSelect = async (value: string) => {
-  const type = value as ExecutionType
+  let type = value as ExecutionType
   if (type === 'jenkins') {
     await openExecuteModal()
     return
@@ -749,6 +751,11 @@ const handleUnifiedExecutionSelect = async (value: string) => {
   if (!currentScene.value) {
     Message.warning('请先保存场景，再启动回放')
     return
+  }
+  if (type === 'extension-cdp' && sceneRequiresInfrastructure(currentScene.value)) {
+    // 基础设施步骤在首选链路由 Runner 在同一执行节点串行执行，避免浏览器会话与远程命令分裂。
+    type = 'playwright-runner'
+    Message.info('当前场景包含服务器或数据库步骤，已切换为 Playwright Runner 执行')
   }
   executionCaseSelectModalRef.value?.onOpen(currentScene.value, type, {
     caseIds: selectedHistoryCaseId.value ? [selectedHistoryCaseId.value] : [],
@@ -887,8 +894,24 @@ const sceneInfoLoading = ref(false)
 let sceneInfoRequestSequence = 0
 const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp, options?: RecordingOpenOptions) => void }>()
 
+const isInfrastructureActionType = (value: unknown) => ['server_command', 'database_sql', 'database_native', 'infra-server-command', 'infra-database-sql', 'infra-database-native']
+  .includes(String(value || '').trim().toLowerCase())
+const sceneRequiresInfrastructure = (scene: any) => Boolean(
+  scene?.requiresInfrastructure
+  || (Array.isArray(scene?.caseList) && scene.caseList.some((testCase: any) =>
+    Array.isArray(testCase?.stepList) && testCase.stepList.some((step: any) => {
+      const action = Array.isArray(step?.configList)
+        ? step.configList.find((item: any) => item?.paramsName === 'action_type')?.paramsValue
+        : ''
+      return isInfrastructureActionType(action || step?.operationValue)
+    }),
+  )),
+)
+
 const currentScene = computed<AutomationUiSceneResp | null>(() => {
   if (!uiStore.activeId) return null
+  const sceneCases = caseList.value as AutomationUiSceneResp['caseList']
+  const requiresInfrastructure = sceneRequiresInfrastructure({ caseList: sceneCases })
   return {
     id: String(uiStore.activeId),
     sceneId: form.sceneId,
@@ -903,8 +926,11 @@ const currentScene = computed<AutomationUiSceneResp | null>(() => {
     level: form.level,
     status: form.status,
     tags: Array.isArray(form.tags) ? form.tags : [],
-    caseList: caseList.value as AutomationUiSceneResp['caseList'],
+    caseList: sceneCases,
     definitionVersion: sceneDetail.value?.definitionVersion ?? 0,
+    requiresInfrastructure,
+    requiredCapabilities: requiresInfrastructure ? ['browser', 'infrastructure'] : ['browser'],
+    supportedExecutors: requiresInfrastructure ? ['playwright-runner'] : ['playwright-runner', 'extension-cdp'],
   } as AutomationUiSceneResp
 })
 

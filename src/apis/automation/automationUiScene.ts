@@ -64,6 +64,10 @@ export interface AutomationUiSceneResp {
   createUserString: string
   updateUserString: string
   disabled: boolean
+  /** 后端能力协商结果；旧场景未返回时前端按步骤 action_type 兼容判断。 */
+  requiresInfrastructure?: boolean
+  requiredCapabilities?: string[]
+  supportedExecutors?: ExecutionType[]
 }
 export interface AutomationUiSceneDetailResp {
   id: string
@@ -110,6 +114,9 @@ export interface AutomationUiSceneDetailResp {
   delFlag: number
   createUserString: string
   updateUserString: string
+  requiresInfrastructure?: boolean
+  requiredCapabilities?: string[]
+  supportedExecutors?: ExecutionType[]
 }
 export interface AutomationUiSceneQuery {
   id?: string | undefined
@@ -170,6 +177,23 @@ export interface AutomationUiSceneExecAllReq {
 export interface AutomationUiStepConfig {
   paramsName: string
   paramsValue: string
+}
+
+/** 基础设施步骤下拉目标；接口不返回账号、密码或连接串。 */
+export interface AutomationInfrastructureTarget {
+  id: string
+  kind: 'server' | 'database'
+  type: string
+  ip: string
+  port?: number
+  dataBase?: string
+  description?: string
+  /** Admin 执行节点到目标 IP:端口的 TCP 可达性。 */
+  online?: boolean
+}
+
+export function listAutomationInfrastructureTargets(projectId: string | number, kind: AutomationInfrastructureTarget['kind']) {
+  return http.get<AutomationInfrastructureTarget[]>('/automation/infrastructure/targets', { projectId, kind })
 }
 
 export interface AutomationUiStep {

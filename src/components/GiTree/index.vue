@@ -234,15 +234,18 @@ class GlobalKeydownManager {
 
     // HMR 或上一个树实例卸载后可能遗留标记；只认当前实例的监听函数，避免后续实例无法重新监听。
     const oldListener = (window as any).__giTreeKeydownListener
-    if (oldListener && oldListener !== this.handleGlobalKeydown) {
+    if (typeof oldListener === 'function' && oldListener !== this.handleGlobalKeydown) {
       window.removeEventListener('keydown', oldListener)
+    } else if (oldListener) {
+      // 兼容旧版本遗留的布尔标记，不能将其传给 removeEventListener。
+      delete (window as any).__giTreeKeydownListener
     }
 
     this.isListening = true
     window.addEventListener('keydown', this.handleGlobalKeydown)
 
-    // 标记已经注册了监听器
-    ;(window as any).__giTreeKeydownListener = true
+    // 保存实际函数引用，卸载和下一次挂载时才能安全移除。
+    ;(window as any).__giTreeKeydownListener = this.handleGlobalKeydown
   }
 
   private stopListening() {
