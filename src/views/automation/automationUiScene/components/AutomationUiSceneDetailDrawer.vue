@@ -279,12 +279,10 @@ const formatList = (value: unknown) => {
 const getRecordingSteps = (caseItem: any) => {
   const stepList = Array.isArray(caseItem?.stepList) ? caseItem.stepList : []
   return stepList.filter((step: any) => {
-    return Boolean(
-      getConfigValue(step, 'playwright_step')
-      || getConfigValue(step, 'locator_meta')
-      || getConfigValue(step, 'screenshot_url')
-      || String(step?.operationValue || '').startsWith('pw-'),
-    )
+    // canonical playwright_step 也会由 Admin 手工目录步骤生成，不能据此推断录制来源。
+    const source = getConfigValue(step, 'source').trim().toLowerCase()
+    const recordingId = getConfigValue(step, 'recording_id').trim()
+    return source === 'sakura-playwright' || Boolean(recordingId)
   })
 }
 

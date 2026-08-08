@@ -10,11 +10,29 @@ import { Message, Notification } from '@arco-design/web-vue'
 interface NavigatorWithMsSaveOrOpenBlob extends Navigator {
   msSaveOrOpenBlob: (blob: Blob, fileName: string) => void
 }
+
+function decodeDownloadFileName(value: string) {
+  const trimQuotes = (fileName: string) => fileName.trim().replace(/^["']|["']$/g, '')
+  const fileName = trimQuotes(value)
+  try {
+    return trimQuotes(decodeURIComponent(fileName))
+  } catch {
+    return fileName
+  }
+}
+
+function getDownloadFileName(contentDisposition: string) {
+  const encodedFileName = contentDisposition.match(/filename\*\s*=\s*(?:UTF-8'')?([^;]+)/i)?.[1]
+  if (encodedFileName) return decodeDownloadFileName(encodedFileName)
+  const fileName = contentDisposition.match(/filename\s*=\s*("[^"]*"|[^;]+)/i)?.[1]
+  return fileName ? decodeDownloadFileName(fileName) : ''
+}
+
 export const useDownload = async (api: () => Promise<any>, isNotify = false, tempName = '', fileType = '.xlsx') => {
   try {
     const res = await api()
     if (res.headers['content-disposition']) {
-      tempName = decodeURI(res.headers['content-disposition'].split(';')[1].split('=')[1])
+      tempName = getDownloadFileName(res.headers['content-disposition']) || tempName
     } else {
       tempName = tempName || new Date().getTime() + fileType
     }
@@ -44,7 +62,7 @@ export const useDownload = async (api: () => Promise<any>, isNotify = false, tem
     document.body.removeChild(exportFile)
     window.URL.revokeObjectURL(blobUrl)
     return res
-  } catch (error) {
-    // console.log(error)
+  } catch {
+    // 请求错误由 HTTP 拦截器统一提示，避免下载工具重复弹窗。
   }
 }

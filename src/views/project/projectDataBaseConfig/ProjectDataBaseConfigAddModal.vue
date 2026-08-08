@@ -65,7 +65,7 @@ const getServerHelp = (typeValue: string) => {
   return {
     title: '数据库如何开启远程访问？',
     content: h('div', {}, [
-      h('div', {}, `执行: mysql -usroot -pAnkki_mySQL123 mysql`),
+      h('div', {}, '执行: mysql -usroot -p${DB_PASSWORD} mysql'),
       h('div', {}, '执行: UPDATE `mysql`.`user` SET `Host` = \'%\' WHERE `User` = \'root\' And `Host` = \'localhost\';'),
       h('div', {}, `执行: quit;`),
       h('div', {}, `重启: systemctl restart mysqld`),
@@ -95,7 +95,7 @@ const getServerHelp = (typeValue: string) => {
           h(IconInfoCircle, { style: 'margin-right: 5px; color: #165dff;' }),
             `数据库如何开启远程访问？`,
         ]),
-        h('div', {}, `执行: mysql -usroot -pAnkki_mySQL123 mysql`),
+      h('div', {}, '执行: mysql -usroot -p${DB_PASSWORD} mysql'),
         h('div', {}, '执行: UPDATE `mysql`.`user` SET `Host` = \'%\' WHERE `User` = \'sroot\' And `Host` = \'localhost\';'),
         h('div', {}, `执行: quit;`),
         h('div', {}, `重启: systemctl restart mysqld`),
@@ -392,7 +392,7 @@ const save = async () => {
   try {
     const isInvalid = await formRef.value?.formRef?.validate()
     if (isInvalid) return false
-    await testProjectDataBaseConfig(form)
+    await testProjectDataBaseConfig(form, dataId.value || undefined)
     if (isUpdate.value) {
       await updateProjectDataBaseConfig(form, dataId.value)
       Message.success('修改成功')
@@ -429,13 +429,15 @@ const onCopy = async (id: string) => {
   dataId.value = ''
   const { data } = await getProjectDataBaseConfig(id)
   data.id = ''
+  // 复制配置时不能复用脱敏占位符，必须重新输入真实密码。
+  data.passWord = ''
   Object.assign(form, data)
   visible.value = true
 }
 
 // 测试
 const onTest = async (record: any) => {
-  const { msg } = await testProjectDataBaseConfig(record)
+  const { msg } = await testProjectDataBaseConfig(record, record.id)
   msg === 'ok' ? Message.success('测试连接成功') : Message.error(msg)
 }
 

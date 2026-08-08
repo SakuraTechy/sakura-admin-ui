@@ -60,6 +60,7 @@ export interface ExecutionHistoryStepRow {
   valueMasked: boolean
   targetSelector: string
   targetXpath: string
+  infrastructureTaskId: string
   details: unknown
 }
 
@@ -1004,8 +1005,30 @@ function normalizeHistoryStep(step: any, parentKey: string, index: number): Exec
     valueMasked: ['1', 'true'].includes(String(step.value_masked ?? step.valueMasked ?? '').toLowerCase()),
     targetSelector: stringValue(step.target_selector || step.targetSelector) || '-',
     targetXpath: stringValue(step.target_xpath || step.targetXpath) || '-',
-    details: step.details,
+    infrastructureTaskId: stringValue(step.infrastructure_task_id || step.infrastructureTaskId),
+    details: normalizeHistoryStepDetails(step),
   }
+}
+
+function normalizeHistoryStepDetails(step: any) {
+  const details = parseObjectValue(step.details)
+  const directInfrastructure = step.infrastructure || parseObjectValue(step.result).infrastructure
+  if (directInfrastructure && typeof directInfrastructure === 'object' && !Array.isArray(directInfrastructure)) {
+    details.infrastructure = details.infrastructure || directInfrastructure
+  }
+
+  const variableName = stringValue(step.variable_name || step.variableName)
+  if (variableName && (!details.variable || typeof details.variable !== 'object')) {
+    const valueMasked = ['1', 'true'].includes(String(step.value_masked ?? step.valueMasked ?? '').toLowerCase())
+    const valuePreview = step.value_preview ?? step.valuePreview
+    details.variable = {
+      variable_name: variableName,
+      value_masked: valueMasked ? 1 : 0,
+      ...(valuePreview != null && !valueMasked ? { value_preview: String(valuePreview) } : {}),
+      source: stringValue(step.variable_source || step.variableSource),
+    }
+  }
+  return Object.keys(details).length ? details : step.details
 }
 
 /** 用例结果必须以步骤结果为准，只有全部步骤通过才算用例通过。 */
@@ -1226,6 +1249,7 @@ function formatDurationSeconds(milliseconds: number) {
 }
 
 function sessionModeLabel(value: string) {
+  if (value === 'reuse-browser') return '同一浏览器窗口'
   return value === 'reuse-auth' ? '复用登录态' : '独立登录'
 }
 

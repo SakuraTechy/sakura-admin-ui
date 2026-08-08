@@ -33,6 +33,31 @@
       </template>
     </a-popover>
     <a-popover
+      v-if="props.executionOptions.length && canExecute"
+      position="right"
+      trigger="hover"
+      :content-style="{ padding: 0, overflow: 'hidden' }"
+      :unmount-on-close="true"
+    >
+      <a-menu-item :disabled="props.executionDisabled">
+        <template #icon><icon-play-arrow :size="16" :stroke-width="3" /></template>
+        <a-row class="submenu-row" justify="space-between" align="center">
+          <span>{{ props.executionLabel }}</span>
+          <icon-right class="arrow-icon" />
+        </a-row>
+      </a-menu-item>
+      <template #content>
+        <a-doption
+          v-for="item in props.executionOptions"
+          :key="item.mode"
+          :disabled="props.executionDisabled"
+          @click="onClick(item.mode)"
+        >
+          {{ item.label }}
+        </a-doption>
+      </template>
+    </a-popover>
+    <a-popover
       v-model:popup-visible="popupVisible"
       position="right"
       trigger="hover"
@@ -96,6 +121,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { TreeInstance } from '@arco-design/web-vue'
+import has from '@/utils/has'
 
 defineOptions({ name: 'GiMenu' })
 
@@ -103,6 +129,9 @@ const props = defineProps({
   treeData: { type: Array, default: () => [] },
   recordingLabel: { type: String, default: '录制' },
   recordingOptions: { type: Array, default: () => [] },
+  executionLabel: { type: String, default: '执行' },
+  executionOptions: { type: Array, default: () => [] },
+  executionDisabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits([
@@ -111,6 +140,7 @@ const emit = defineEmits([
 ])
 
 const popupVisible = ref(false)
+const canExecute = computed(() => has.hasPerm('automation:automationUiScene:execute'))
 const treeFieldNames = computed(() => props.treeData.some((item: any) => item?.treeKey)
   ? { key: 'treeKey', title: 'name', children: 'children' }
   : { key: 'id', title: 'name', children: 'children' })
@@ -143,13 +173,19 @@ export default {}
     }
   }
   .right-menu {
-    width: 120px;
+    width: 132px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     border-radius: 4px;
     border: 1px solid var(--color-border-2);
     box-sizing: border-box;
     .arrow-icon {
+      flex: 0 0 auto;
       margin-right: 0;
+    }
+    .submenu-row {
+      flex: 1;
+      flex-wrap: nowrap;
+      min-width: 0;
     }
   }
   </style>

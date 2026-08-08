@@ -3,6 +3,8 @@
     v-model:visible="localVisible"
     :title="title"
     :width="modalWidth"
+    :modal-class="modalClass"
+    :body-class="bodyClass"
     :mask-closable="maskClosable"
     :esc-to-close="escToClose"
     :draggable="draggable"
@@ -12,7 +14,11 @@
     @close="handleClose"
     @update:visible="val => emit('update:visible', val)"
   >
-    <slot>
+    <template #title>
+      <slot name="title">{{ title }}</slot>
+    </template>
+    <slot v-if="customBody" name="body" :form="localForm" />
+    <slot v-else>
       <GiForm ref="formRef" v-model="localForm" :columns="columns" @change="onFormChange" />
     </slot>
   </a-modal>
@@ -29,12 +35,16 @@ const props = defineProps({
   visible: Boolean,
   title: String,
   width: { type: [Number, String], default: 600 },
+  modalClass: { type: [String, Array, Object], default: '' },
+  bodyClass: { type: [String, Array, Object], default: '' },
   maskClosable: { type: Boolean, default: false },
   escToClose: { type: Boolean, default: false },
   draggable: { type: Boolean, default: true },
   maxBodyHeight: { type: [Number, String], default: '' },
   form: { type: Object, required: true },
   columns: { type: Array as () => ColumnItem<any>[], default: () => [] },
+  customBody: Boolean,
+  customValidate: Function,
   clear: Boolean,
   onSave: Function,
 })
@@ -87,8 +97,12 @@ const handleSave = async () => {
     Message.warning('请检查必填项')
     return false
   }
+  if (props.customBody && props.customValidate && await props.customValidate(localForm.value) === false) {
+    return false
+  }
   //   await new Promise((resolve) => setTimeout(resolve, 500))
   emit('save', localForm.value)
+  return true
 //   if (props.onSave) {
 //     return props.onSave(localForm.value)
 //   }

@@ -77,12 +77,14 @@
             :case-list="caseList"
             :definition-version="sceneDetail?.definitionVersion ?? 0"
             :project-id="sceneDetail?.projectId ?? form.projectId"
+            :execution-running="executionRunning"
             :refresh-scene="getSceneInfo"
             @get-scene-info="getSceneInfo"
             @get-case="getCase"
             @get-step="getStep"
             @selection-clear="clearCaseSelection"
             @recording="openChromeRecordingFromNode"
+            @execute-case="handleCaseExecution"
           />
         </a-tab-pane>
       </a-tabs>
@@ -159,11 +161,11 @@
               <a-descriptions-item label="用例名称">{{ caseDetail?.name || '-' }}</a-descriptions-item>
               <a-descriptions-item label="用例备注">{{ caseDetail?.remark || '-' }}</a-descriptions-item>
               <a-descriptions-item label="录制步骤数">{{ selectedCaseRecordingSteps.length }}</a-descriptions-item>
-              <a-descriptions-item label="原始用例 ID">{{ getStepConfigValue(firstRecordingStep, 'original_case_id') || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="录制 ID">{{ getStepConfigValue(firstRecordingStep, 'recording_id') || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="起始地址">{{ getStepConfigValue(firstRecordingStep, 'start_url') || getStepConfigValue(firstRecordingStep, 'url') || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="窗口模式">{{ getStepConfigValue(firstRecordingStep, 'window_size_mode') || '-' }}</a-descriptions-item>
-              <a-descriptions-item label="视口">{{ formatCaseViewport(firstRecordingStep) }}</a-descriptions-item>
+              <a-descriptions-item label="原始用例 ID">{{ caseDetail?.origin?.originalCaseId || getStepConfigValue(firstRecordingStep, 'original_case_id') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="录制 ID">{{ caseDetail?.origin?.initialRecordingId || getStepConfigValue(firstRecordingStep, 'recording_id') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="起始地址">{{ getCaseExecutionValue('startUrl') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="窗口模式">{{ getCaseExecutionValue('windowSizeMode') || '-' }}</a-descriptions-item>
+              <a-descriptions-item label="视口">{{ formatCaseViewportFromDefinition() }}</a-descriptions-item>
             </a-descriptions>
             <a-tabs size="small" class="recording-json-tabs">
               <a-tab-pane key="step_table" title="步骤列表">
@@ -315,7 +317,7 @@ import mittBus from '@/utils/mitt'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
 import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
-import { type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiCaseDetail, getAutomationUiScene, getAutomationUiStepDetail, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { normalizeAutomationNodeStatus } from '../caseTree'
 import { findNodePath } from '@/utils/sakura'
 import http from '@/utils/http'
@@ -535,6 +537,26 @@ const selectedCaseRecordingSteps = computed(() => {
 
 const firstRecordingStep = computed(() => selectedCaseRecordingSteps.value[0])
 
+// 用例级 executionConfig 是运行配置唯一事实来源；仅对历史数据回退到旧步骤字段。
+const getCaseExecutionValue = (name: string) => {
+  const config = caseDetail.value?.executionConfig || {}
+  if (config[name] != null && config[name] !== '') return String(config[name])
+  const legacyName = {
+    startUrl: 'start_url',
+    windowSizeMode: 'window_size_mode',
+    viewportWidth: 'viewport_width',
+    viewportHeight: 'viewport_height',
+    screenshotMode: 'screenshot_mode',
+    pageErrorCheckEnabled: 'page_error_check_enabled',
+  }[name] || name
+  return getStepConfigValue(firstRecordingStep.value, legacyName)
+}
+
+const getCaseOriginValue = (name: string, legacyName: string) => {
+  const value = caseDetail.value?.origin?.[name]
+  return value == null || value === '' ? getStepConfigValue(firstRecordingStep.value, legacyName) : String(value)
+}
+
 const selectedCaseRecordingStepJsonList = computed(() => {
   return selectedCaseRecordingSteps.value.map((step: any, index: number) => {
     const rawStep = parseStepConfigJson(step, 'playwright_step')
@@ -555,17 +577,17 @@ const selectedCaseRecordingStepJsonList = computed(() => {
 
 const selectedCaseRecordingCaseJson = computed(() => {
   const firstStep = firstRecordingStep.value
-  const caseId = getStepConfigValue(firstStep, 'original_case_id') || caseDetail.value?.id || ''
+  const caseId = getCaseOriginValue('originalCaseId', 'original_case_id') || caseDetail.value?.id || ''
   return {
     id: caseId,
     name: caseDetail.value?.name || '',
     status: caseDetail.value?.status || '',
-    start_url: getStepConfigValue(firstStep, 'start_url') || getStepConfigValue(firstStep, 'url') || '',
+    start_url: getCaseExecutionValue('startUrl') || getStepConfigValue(firstStep, 'url') || '',
     description: caseDetail.value?.remark || '',
-    screenshot_mode: getStepConfigValue(firstStep, 'screenshot_mode') || 'standard',
-    window_size_mode: getStepConfigValue(firstStep, 'window_size_mode') || '',
-    viewport_width: formatCaseViewportNumber(firstStep, 'viewport_width'),
-    viewport_height: formatCaseViewportNumber(firstStep, 'viewport_height'),
+    screenshot_mode: getCaseExecutionValue('screenshotMode') || 'standard',
+    window_size_mode: getCaseExecutionValue('windowSizeMode') || '',
+    viewport_width: formatNumberOrEmpty(getCaseExecutionValue('viewportWidth')),
+    viewport_height: formatNumberOrEmpty(getCaseExecutionValue('viewportHeight')),
     steps: selectedCaseRecordingStepJsonList.value,
   }
 })
@@ -617,9 +639,11 @@ const getStepConfigValue = (step: any, name: string) => {
 
 const isPlaywrightStep = (step: any) => {
   if (!step) return false
+  const source = getStepConfigValue(step, 'source') || step?.source
+  const recordingId = getStepConfigValue(step, 'recording_id') || step?.recordingId
   return Boolean(
-    getStepConfigValue(step, 'playwright_step')
-    || getStepConfigValue(step, 'locator_meta')
+    source === 'sakura-playwright'
+    || recordingId
     || getStepConfigValue(step, 'screenshot_url')
     || String(step?.operationValue || '').startsWith('pw-'),
   )
@@ -658,19 +682,10 @@ const formatNumberOrEmpty = (value: string) => {
   return Number.isFinite(numberValue) && value !== '' ? numberValue : ''
 }
 
-const isMaximizedWindowMode = (step: any) => {
-  return getStepConfigValue(step, 'window_size_mode') === 'maximized'
-}
-
-const formatCaseViewportNumber = (step: any, name: 'viewport_width' | 'viewport_height') => {
-  if (isMaximizedWindowMode(step)) return ''
-  return formatNumberOrEmpty(getStepConfigValue(step, name))
-}
-
-const formatCaseViewport = (step: any) => {
-  if (isMaximizedWindowMode(step)) return '-'
-  const width = getStepConfigValue(step, 'viewport_width')
-  const height = getStepConfigValue(step, 'viewport_height')
+const formatCaseViewportFromDefinition = () => {
+  if (getCaseExecutionValue('windowSizeMode') === 'maximized') return '-'
+  const width = getCaseExecutionValue('viewportWidth')
+  const height = getCaseExecutionValue('viewportHeight')
   return width && height ? `${width} x ${height}` : '-'
 }
 
@@ -743,7 +758,7 @@ const executionCaseModalRef = ref<{
   cancelActiveCase: () => Promise<void>
 }>()
 const handleUnifiedExecutionSelect = async (value: string) => {
-  let type = value as ExecutionType
+  const type = value as ExecutionType
   if (type === 'jenkins') {
     await openExecuteModal()
     return
@@ -752,13 +767,29 @@ const handleUnifiedExecutionSelect = async (value: string) => {
     Message.warning('请先保存场景，再启动回放')
     return
   }
-  if (type === 'extension-cdp' && sceneRequiresInfrastructure(currentScene.value)) {
-    // 基础设施步骤在首选链路由 Runner 在同一执行节点串行执行，避免浏览器会话与远程命令分裂。
-    type = 'playwright-runner'
-    Message.info('当前场景包含服务器或数据库步骤，已切换为 Playwright Runner 执行')
-  }
   executionCaseSelectModalRef.value?.onOpen(currentScene.value, type, {
     caseIds: selectedHistoryCaseId.value ? [selectedHistoryCaseId.value] : [],
+  })
+}
+
+const handleCaseExecution = async (payload: { caseId: string, executionType: string }) => {
+  if (executionRunning.value) {
+    Message.warning('已有用例正在执行，请等待当前任务结束')
+    return
+  }
+  selectedHistoryCaseId.value = payload.caseId
+  const type = payload.executionType as ExecutionType
+  if (type === 'jenkins') {
+    await openExecuteModal()
+    return
+  }
+  if (!currentScene.value) {
+    Message.warning('请先保存场景，再启动回放')
+    return
+  }
+  executionCaseSelectModalRef.value?.onOpen(currentScene.value, type, {
+    caseIds: [payload.caseId],
+    selectionDisabled: true,
   })
 }
 
@@ -930,7 +961,7 @@ const currentScene = computed<AutomationUiSceneResp | null>(() => {
     definitionVersion: sceneDetail.value?.definitionVersion ?? 0,
     requiresInfrastructure,
     requiredCapabilities: requiresInfrastructure ? ['browser', 'infrastructure'] : ['browser'],
-    supportedExecutors: requiresInfrastructure ? ['playwright-runner'] : ['playwright-runner', 'extension-cdp'],
+    supportedExecutors: ['playwright-runner', 'extension-cdp'],
   } as AutomationUiSceneResp
 })
 
@@ -974,7 +1005,17 @@ const stepDetail = ref()
 const selectedHistoryCaseId = ref('')
 const getCase = async (id: string) => {
   console.log('getCase', id)
-  caseDetail.value = caseList.value.find((item: any) => String(item.id) === String(id))
+  const localCase = caseList.value.find((item: any) => String(item.id) === String(id))
+  caseDetail.value = localCase
+  if (uiStore.activeId && localCase) {
+    try {
+      const { data } = await getAutomationUiCaseDetail(uiStore.activeId, id)
+      // DTO 使用 steps 命名，详情面板保留现有 stepList 只读视图兼容层。
+      caseDetail.value = { ...data, stepList: data.steps || [] }
+    } catch (error) {
+      console.warn('统一用例详情读取失败，使用场景详情兼容副本', error)
+    }
+  }
   stepDetail.value = undefined
   selectedHistoryCaseId.value = String(id || '')
 }
@@ -985,6 +1026,14 @@ const getStep = async (data: any) => {
   const stepId = data.node?.stepId || data.dropNode?.stepId || data?.id || data.node?.id
   const parentCase = caseList.value.find((item: any) => String(item.id) === String(parentCaseId))
   stepDetail.value = parentCase?.stepList?.find((item: any) => String(item.id) === String(stepId))
+  if (uiStore.activeId && parentCase && stepId) {
+    try {
+      const { data } = await getAutomationUiStepDetail(uiStore.activeId, String(parentCase.id), String(stepId))
+      stepDetail.value = data
+    } catch (error) {
+      console.warn('统一步骤详情读取失败，使用场景详情兼容副本', error)
+    }
+  }
   // console.log('caseDetail', caseDetail.value, 'stepDetail', stepDetail.value)
   caseDetail.value = undefined
   selectedHistoryCaseId.value = String(parentCase?.id || '')

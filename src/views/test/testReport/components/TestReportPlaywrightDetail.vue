@@ -20,6 +20,17 @@
       </a-alert>
     </a-card>
 
+    <a-card v-if="artifactLinks.length || artifactUploadErrors.length" title="Playwright 执行产物" size="small" :bordered="false">
+      <a-space wrap>
+        <a-link v-for="item in artifactLinks" :key="`${item.type}:${item.url}`" :href="item.url" target="_blank">
+          {{ artifactLabel(item.type) }}
+        </a-link>
+      </a-space>
+      <a-alert v-if="artifactUploadErrors.length" type="warning" show-icon style="margin-top: 8px">
+        {{ `有 ${artifactUploadErrors.length} 个产物上传失败，详见执行记录。` }}
+      </a-alert>
+    </a-card>
+
     <AutomationExecutionHistoryPanel
       class="report-history"
       :scenes="displayScenes"
@@ -61,6 +72,22 @@ let historyPollTimer: number | undefined
 let historyRevision = ''
 
 const statistic = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.ui || {})
+const playwrightArtifacts = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.playwrightArtifacts || {})
+const artifactLinks = computed(() => Object.entries(playwrightArtifacts.value.urls || {})
+  .flatMap(([type, values]) => (Array.isArray(values) ? values : [values])
+    .filter((url): url is string => typeof url === 'string' && Boolean(url))
+    .map((url) => ({ type, url }))))
+const artifactUploadErrors = computed(() => Array.isArray(playwrightArtifacts.value.uploadErrors)
+  ? playwrightArtifacts.value.uploadErrors
+  : [])
+const artifactLabel = (type: string) => ({
+  report_html: 'HTML 报告',
+  video: '录屏',
+  trace: 'Trace',
+  failure_screenshot: '失败截图',
+  console_log: '控制台日志',
+  execution_log: '执行日志',
+}[type] || type)
 const reportTypeLabel = computed(() => {
   if (props.detailData?.reportType === 'CHROME_DEVTOOLS_PROTOCOL') return 'Chrome DevTools Protocol 自动化报告'
   if (props.detailData?.reportType === 'SELENIUM') return 'Selenium 自动化报告'

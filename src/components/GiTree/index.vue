@@ -559,7 +559,7 @@ const onMenuItemClick = (mode?: any, node?: any) => {
   if (mode === 'delete2') {
     emit('menu-click', { mode, node: contextmenuNode.value })
   }
-  if (typeof mode === 'string' && mode.startsWith('recording:')) {
+  if (typeof mode === 'string' && (mode.startsWith('recording:') || mode.startsWith('execute:'))) {
     emit('menu-click', { mode, node: contextmenuNode.value })
   }
   if (mode !== 'move') {

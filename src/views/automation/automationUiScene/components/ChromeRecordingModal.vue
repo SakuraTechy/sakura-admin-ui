@@ -408,7 +408,7 @@
       </a-form>
       <a-alert
         v-if="recordingLog"
-        :type="recordingLog.ok ? 'success' : 'error'"
+        :type="recordingLog.severity || (recordingLog.ok ? 'success' : 'error')"
         show-icon
         style="margin-top: 12px;"
       >
@@ -418,6 +418,12 @@
             <span class="muted">{{ item.label }}</span>
             <span>{{ formatLogValue(item.value) }}</span>
           </div>
+        </div>
+        <div v-if="recordingLog.retryable" class="recording-retry-row">
+          <a-button type="primary" size="small" :loading="retrying" @click="retryRecordingSave">
+            重试上传草稿
+          </a-button>
+          <span class="muted">扩展已保留本次录制步骤和导入上下文。</span>
         </div>
       </a-alert>
     </div>
@@ -485,6 +491,8 @@ type ExtensionStatus = 'checking' | 'connected' | 'missing' | 'invalid'
 interface RecordingLog {
   ok: boolean
   title: string
+  retryable?: boolean
+  severity?: 'success' | 'warning' | 'error'
   items: Array<{ label: string; value?: string | number }>
 }
 
@@ -511,6 +519,7 @@ const props = defineProps<{
 const uiStore = useUiStore()
 const visible = ref(false)
 const submitting = ref(false)
+const retrying = ref(false)
 const recordingActive = ref(false)
 const liveStepCount = ref(0)
 const detectingExtension = ref(false)
@@ -1116,6 +1125,32 @@ const detectExtension = async () => {
   }
 }
 
+const loadRecordingDraftStatus = async () => {
+  try {
+    const response = await waitForExtensionAck('AT_PLATFORM_RECORDING_DRAFT_STATUS', {
+      apiBase: buildApiBase(),
+      authToken: syncCueCastAuthToken(),
+    }, 3000)
+    if (response?.available !== true) return
+    recordingLog.value = {
+      ok: false,
+      severity: 'warning',
+      retryable: true,
+      title: '存在待重试录制草稿',
+      items: [
+        { label: '错误信息', value: response.error },
+        { label: '导入模式', value: response.mode },
+        { label: '目标场景 DB ID', value: response.targetSceneDbId },
+        { label: '目标用例 ID', value: response.targetCaseId },
+        { label: '步骤数', value: response.stepCount },
+        { label: '草稿用例 ID', value: response.testCaseId },
+      ],
+    }
+  } catch {
+    // 扩展检测结果已单独展示；草稿查询失败不应阻断新录制。
+  }
+}
+
 const buildRecordingImport = () => {
   const activeTargetScene = form.mode === 'createScene' ? null : targetScene.value
   const projectId = activeTargetScene?.projectId || uiStore.projectId
@@ -1272,6 +1307,36 @@ const startRecording = async () => {
   }
 }
 
+const retryRecordingSave = async () => {
+  if (retrying.value) return
+  try {
+    retrying.value = true
+    const authToken = syncCueCastAuthToken()
+    const response = await waitForExtensionAck('AT_PLATFORM_RETRY_RECORDING', {
+      apiBase: buildApiBase(),
+      authToken,
+    }, 60000)
+    if (response?.ok === false || response?.saved === false) {
+      throw new Error(response?.error || '录制草稿上传失败')
+    }
+    recordingLog.value = {
+      ok: true,
+      severity: 'success',
+      retryable: false,
+      title: '录制草稿已保存',
+      items: [
+        ...(recordingLog.value?.items || []).filter((item) => item.label !== '错误信息'),
+        { label: '重试结果', value: '已成功导入 admin' },
+      ],
+    }
+    Message.success('录制草稿已重试上传')
+  } catch (e: any) {
+    Message.error(e?.message || '录制草稿重试失败')
+  } finally {
+    retrying.value = false
+  }
+}
+
 const resetForm = (record?: AutomationUiSceneResp | null, options: RecordingOpenOptions = {}) => {
   const stamp = dayjs().format('YYYYMMDDHHmmss')
   openContext.value = options
@@ -1305,6 +1370,7 @@ const resetForm = (record?: AutomationUiSceneResp | null, options: RecordingOpen
   recordingActive.value = false
   liveStepCount.value = 0
   recordingLog.value = null
+  retrying.value = false
   advancedActiveKeys.value = ['console', 'split', 'cardSidebar'].includes(viewMode.value) ? ['advanced'] : []
   advancedSideCollapsed.value = false
   collapsedCardSections.value = []
@@ -1327,6 +1393,7 @@ const onOpen = async (record?: AutomationUiSceneResp, options?: RecordingOpenOpt
   await Promise.all([
     loadProjectEnvironments(),
     detectExtension(),
+    loadRecordingDraftStatus(),
   ])
 }
 
@@ -1338,7 +1405,20 @@ const onWindowMessage = (event: MessageEvent) => {
     liveStepCount.value = Number(data.stepCount || 0)
   }
   if (data.type === 'AT_RECORDING_END') {
+    const recordingEndEventRegistry = window as Window & { __SAKURA_RECORDING_END_EVENTS__?: Set<string> }
+    const handledRecordingEndEvents = recordingEndEventRegistry.__SAKURA_RECORDING_END_EVENTS__
+      ??= new Set<string>()
+    const eventId = String(data.eventId || '').trim()
+    if (eventId && handledRecordingEndEvents.has(eventId)) return
+    if (eventId) {
+      handledRecordingEndEvents.add(eventId)
+      if (handledRecordingEndEvents.size > 100) {
+        const oldest = handledRecordingEndEvents.values().next().value
+        if (oldest) handledRecordingEndEvents.delete(oldest)
+      }
+    }
     recordingActive.value = false
+    retrying.value = false
     liveStepCount.value = Number(data.stepCount || data.saveMeta?.recordedStepCount || data.saveContext?.recordedStepCount || 0)
     const saveMeta = data.saveMeta || data.saveContext || {}
     const oldStepCount = saveMeta.replaceOldStepCount
@@ -1346,7 +1426,9 @@ const onWindowMessage = (event: MessageEvent) => {
     const newStepCount = saveMeta.recordedStepCount ?? data.stepCount ?? liveStepCount.value
     recordingLog.value = {
       ok: data.saved !== false,
+      severity: data.saved === false ? 'error' : 'success',
       title: data.saved === false ? '录制保存失败' : '录制保存成功',
+      retryable: data.retryable === true,
       items: [
         { label: '错误信息', value: data.error },
         { label: '结束原因', value: data.reason },
@@ -1669,6 +1751,13 @@ defineExpose({ onOpen })
   grid-template-columns: 110px minmax(0, 1fr);
   gap: 8px;
   word-break: break-all;
+}
+
+.recording-retry-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .modal-footer {

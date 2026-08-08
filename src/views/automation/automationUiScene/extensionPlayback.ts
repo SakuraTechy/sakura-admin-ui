@@ -1,5 +1,4 @@
 import { getToken } from '@/utils/auth'
-import { getAutomationPlaywrightCase } from '@/apis/automation/automationPlaywrightRunner'
 
 const buildExtensionApiBase = () => {
   const prefix = import.meta.env.VITE_API_PREFIX || ''
@@ -44,21 +43,13 @@ export interface ExtensionCdpPlaybackOptions {
   caseKey: string
   caseId: string
   batchId: string
+  executionCapability?: string
   executionId: string
   projectEnvironmentId: string
-  startUrl: string
-  viewportMode: 'maximized' | 'current' | 'custom'
-  viewportWidth?: number
-  viewportHeight?: number
-  pageErrorCheckEnabled: boolean
 }
 
 export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOptions) => {
   const { caseKey, caseId, projectEnvironmentId } = options
-  const { data: adminCase } = await getAutomationPlaywrightCase(caseKey, projectEnvironmentId)
-  if (!Array.isArray(adminCase?.steps) || adminCase.steps.length === 0) {
-    throw new Error('该用例没有可执行步骤，请确认录制步骤已保存')
-  }
   const pong = await waitForExtensionAck('AT_PLATFORM_PING', {}, 3000)
   if (pong?.ok === false) throw new Error('CueCast Chrome 扩展当前不可用')
 
@@ -71,15 +62,11 @@ export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOpt
     testCaseId: caseId,
     adminCaseKey: caseKey,
     batchId: options.batchId,
+    executionCapability: options.executionCapability,
     executionId: options.executionId,
     projectEnvironmentId,
     dataSource: 'admin',
     executionSource: 'extension-cdp',
-    startUrl: options.startUrl || adminCase.start_url || adminCase.startUrl || '',
-    viewportMode: options.viewportMode,
-    viewportWidth: options.viewportWidth,
-    viewportHeight: options.viewportHeight,
-    pageErrorCheckEnabled: options.pageErrorCheckEnabled,
     locale: 'zh',
   }, 8000)
   if (response?.ok === false) throw new Error(response.error || '扩展 CDP 回放启动失败')

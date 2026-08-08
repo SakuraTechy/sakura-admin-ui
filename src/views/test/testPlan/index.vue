@@ -340,7 +340,10 @@
                 </a-col>
                 <a-col :span="8">
                   <a-form-item label="用例会话">
-                    <a-select v-model="execRunnerConfig.sessionMode" :options="runnerSessionModeOptions" />
+                    <a-select
+                      v-model="execRunnerConfig.sessionMode"
+                      :options="runnerSessionModeOptions"
+                    />
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
@@ -365,7 +368,10 @@
                 </a-col>
                 <a-col :span="8">
                   <a-form-item label="录屏保留策略">
-                    <a-select v-model="execRunnerConfig.video" :options="artifactPolicyOptions" />
+                    <a-select
+                      v-model="execRunnerConfig.video"
+                      :options="artifactPolicyOptions"
+                    />
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
@@ -1056,6 +1062,7 @@ const liveFrameQualityOptions = [
 const runnerSessionModeOptions = [
   { label: '每条用例独立登录（默认）', value: 'isolated' },
   { label: '复用上一条成功用例登录态', value: 'reuse-auth' },
+  { label: '同一浏览器窗口连续执行', value: 'reuse-browser' },
 ]
 const artifactPolicyOptions = [
   { label: '关闭', value: 'off' },

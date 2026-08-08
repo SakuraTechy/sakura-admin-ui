@@ -118,7 +118,7 @@ const linux_json = {
 
 const windows_json = {
   'name': '172.19.5.229',
-  'nodeDescription': '{"name":"数审自动化环境1","systemType":"Windows","userName":"Ankki","passWord":"3edc$RFV"}',
+  'nodeDescription': '{"name":"数审自动化环境1","systemType":"Windows","userName":"Ankki","passWord":"${NODE_PASSWORD}"}',
   'numExecutors': '1',
   'remoteFS': 'D:\\Jenkins',
   'labelString': '数审自动化环境1',

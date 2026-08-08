@@ -39,20 +39,51 @@ const http: AxiosInstance = axios.create({
   timeout: 30 * 1000,
 })
 
-const handleError = (msg: string) => {
-  if (msg.length >= 15) {
+const normalizeErrorMessage = (msg: unknown) => {
+  if (typeof msg === 'string' && msg.trim()) return msg.trim()
+  if (msg instanceof Error && msg.message.trim()) return msg.message.trim()
+  return '服务器端错误'
+}
+
+const handleError = (msg: unknown) => {
+  const message = normalizeErrorMessage(msg)
+  if (message.length >= 15) {
     return notificationErrorWrapper({
-      content: msg || '服务器端错误',
+      content: message,
       duration: 5 * 1000,
     })
   }
   return messageErrorWrapper({
-    content: msg || '服务器端错误',
+    content: message,
     duration: 5 * 1000,
   })
 }
 
 const shouldHandleError = (config?: SilentAxiosRequestConfig) => config?.silentError !== true
+
+const handleBlobResponse = async (response: AxiosResponse): Promise<AxiosResponse> => {
+  const { data } = response
+  if (!(data instanceof Blob)) return response
+
+  // JSON 结果附件也是正常下载内容，不能按通用 API 错误包解析。
+  const contentDisposition = String(response.headers?.['content-disposition'] || '')
+  if (contentDisposition) return response
+
+  const contentType = String(data.type || response.headers?.['content-type'] || '').toLowerCase()
+  if (!contentType.includes('application/json')) return response
+
+  let payload: Record<string, unknown>
+  try {
+    payload = JSON.parse(await data.text()) as Record<string, unknown>
+  } catch {
+    return response
+  }
+  if (payload.success !== false) return response
+
+  const message = normalizeErrorMessage(payload.msg || payload.message || payload.error)
+  if (shouldHandleError(response.config)) handleError(message)
+  return Promise.reject(new Error(message))
+}
 
 // 请求拦截器
 http.interceptors.request.use(
@@ -73,24 +104,9 @@ http.interceptors.request.use(
 http.interceptors.response.use(
   (response: AxiosResponse) => {
     const { data } = response
-    const { success, code, msg } = data
+    if (response.config.responseType === 'blob') return handleBlobResponse(response)
 
-    if (response.request.responseType === 'blob') {
-      const contentType = data.type
-      if (contentType.startsWith('application/json')) {
-        const reader = new FileReader()
-        reader.readAsText(data)
-        reader.onload = () => {
-          const { success, msg } = JSON.parse(reader.result as string)
-          if (!success) {
-            handleError(msg)
-          }
-        }
-        return Promise.reject(msg)
-      } else {
-        return response
-      }
-    }
+    const { success, code, msg } = data
 
     if (success) {
       return response

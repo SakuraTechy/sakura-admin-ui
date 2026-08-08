@@ -317,11 +317,9 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
     const name = step.description || step.step_name || step.action_type || `步骤 ${number}`
     push('info', 'step', `步骤 ${number}: ${name}，开始执行`)
     elapsed += Math.max(0, Number(step.duration_ms ?? step.duration) || 0)
-    const passed = ['passed', 'success'].includes(String(step.status || '').toLowerCase())
-    const message = passed
-      ? `步骤 ${number}: ${name}，执行成功，耗时 ${Number(step.duration_ms ?? step.duration) || 0}ms`
-      : `步骤 ${number}: ${name}，执行失败${step.error ? `：${step.error}` : ''}`
-    push(passed ? 'success' : 'error', 'step', message)
+    const duration = Number(step.duration_ms ?? step.duration) || 0
+    const outcome = fallbackStepOutcome(step.status, duration, step.error)
+    push(outcome.level, 'step', `步骤 ${number}: ${name}，${outcome.message}`)
     const locatorSource = step.locator_source || step.locatorSource
     if (locatorSource) {
       const locatorType = step.locator_type || step.locatorType
@@ -336,9 +334,42 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
       ].filter(Boolean).join('，'), true)
     }
   })
-  const failed = ['failed', 'error'].includes(String(result.status || '').toLowerCase())
-  push(failed ? 'error' : 'success', 'runner', `${executor} 执行${failed ? '失败' : '完成'}，耗时 ${elapsed}ms`)
+  const runOutcome = fallbackRunOutcome(result.status)
+  push(runOutcome.level, 'runner', `${executor} ${runOutcome.message}，耗时 ${elapsed}ms`)
   return items
+}
+
+function fallbackStepOutcome(statusValue: unknown, duration: number, errorValue: unknown) {
+  const stepStatus = String(statusValue || '').toLowerCase()
+  if (['passed', 'success'].includes(stepStatus)) {
+    return { level: 'success' as const, message: `执行成功，耗时 ${duration}ms` }
+  }
+  if (['failed', 'error'].includes(stepStatus)) {
+    const errorMessage = String(errorValue || '').trim()
+    return { level: 'error' as const, message: `执行失败${errorMessage ? `：${errorMessage}` : ''}` }
+  }
+  if (stepStatus === 'skipped') return { level: 'warning' as const, message: '已跳过' }
+  if (['cancelled', 'canceled', 'interrupted'].includes(stepStatus)) {
+    return { level: 'warning' as const, message: '已取消' }
+  }
+  if (['running', 'starting'].includes(stepStatus)) return { level: 'info' as const, message: '执行中' }
+  if (['queued', 'waiting', 'pending'].includes(stepStatus)) return { level: 'info' as const, message: '等待执行结果' }
+  return { level: 'warning' as const, message: `状态未知${stepStatus ? `（${stepStatus}）` : ''}` }
+}
+
+function fallbackRunOutcome(statusValue: unknown) {
+  const runStatus = String(statusValue || '').toLowerCase()
+  if (['passed', 'success', 'completed'].includes(runStatus)) {
+    return { level: 'success' as const, message: '执行完成' }
+  }
+  if (['failed', 'error'].includes(runStatus)) return { level: 'error' as const, message: '执行失败' }
+  if (['cancelled', 'canceled', 'interrupted'].includes(runStatus)) {
+    return { level: 'warning' as const, message: '执行已取消' }
+  }
+  if (['queued', 'waiting', 'pending', 'running', 'starting'].includes(runStatus)) {
+    return { level: 'info' as const, message: '尚未取得最终结果' }
+  }
+  return { level: 'warning' as const, message: `执行状态未知${runStatus ? `（${runStatus}）` : ''}` }
 }
 
 function parseFallbackTime(value: unknown) {

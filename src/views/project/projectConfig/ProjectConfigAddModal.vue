@@ -39,6 +39,7 @@ const { status_type } = useDict('status_type')
 const [form, resetForm] = useResetReactive({
   status: 1,
   automationOperationCatalogV2: true,
+  operationDiagnosticV1: true,
 })
 
 const userList = ref<LabelValueState[]>([])
@@ -125,6 +126,18 @@ const columns: ColumnItem[] = reactive([
       uncheckedValue: false,
       checkedText: '启用目录 v2',
       uncheckedText: '使用旧表单',
+    },
+  },
+  {
+    label: 'UI 自动化统一执行详情 v1',
+    field: 'operationDiagnosticV1',
+    span: 24,
+    type: 'switch',
+    props: {
+      checkedValue: true,
+      uncheckedValue: false,
+      checkedText: '启用统一详情',
+      uncheckedText: '保留旧详情',
     },
   },
 ])
