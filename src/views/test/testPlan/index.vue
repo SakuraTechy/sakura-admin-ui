@@ -13,8 +13,8 @@
     >
       <a-tab-pane key="plan-list" title="计划列表" :closable="false">
         <GiTable
+          v-model:selected-keys="selectedKeys"
           class="plan-list-table"
-          v-model:selectedKeys="selectedKeys"
           row-key="id"
           title=""
           :data="dataList"
@@ -188,6 +188,14 @@
             placeholder="请选择"
             allow-search
             @change="onFormProjectChange"
+          />
+        </a-form-item>
+        <a-form-item field="versionId" label="项目版本" required>
+          <a-select
+            v-model="formState.versionId"
+            :options="formVersionOptions"
+            placeholder="请选择"
+            allow-search
           />
         </a-form-item>
         <a-form-item field="type" label="计划类型" required>
@@ -431,6 +439,7 @@
           <a-descriptions-item label="计划 ID">{{ detailRecord?.id || '-' }}</a-descriptions-item>
           <a-descriptions-item label="计划名称">{{ detailRecord?.name || '-' }}</a-descriptions-item>
           <a-descriptions-item label="所属项目">{{ detailRecord?.projectName || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="版本 ID">{{ detailRecord?.versionId || '-' }}</a-descriptions-item>
           <a-descriptions-item label="计划类型">{{ detailRecord?.type || '-' }}</a-descriptions-item>
           <a-descriptions-item label="计划简称">{{ detailRecord?.abbreviate || '-' }}</a-descriptions-item>
           <a-descriptions-item label="计划状态">
@@ -457,9 +466,16 @@
 </template>
 
 <script setup lang="ts">
-import { Message, Modal, type FormInstance, type TableInstance } from '@arco-design/web-vue'
+import { type FormInstance, Message, Modal, type TableInstance } from '@arco-design/web-vue'
 import { useRoute, useRouter } from 'vue-router'
+import TestPlanSceneWorkspace from './components/TestPlanSceneWorkspace.vue'
+import TestPlanRelateSceneModal from './components/TestPlanRelateSceneModal.vue'
+import { buildProjectSelectOptions, toIdString } from './utils/projectContext'
 import {
+  type TestExecutionEngine,
+  type TestPlanExecuteResp,
+  type TestPlanQuery,
+  type TestPlanResp,
   addTestPlan,
   cancelTestPlanExecution,
   deleteTestPlan,
@@ -467,13 +483,10 @@ import {
   exportTestPlan,
   getTestPlan,
   listTestPlan,
-  type TestPlanExecuteResp,
-  type TestExecutionEngine,
-  type TestPlanQuery,
-  type TestPlanResp,
   updateTestPlan,
 } from '@/apis/test/testPlan'
-import { getProjectConfigList, type ProjectConfigResp } from '@/apis/project/projectConfig'
+import { type ProjectConfigResp, getProjectConfigList } from '@/apis/project/projectConfig'
+import { getProjectVersionConfigList } from '@/apis/project/projectVersionConfig'
 import {
   getProjectEnvironmentConfigList,
   getProjectEnvironmentRuntimeStatus,
@@ -484,23 +497,20 @@ import {
 } from '@/apis/automation/automationEnvironmentConfig'
 import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
 import { getAutomationUiSceneSelected } from '@/apis/automation/automationUiScene'
-import { getUser, listAllUser, listSystemUser, type UserResp } from '@/apis/system/user'
+import { type UserResp, getUser, listAllUser, listSystemUser } from '@/apis/system/user'
 import { useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
-import TestPlanSceneWorkspace from './components/TestPlanSceneWorkspace.vue'
-import TestPlanRelateSceneModal from './components/TestPlanRelateSceneModal.vue'
 import TimedTaskDrawer from '@/views/test/timedTask/components/TimedTaskDrawer.vue'
 import ExecuteSceneModal from '@/views/automation/automationUiScene/components/ExecuteSceneModal.vue'
 import AutomationExecutionCaseSelectModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseSelectModal.vue'
 import AutomationExecutionCaseModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseModal.vue'
-import {
-  type ExecutionCaseOpenOptions,
-  type ExecutionContext,
-  type ExecutionType,
-  type LiveExecutionCase,
+import type {
+  ExecutionCaseOpenOptions,
+  ExecutionContext,
+  ExecutionType,
+  LiveExecutionCase,
 } from '@/views/automation/automationUiScene/execution'
 import { useUserStore } from '@/stores/modules/user'
-import { buildProjectSelectOptions, toIdString } from './utils/projectContext'
 
 defineOptions({ name: 'TestTestPlan' })
 
@@ -509,7 +519,7 @@ interface SceneTab {
   record: TestPlanResp
 }
 
-type SceneWorkspaceExpose = {
+interface SceneWorkspaceExpose {
   reload?: () => Promise<void>
   openHistory?: (sceneId?: string) => Promise<void>
 }
@@ -626,8 +636,38 @@ const userLabelMap = computed(() => {
   return map
 })
 
+interface PlanFormModel {
+  id: string
+  projectId?: string
+  versionId?: string
+  projectName: string
+  name: string
+  abbreviate: string
+  type: string
+  description: string
+  status: string
+  memberIds: string[]
+  principalId?: string
+  planTimeRange?: string[]
+}
+
+const formState = reactive<PlanFormModel>({
+  id: '',
+  projectId: undefined,
+  versionId: undefined,
+  projectName: '',
+  name: '',
+  abbreviate: '',
+  type: '',
+  description: '',
+  status: 'NOT_STARTED',
+  memberIds: [],
+  principalId: undefined,
+  planTimeRange: undefined,
+})
+
 const userSelectOptions = computed(() => {
-  const map = new Map<string, { label: string; value: string }>()
+  const map = new Map<string, { label: string, value: string }>()
   for (const u of userList.value) {
     const id = String(u.id)
     map.set(id, { value: id, label: userLabelMap.value.get(id) ?? id })
@@ -645,7 +685,7 @@ const userSelectOptions = computed(() => {
 })
 
 const projectSelectOptions = computed(() => {
-  const map = new Map<string, { label: string; value: string }>()
+  const map = new Map<string, { label: string, value: string }>()
   for (const row of projectConfigList.value) {
     const id = toIdString(row.id)
     if (!id) continue
@@ -665,7 +705,7 @@ const projectSelectOptions = computed(() => {
 
 const planTypeSelectOptions = computed(() => {
   const seen = new Set(planTypeBaseOptions.map((o) => String(o.value)))
-  const extra: { label: string; value: string }[] = []
+  const extra: { label: string, value: string }[] = []
   for (const row of dataList.value) {
     const t = row.type
     if (t != null && t !== '' && !seen.has(String(t))) {
@@ -811,38 +851,12 @@ const listModalContent = ref('')
 const currentRecord = ref<TestPlanResp | null>(null)
 const detailRecord = ref<TestPlanResp | null>(null)
 
-interface PlanFormModel {
-  id: string
-  projectId?: string
-  projectName: string
-  name: string
-  abbreviate: string
-  type: string
-  description: string
-  status: string
-  memberIds: string[]
-  principalId?: string
-  planTimeRange?: string[]
-}
-
 const planFormRef = ref<FormInstance>()
 const timedTaskDrawerRef = ref<InstanceType<typeof TimedTaskDrawer>>()
-const formState = reactive<PlanFormModel>({
-  id: '',
-  projectId: undefined,
-  projectName: '',
-  name: '',
-  abbreviate: '',
-  type: '',
-  description: '',
-  status: 'NOT_STARTED',
-  memberIds: [],
-  principalId: undefined,
-  planTimeRange: undefined,
-})
 
 const planFormRules: FormInstance['rules'] = {
   projectId: [{ required: true, message: '请选择所属项目' }],
+  versionId: [{ required: true, message: '请选择项目版本' }],
   type: [{ required: true, message: '请选择计划类型' }],
   name: [{ required: true, message: '请输入计划名称' }],
   abbreviate: [{ required: true, message: '请输入计划简称' }],
@@ -876,10 +890,25 @@ const planFormRules: FormInstance['rules'] = {
   ],
 }
 
-const onFormProjectChange = () => {
+const formVersionOptions = ref<{ label: string, value: string, extra?: string }[]>([])
+
+const loadFormVersions = async (projectId?: string, selectDefault = true) => {
+  formVersionOptions.value = []
+  if (!projectId) return
+  const { data } = await getProjectVersionConfigList({ projectId, status: 1, sort: ['name,desc'] })
+  formVersionOptions.value = (data || []).map((item) => ({ label: item.name, value: item.id, extra: item.type }))
+  if (selectDefault && !formState.versionId) {
+    formState.versionId = formVersionOptions.value.find((item) => item.extra === '1')?.value
+      || formVersionOptions.value[0]?.value
+  }
+}
+
+const onFormProjectChange = async () => {
   const id = formState.projectId
   const opt = projectSelectOptions.value.find((o) => o.value === id)
   formState.projectName = opt?.label ?? ''
+  formState.versionId = undefined
+  await loadFormVersions(id)
 }
 
 const slicePlanDate = (value?: string | null) => {
@@ -1034,9 +1063,9 @@ const artifactPolicyOptions = [
   { label: '仅失败保留', value: 'retain-on-failure' },
 ]
 const selectedExecProjectEnvironment = computed(() => execProjectEnvironmentOptions.value
-  .find(item => item.value === toIdString(execState.projectEnvironmentId)))
+  .find((item) => item.value === toIdString(execState.projectEnvironmentId)))
 const selectedExecAutomationEnvironment = computed(() => execAutomationEnvironmentOptions.value
-  .find(item => item.value === toIdString(execState.automationEnvironmentId)))
+  .find((item) => item.value === toIdString(execState.automationEnvironmentId)))
 
 const executionEngineOptions = [
   { label: 'Selenium 自动化', value: 'SELENIUM' },
@@ -1063,6 +1092,7 @@ const fillPlanForm = (record?: TestPlanResp | null, copy = false) => {
   formState.id = copy ? '' : record?.id || ''
   const pid = toIdString(record?.projectId)
   formState.projectId = pid || undefined
+  formState.versionId = toIdString(record?.versionId) || undefined
   formState.projectName = record?.projectName || ''
   formState.name = copy && record?.name ? `${record.name}-副本` : record?.name || ''
   formState.abbreviate = record?.abbreviate || ''
@@ -1074,7 +1104,8 @@ const fillPlanForm = (record?: TestPlanResp | null, copy = false) => {
   const ps = slicePlanDate(record?.plannedStartTime ?? null)
   const pe = slicePlanDate(record?.plannedEndTime ?? null)
   formState.planTimeRange = ps && pe ? [ps, pe] : undefined
-  onFormProjectChange()
+  const project = projectSelectOptions.value.find((option) => option.value === formState.projectId)
+  if (project) formState.projectName = project.label
 }
 
 const openForm = async (record?: TestPlanResp, copy = false) => {
@@ -1092,6 +1123,11 @@ const openForm = async (record?: TestPlanResp, copy = false) => {
   }
   await ensureUsersLoaded(collectPlanUserIds(source))
   fillPlanForm(source, copy)
+  await loadFormVersions(formState.projectId, false)
+  if (!formState.versionId) {
+    formState.versionId = formVersionOptions.value.find((item) => item.extra === '1')?.value
+      || formVersionOptions.value[0]?.value
+  }
   formVisible.value = true
   nextTick(() => planFormRef.value?.clearValidate())
 }
@@ -1147,7 +1183,7 @@ const resetExecRuntimeConfig = () => {
 }
 
 const refreshExecProjectEnvironmentStatus = async (environmentId: string) => {
-  const option = execProjectEnvironmentOptions.value.find(item => item.value === environmentId)
+  const option = execProjectEnvironmentOptions.value.find((item) => item.value === environmentId)
   if (!option) return
   option.statusLabel = '检测中'
   option.statusColor = 'arcoblue'
@@ -1164,7 +1200,7 @@ const refreshExecProjectEnvironmentStatus = async (environmentId: string) => {
 }
 
 const refreshExecAutomationEnvironmentStatus = async (environmentId: string) => {
-  const option = execAutomationEnvironmentOptions.value.find(item => item.value === environmentId)
+  const option = execAutomationEnvironmentOptions.value.find((item) => item.value === environmentId)
   if (!option) return
   try {
     const { data } = await getAutomationEnvironmentRuntimeStatus(environmentId)
@@ -1658,13 +1694,13 @@ const onSceneTabDelete = (key: string) => {
   closeSceneTab(String(key))
 }
 
-const closeSceneTab = (key: string) => {
+function closeSceneTab(key: string) {
   sceneTabs.value = sceneTabs.value.filter((item) => item.key !== key)
   sceneWorkspaceRefs.delete(key)
   if (activeTab.value === key) activeTab.value = 'plan-list'
 }
 
-const goToReports = async (record: TestPlanResp, reportId?: string) => {
+async function goToReports(record: TestPlanResp, reportId?: string) {
   await router.push({
     path: '/test/testReport',
     query: {
@@ -1679,7 +1715,7 @@ watch(
   () => [route.query.id, route.query.view] as const,
   async ([id, view]) => {
     if (!id) return
-    let record = dataList.value.find(item => String(item.id) === String(id))
+    let record = dataList.value.find((item) => String(item.id) === String(id))
     if (!record) {
       const { data } = await getTestPlan(String(id))
       record = data || undefined
@@ -1714,6 +1750,7 @@ const submitForm = async (): Promise<boolean> => {
   }
   const payload = {
     projectId,
+    versionId: toIdString(formState.versionId),
     projectName: formState.projectName,
     name: formState.name?.trim(),
     abbreviate: formState.abbreviate?.trim(),
@@ -1735,7 +1772,7 @@ const submitForm = async (): Promise<boolean> => {
   return true
 }
 
-const submitExecute = async (): Promise<boolean> => {
+async function submitExecute(): Promise<boolean> {
   if (!currentRecord.value) return false
   if (execConfigLoading.value) {
     Message.warning('执行环境正在加载，请稍后')
@@ -1806,11 +1843,11 @@ const submitExecute = async (): Promise<boolean> => {
   const buildMessage = data?.buildNumber ? `，构建号 ${data.buildNumber}` : ''
   Message.success(`执行已触发${buildMessage}`)
   await search()
-  const nextRecord = dataList.value.find(item => item.id === current.id) || current
+  const nextRecord = dataList.value.find((item) => item.id === current.id) || current
   await openSceneTab(nextRecord)
   if (detailVisible.value && detailRecord.value?.id === current.id) detailRecord.value = nextRecord
   if (executeResp.dispatchMode === 'CLIENT_CDP' && executeResp.testReportId) {
-    const executable = (executeResp.sceneExecutions || []).filter(item => item.caseIds?.length)
+    const executable = (executeResp.sceneExecutions || []).filter((item) => item.caseIds?.length)
     if (!executable.length) {
       Message.warning('当前测试计划无可执行 CDP 用例')
       await goToReports(nextRecord, String(executeResp.testReportId))
@@ -1818,7 +1855,7 @@ const submitExecute = async (): Promise<boolean> => {
     }
     let scenes: any[] = []
     try {
-      const { data } = await getAutomationUiSceneSelected(executable.map(item => item.sceneKey))
+      const { data } = await getAutomationUiSceneSelected(executable.map((item) => item.sceneKey))
       scenes = Array.isArray(data) ? data : []
     } catch {
       await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
@@ -1826,10 +1863,10 @@ const submitExecute = async (): Promise<boolean> => {
       await goToReports(nextRecord, String(executeResp.testReportId))
       return true
     }
-    const sceneMap = new Map(scenes.map(scene => [String(scene.id), scene]))
+    const sceneMap = new Map(scenes.map((scene) => [String(scene.id), scene]))
     const queue = executable
-      .map(item => ({ scene: sceneMap.get(String(item.sceneKey)), caseIds: item.caseIds.map(String) }))
-      .filter(item => Boolean(item.scene))
+      .map((item) => ({ scene: sceneMap.get(String(item.sceneKey)), caseIds: item.caseIds.map(String) }))
+      .filter((item) => Boolean(item.scene))
     if (queue.length !== executable.length) {
       await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
       Message.error('测试计划中的部分 CDP 场景已不存在，执行已终止')
@@ -1870,7 +1907,7 @@ onUnmounted(() => {
 })
 
 const onDelete = (record?: TestPlanResp) => {
-  const ids = selectedKeys.value.length ? selectedKeys.value.map(item => String(item)) : record ? record.id : ''
+  const ids = selectedKeys.value.length ? selectedKeys.value.map((item) => String(item)) : record ? record.id : ''
   Modal.warning({
     title: '确认删除',
     content: selectedKeys.value.length ? '确认删除选中的测试计划吗？' : `确认删除测试计划“${record?.name || ''}”吗？`,
@@ -1908,7 +1945,7 @@ const formatList = (value?: Array<string | number>) => {
 }
 
 /** 与参考列表一致的时间展示：YYYY-MM-DD HH:mm:ss */
-const formatPlanDateTime = (value?: string | null) => {
+function formatPlanDateTime(value?: string | null) {
   if (value == null || value === '') return '-'
   const s = String(value).trim()
   const normalized = s.includes('T') ? s.replace('T', ' ') : s
@@ -2278,5 +2315,4 @@ const resolvePlanExecuteResult = (record: TestPlanResp) => {
 .executor-row {
   margin-top: 4px;
 }
-
 </style>

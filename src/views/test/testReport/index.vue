@@ -13,7 +13,7 @@
     >
       <a-tab-pane key="report-list" title="报告列表" :closable="false">
         <GiTable
-          v-model:selectedKeys="selectedKeys"
+          v-model:selected-keys="selectedKeys"
           row-key="id"
           title=""
           :data="dataList"
@@ -106,18 +106,18 @@
         :title="tab.title"
         :closable="true"
       >
-          <TestReportFuncDetail
-            v-if="tab.type === 'func'"
-            :detail-data="tab.detailData"
-          />
-          <TestReportUiDetail
-            v-else-if="tab.type === 'ui'"
-            :detail-data="tab.detailData"
-          />
-          <TestReportPlaywrightDetail
-            v-else-if="tab.type === 'playwright'"
-            :detail-data="tab.detailData"
-          />
+        <TestReportFuncDetail
+          v-if="tab.type === 'func'"
+          :detail-data="tab.detailData"
+        />
+        <TestReportUiDetail
+          v-else-if="tab.type === 'ui'"
+          :detail-data="tab.detailData"
+        />
+        <TestReportPlaywrightDetail
+          v-else-if="tab.type === 'playwright'"
+          :detail-data="tab.detailData"
+        />
       </a-tab-pane>
     </a-tabs>
 
@@ -139,8 +139,14 @@
       >
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item field="projectId" label="项目 ID" required>
-              <a-input v-model="formState.projectId" placeholder="请输入" allow-clear />
+            <a-form-item field="projectId" label="所属项目" required>
+              <a-select
+                v-model="formState.projectId"
+                :options="projectSelectOptions"
+                placeholder="请选择"
+                allow-search
+                @change="onReportProjectChange"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -164,8 +170,14 @@
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item field="versionName" label="版本名称">
-              <a-input v-model="formState.versionName" placeholder="请输入" allow-clear />
+            <a-form-item field="versionId" label="项目版本" required>
+              <a-select
+                v-model="formState.versionId"
+                :options="reportVersionOptions"
+                placeholder="请选择"
+                allow-search
+                @change="onReportVersionChange"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -200,25 +212,26 @@
 </template>
 
 <script setup lang="tsx">
-import { Message, Modal, type FormInstance, type TableInstance } from '@arco-design/web-vue'
+import { type FormInstance, Message, Modal, type TableInstance } from '@arco-design/web-vue'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import TestReportFuncDetail from './components/TestReportFuncDetail.vue'
+import TestReportUiDetail from './components/TestReportUiDetail.vue'
+import TestReportPlaywrightDetail from './components/TestReportPlaywrightDetail.vue'
 import {
+  type TestReportDetailResp,
+  type TestReportQuery,
+  type TestReportResp,
   addTestReport,
   deleteTestReport,
   exportTestReport,
   getTestReport,
   listTestReport,
-  type TestReportDetailResp,
-  type TestReportQuery,
-  type TestReportResp,
   updateTestReport,
 } from '@/apis/test/testReport'
-import { getProjectConfigList, type ProjectConfigResp } from '@/apis/project/projectConfig'
-import { listTestPlan, type TestPlanResp } from '@/apis/test/testPlan'
-import TestReportFuncDetail from './components/TestReportFuncDetail.vue'
-import TestReportUiDetail from './components/TestReportUiDetail.vue'
-import TestReportPlaywrightDetail from './components/TestReportPlaywrightDetail.vue'
+import { type ProjectConfigResp, getProjectConfigList } from '@/apis/project/projectConfig'
+import { getProjectVersionConfigList } from '@/apis/project/projectVersionConfig'
+import { type TestPlanResp, listTestPlan } from '@/apis/test/testPlan'
 import { useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
 import { toIdString } from '@/utils/id'
@@ -247,14 +260,15 @@ const reportTypeOptions = [
   { label: 'Chrome DevTools Protocol 自动化报告', value: 'CHROME_DEVTOOLS_PROTOCOL' },
 ]
 
-const getDictLabel = (options: { label: string; value: string }[], value?: string) => {
+const getDictLabel = (options: { label: string, value: string }[], value?: string) => {
   if (!value) return '-'
-  return options.find(o => o.value === value)?.label || value
+  return options.find((o) => o.value === value)?.label || value
 }
 
 const queryForm = reactive<TestReportQuery>({
   name: undefined,
   projectId: undefined,
+  versionId: undefined,
   testPlanId: undefined,
   status: undefined,
   triggerMode: undefined,
@@ -275,6 +289,8 @@ const {
 
 const projectConfigList = ref<ProjectConfigResp[]>([])
 const testPlanList = ref<TestPlanResp[]>([])
+const queryVersionOptions = ref<{ label: string, value: string, extra?: string }[]>([])
+const reportVersionOptions = ref<{ label: string, value: string, extra?: string }[]>([])
 
 const loadProjectConfigOptions = async () => {
   try {
@@ -324,6 +340,18 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
     span: planQueryFieldSpan,
     props: {
       options: projectSelectOptions.value,
+      placeholder: '请选择',
+      allowClear: true,
+      allowSearch: true,
+    },
+  },
+  {
+    type: 'select',
+    label: '项目版本',
+    field: 'versionId',
+    span: planQueryFieldSpan,
+    props: {
+      options: queryVersionOptions.value,
       placeholder: '请选择',
       allowClear: true,
       allowSearch: true,
@@ -432,13 +460,11 @@ interface DetailTab {
 
 const detailTabs = ref<DetailTab[]>([])
 const formVisible = ref(false)
-const detailVisible = ref(false)
-const detailData = ref<TestReportDetailResp>()
 const formRef = ref<FormInstance>()
 
 const openFuncDetail = async (record: TestReportResp) => {
   const key = `func-${record.id}`
-  let tab = detailTabs.value.find(item => item.key === key)
+  let tab = detailTabs.value.find((item) => item.key === key)
   if (!tab) {
     const { data } = await getTestReport(record.id)
     tab = { key, title: `${record.name}`, type: 'func', reportId: record.id, detailData: data }
@@ -452,7 +478,7 @@ const openFuncDetail = async (record: TestReportResp) => {
 
 const openUiDetail = async (record: TestReportResp) => {
   const key = `ui-${record.id}`
-  let tab = detailTabs.value.find(item => item.key === key)
+  let tab = detailTabs.value.find((item) => item.key === key)
   if (!tab) {
     const { data } = await getTestReport(record.id)
     tab = { key, title: `${record.name}`, type: 'ui', reportId: record.id, detailData: data }
@@ -466,7 +492,7 @@ const openUiDetail = async (record: TestReportResp) => {
 
 const openPlaywrightDetail = async (record: TestReportResp) => {
   const key = `playwright-${record.id}`
-  let tab = detailTabs.value.find(item => item.key === key)
+  let tab = detailTabs.value.find((item) => item.key === key)
   const { data } = await getTestReport(record.id)
   if (!tab) {
     tab = { key, title: `${record.name}`, type: 'playwright', reportId: record.id, detailData: data }
@@ -498,14 +524,15 @@ const onTabDelete = (key: string) => {
   closeTab(String(key))
 }
 
-const closeTab = (key: string) => {
-  detailTabs.value = detailTabs.value.filter(item => item.key !== key)
+function closeTab(key: string) {
+  detailTabs.value = detailTabs.value.filter((item) => item.key !== key)
   if (activeTab.value === key) activeTab.value = 'report-list'
 }
 
 const formState = reactive<any>({
   id: '',
   projectId: undefined,
+  versionId: undefined,
   projectName: '',
   testPlanId: undefined,
   testPlanName: '',
@@ -535,6 +562,7 @@ const reset = () => {
   queryForm.id = undefined
   queryForm.name = undefined
   queryForm.projectId = undefined
+  queryForm.versionId = undefined
   queryForm.testPlanId = undefined
   queryForm.status = undefined
   queryForm.triggerMode = undefined
@@ -561,9 +589,54 @@ watch(
   { immediate: true },
 )
 
-const openForm = (record?: TestReportResp) => {
+const loadReportVersions = async (projectId?: string, selectDefault = true) => {
+  reportVersionOptions.value = []
+  if (!projectId) return
+  const { data } = await getProjectVersionConfigList({ projectId, status: 1, sort: ['name,desc'] })
+  reportVersionOptions.value = (data || []).map((item) => ({ label: item.name, value: item.id, extra: item.type }))
+  if (selectDefault && !formState.versionId) {
+    formState.versionId = reportVersionOptions.value.find((item) => item.extra === '1')?.value
+      || reportVersionOptions.value[0]?.value
+    onReportVersionChange()
+  }
+}
+
+const loadQueryVersions = async (projectId?: string) => {
+  queryVersionOptions.value = []
+  if (!projectId) return
+  try {
+    const { data } = await getProjectVersionConfigList({ projectId, status: 1, sort: ['name,desc'] })
+    queryVersionOptions.value = (data || []).map((item) => ({ label: item.name, value: item.id, extra: item.type }))
+  } catch {
+    queryVersionOptions.value = []
+  }
+}
+
+watch(
+  () => queryForm.projectId,
+  async (projectId, previousProjectId) => {
+    if (projectId === previousProjectId) return
+    queryForm.versionId = undefined
+    await loadQueryVersions(toIdString(projectId) || undefined)
+  },
+)
+
+const onReportProjectChange = async () => {
+  const project = projectSelectOptions.value.find((item) => item.value === formState.projectId)
+  formState.projectName = project?.label || ''
+  formState.versionId = undefined
+  formState.versionName = ''
+  await loadReportVersions(formState.projectId)
+}
+
+function onReportVersionChange() {
+  formState.versionName = reportVersionOptions.value.find((item) => item.value === formState.versionId)?.label || ''
+}
+
+const openForm = async (record?: TestReportResp) => {
   formState.id = record?.id || ''
   formState.projectId = toIdString(record?.projectId) || undefined
+  formState.versionId = toIdString(record?.versionId) || undefined
   formState.projectName = record?.projectName || ''
   formState.testPlanId = toIdString(record?.testPlanId) || undefined
   formState.testPlanName = record?.testPlanName || ''
@@ -574,6 +647,12 @@ const openForm = (record?: TestReportResp) => {
   formState.executeMode = record?.executeMode || 'PLAN'
   formState.reportType = record?.reportType || 'SELENIUM'
   formState.status = record?.status || 'RUNNING'
+  await loadReportVersions(formState.projectId, false)
+  if (!formState.versionId) {
+    formState.versionId = reportVersionOptions.value.find((item) => item.extra === '1')?.value
+      || reportVersionOptions.value[0]?.value
+  }
+  onReportVersionChange()
   formVisible.value = true
 }
 
@@ -586,6 +665,7 @@ const submitForm = async (): Promise<boolean> => {
   const testPlanId = toIdString(formState.testPlanId)
   const payload = {
     projectId,
+    versionId: toIdString(formState.versionId),
     projectName: formState.projectName,
     testPlanId: testPlanId || undefined,
     testPlanName: formState.testPlanName,
@@ -609,7 +689,7 @@ const submitForm = async (): Promise<boolean> => {
 }
 
 const onDelete = (record?: TestReportResp) => {
-  const ids = selectedKeys.value.length ? selectedKeys.value.map(item => String(item)) : record ? record.id : ''
+  const ids = selectedKeys.value.length ? selectedKeys.value.map((item) => String(item)) : record ? record.id : ''
   Modal.warning({
     title: '确认删除',
     content: selectedKeys.value.length
@@ -628,7 +708,7 @@ const onExport = async () => {
   await exportTestReport(selectedKeys.value.length ? { ...queryForm, id: selectedKeys.value.join(',') } : queryForm)
 }
 
-const formatDateTime = (value?: string | null) => {
+function formatDateTime(value?: string | null) {
   if (value == null || value === '') return '-'
   const s = String(value).trim()
   const normalized = s.includes('T') ? s.replace('T', ' ') : s

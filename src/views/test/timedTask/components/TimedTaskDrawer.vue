@@ -72,6 +72,15 @@
 
       <section class="form-section">
         <div class="section-title">执行配置</div>
+        <a-form-item field="executionEngine" label="执行引擎" required>
+          <a-select v-model="form.executionEngine" @change="onExecutionEngineChange">
+            <a-option value="SELENIUM">Selenium 自动化</a-option>
+            <a-option value="PLAYWRIGHT_RUNNER">Playwright Runner</a-option>
+            <a-option value="CHROME_DEVTOOLS_PROTOCOL" disabled>
+              Chrome DevTools Protocol（依赖浏览器会话，不支持定时执行）
+            </a-option>
+          </a-select>
+        </a-form-item>
         <a-form-item field="projectEnvironmentId" label="产品环境" required>
           <a-select v-model="form.projectEnvironmentId" placeholder="请选择计划所属项目的产品环境">
             <a-option v-for="item in projectEnvironments" :key="item.id" :value="item.id" :disabled="item.status !== 1">
@@ -79,13 +88,87 @@
             </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item field="automationEnvironmentId" label="自动化环境" required>
+        <a-form-item
+          v-if="form.executionEngine === 'SELENIUM'"
+          field="automationEnvironmentId"
+          label="自动化环境"
+          required
+        >
           <a-select v-model="form.automationEnvironmentId" placeholder="请选择 Jenkins 自动化环境">
             <a-option v-for="item in automationEnvironments" :key="item.id" :value="item.id" :disabled="item.status !== 1">
               {{ item.name }} <a-tag size="small" :color="item.status === 1 ? 'green' : 'gray'">{{ item.status === 1 ? '启用' : '停用' }}</a-tag>
             </a-option>
           </a-select>
         </a-form-item>
+        <div v-if="form.executionEngine === 'PLAYWRIGHT_RUNNER'" class="runner-config">
+          <div class="subsection-title">Playwright Runner 配置</div>
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="浏览器">
+                <a-select v-model="runnerConfig.browser">
+                  <a-option value="chromium">Chromium</a-option>
+                  <a-option value="firefox">Firefox</a-option>
+                  <a-option value="webkit">WebKit</a-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="实时画面质量">
+                <a-select v-model="runnerConfig.liveFrameQuality" :options="liveFrameQualityOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="用例会话">
+                <a-select v-model="runnerConfig.sessionMode" :options="runnerSessionModeOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="显示浏览器窗口">
+                <a-switch v-model="runnerConfig.headed" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="忽略 HTTPS 错误">
+                <a-switch v-model="runnerConfig.ignoreHttpsErrors" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="页面错误检测">
+                <a-switch v-model="runnerConfig.pageErrorCheckEnabled" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="Trace 保留策略">
+                <a-select v-model="runnerConfig.trace" :options="artifactPolicyOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="录屏保留策略">
+                <a-select v-model="runnerConfig.video" :options="artifactPolicyOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="步骤超时（ms）">
+                <a-input-number v-model="runnerConfig.stepTimeoutMs" :min="1000" :max="300000" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="用例超时（ms）">
+                <a-input-number v-model="runnerConfig.caseTimeoutMs" :min="10000" :max="3600000" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="慢放时间（ms）">
+                <a-input-number v-model="runnerConfig.slowMoMs" :min="0" :max="10000" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="结束停留（ms）">
+                <a-input-number v-model="runnerConfig.finishDelayMs" :min="0" :max="600000" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </section>
 
       <section class="form-section">
@@ -120,6 +203,7 @@ import { type FormInstance, Message } from '@arco-design/web-vue'
 import CronParser from 'cron-parser'
 import dayjs from 'dayjs'
 import { type AutomationEnvironmentConfigResp, getAutomationEnvironmentConfigList } from '@/apis/automation/automationEnvironmentConfig'
+import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
 import { type ProjectEnvironmentConfigResp, getProjectEnvironmentConfigList } from '@/apis/project/projectEnvironmentConfig'
 import { type TestPlanResp, getTestPlanList } from '@/apis/test/testPlan'
 import { type TestTimedTaskReq, addTimedTask, getTimedTask, updateTimedTask } from '@/apis/test/timedTask'
@@ -153,14 +237,46 @@ const weekOptions = [
   { label: '周日', value: 'SUN' },
 ]
 
+const createRunnerConfig = (): AutomationPlaywrightRunnerOptions => ({
+  browser: 'chromium',
+  liveFrameQuality: 'high',
+  sessionMode: 'isolated',
+  headed: false,
+  ignoreHttpsErrors: true,
+  pageErrorCheckEnabled: true,
+  trace: 'retain-on-failure',
+  video: 'retain-on-failure',
+  stepTimeoutMs: 6000,
+  caseTimeoutMs: 600000,
+  slowMoMs: 0,
+  finishDelayMs: 0,
+})
+const runnerConfig = reactive<AutomationPlaywrightRunnerOptions>(createRunnerConfig())
+const liveFrameQualityOptions = [
+  { label: '流畅（1080P）', value: 'smooth' },
+  { label: '高清（推荐）', value: 'high' },
+  { label: '超清（4K）', value: 'ultra' },
+  { label: '8K', value: '8k' },
+]
+const runnerSessionModeOptions = [
+  { label: '每条用例独立登录（默认）', value: 'isolated' },
+  { label: '复用上一条成功用例登录态', value: 'reuse-auth' },
+]
+const artifactPolicyOptions = [
+  { label: '关闭', value: 'off' },
+  { label: '始终保留', value: 'on' },
+  { label: '仅失败保留', value: 'retain-on-failure' },
+]
+
 const emptyForm = (): DrawerForm => ({
   testPlanId: '',
   name: '',
   description: '',
   cronExpression: '0 */30 * * * ?',
   allowConcurrent: 0,
+  executionEngine: 'SELENIUM',
   projectEnvironmentId: '',
-  automationEnvironmentId: '',
+  automationEnvironmentId: undefined,
   notificationEmails: userStore.userInfo.email ? [userStore.userInfo.email] : [],
 })
 const form = reactive<DrawerForm>(emptyForm())
@@ -178,11 +294,27 @@ const loadProjectEnvironments = async () => {
     : []
 }
 
+const restoreRunnerConfig = (executionConfig?: unknown) => {
+  Object.assign(runnerConfig, createRunnerConfig())
+  let parsedConfig = executionConfig
+  if (typeof executionConfig === 'string') {
+    try {
+      parsedConfig = JSON.parse(executionConfig)
+    } catch {
+      parsedConfig = undefined
+    }
+  }
+  if (parsedConfig && typeof parsedConfig === 'object' && !Array.isArray(parsedConfig)) {
+    Object.assign(runnerConfig, parsedConfig)
+  }
+}
+
 const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
   Object.assign(form, emptyForm())
   scheduleMode.value = 'EVERY_30_MINUTES'
   dailyTime.value = '09:00'
   weekDay.value = 'MON'
+  restoreRunnerConfig()
   await loadOptions()
   if (options?.id) {
     const { data } = await getTimedTask(options.id)
@@ -193,10 +325,12 @@ const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
       description: data.description || '',
       cronExpression: data.cronExpression,
       allowConcurrent: data.allowConcurrent,
+      executionEngine: data.executionEngine === 'PLAYWRIGHT_RUNNER' ? 'PLAYWRIGHT_RUNNER' : 'SELENIUM',
       projectEnvironmentId: data.projectEnvironmentId,
       automationEnvironmentId: data.automationEnvironmentId,
       notificationEmails: data.notificationEmails || [],
     })
+    restoreRunnerConfig(data.executionConfig)
     parseScheduleMode(data.cronExpression)
   } else if (options?.plan) {
     form.testPlanId = options.plan.id
@@ -209,6 +343,10 @@ const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
 const onPlanChange = async () => {
   form.projectEnvironmentId = ''
   await loadProjectEnvironments()
+}
+
+const onExecutionEngineChange = () => {
+  if (form.executionEngine === 'PLAYWRIGHT_RUNNER') form.automationEnvironmentId = undefined
 }
 
 const applyScheduleMode = () => {
@@ -271,7 +409,8 @@ const deduplicateEmails = () => {
 
 const submit = async (done: (closed: boolean) => void) => {
   deduplicateEmails()
-  if (!form.testPlanId || !form.name.trim() || !form.projectEnvironmentId || !form.automationEnvironmentId) {
+  const automationEnvironmentMissing = form.executionEngine === 'SELENIUM' && !form.automationEnvironmentId
+  if (!form.testPlanId || !form.name.trim() || !form.projectEnvironmentId || automationEnvironmentMissing) {
     Message.warning('请完整填写测试计划、任务名称和执行环境')
     done(false)
     return
@@ -281,13 +420,23 @@ const submit = async (done: (closed: boolean) => void) => {
     done(false)
     return
   }
+  if (form.executionEngine === 'PLAYWRIGHT_RUNNER' && runnerConfig.caseTimeoutMs < runnerConfig.stepTimeoutMs) {
+    Message.warning('用例总超时不能小于单步骤超时')
+    done(false)
+    return
+  }
   const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
   if (!form.notificationEmails.length || form.notificationEmails.some((item) => !emailPattern.test(item))) {
     Message.warning('请填写 1–20 个有效通知邮箱')
     done(false)
     return
   }
-  const payload: TestTimedTaskReq = { ...form, name: form.name.trim() }
+  const payload: TestTimedTaskReq = {
+    ...form,
+    name: form.name.trim(),
+    automationEnvironmentId: form.executionEngine === 'SELENIUM' ? form.automationEnvironmentId : undefined,
+    executionConfig: form.executionEngine === 'PLAYWRIGHT_RUNNER' ? { ...runnerConfig } : undefined,
+  }
   if (form.id) await updateTimedTask(payload, form.id)
   else await addTimedTask(payload)
   Message.success(form.id ? '定时任务已更新' : '定时任务已保存，当前为禁用状态')
@@ -303,6 +452,9 @@ defineExpose({ open })
 .form-section { padding: 4px 0 14px; border-bottom: 1px solid var(--color-neutral-3); margin-bottom: 18px; }
 .form-section:last-child { border-bottom: 0; }
 .section-title { margin-bottom: 14px; color: var(--color-text-1); font-size: 15px; font-weight: 600; }
+.subsection-title { margin-bottom: 12px; color: var(--color-text-2); font-size: 14px; font-weight: 500; }
+.runner-config { padding-top: 4px; }
+.runner-config :deep(.arco-input-number) { width: 100%; }
 .schedule-preview { padding: 12px 16px; border-radius: 6px; background: var(--color-fill-1); color: var(--color-text-2); }
 .preview-title { margin-top: 10px; font-weight: 500; }
 .schedule-preview ol { margin: 6px 0 0; padding-left: 22px; line-height: 1.8; }

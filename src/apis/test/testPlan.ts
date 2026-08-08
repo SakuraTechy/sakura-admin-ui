@@ -8,6 +8,7 @@ export interface TestPlanResp {
   createUserString?: string
   /** 雪花 ID，须用字符串避免 JS Number 精度丢失 */
   projectId: string
+  versionId?: string
   projectName: string
   type: string
   name: string
@@ -32,6 +33,7 @@ export interface TestPlanResp {
 export interface TestPlanQuery {
   id?: string
   projectId?: string
+  versionId?: string
   name?: string
   type?: string
   status?: string

@@ -1,11 +1,22 @@
 import http from '@/utils/http'
+import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
+import type { TestExecutionEngine } from '@/apis/test/testPlan'
 
 const BASE_URL = '/test/timedTask'
+
+export interface TestTimedTaskCapabilityResp {
+  clientEnabled: boolean
+  apiReachable: boolean
+  groupAvailable: boolean
+  ready: boolean
+  groupName: string
+  message: string
+}
 
 export interface TimedTaskRunSummary {
   id: string
   triggerMode: 'SCHEDULE' | 'MANUAL'
-  status: 'RUNNING' | 'PASSED' | 'FAILED' | 'SKIPPED'
+  status: 'RUNNING' | 'PASSED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
   startTime: string
   endTime?: string
   runTime?: number
@@ -21,13 +32,21 @@ export interface TestTimedTaskResp {
   description?: string
   cronExpression: string
   allowConcurrent: number
+  executionEngine?: TestExecutionEngine
+  executionConfig?: AutomationPlaywrightRunnerOptions | Record<string, unknown>
   projectEnvironmentId: string
   projectEnvironmentName?: string
-  automationEnvironmentId: string
+  automationEnvironmentId?: string
   automationEnvironmentName?: string
   notificationEmails: string[]
   nextExecuteTime?: string
-  status: 'ENABLED' | 'DISABLED'
+  status: 'ENABLED' | 'DISABLED' | 'DELETING'
+  scheduleSyncStatus: 'PENDING' | 'SYNCING' | 'SYNCED' | 'FAILED' | 'DELETING'
+  scheduleSyncError?: string
+  scheduleSyncTime?: string
+  scheduleSyncVersion?: number
+  scheduleSyncRetryCount?: number
+  scheduleSyncNextRetryTime?: string
   lastRun?: TimedTaskRunSummary
   createTime: string
 }
@@ -43,7 +62,7 @@ export interface TestTimedTaskRunResp extends TimedTaskRunSummary {
   consoleUrl?: string
   reportUrl?: string
   failureReason?: string
-  notificationStatus?: 'PENDING' | 'SENT' | 'FAILED'
+  notificationStatus?: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED'
   notificationError?: string
 }
 
@@ -81,13 +100,19 @@ export interface TestTimedTaskReq {
   description?: string
   cronExpression: string
   allowConcurrent: number
+  executionEngine: Exclude<TestExecutionEngine, 'CHROME_DEVTOOLS_PROTOCOL'>
+  executionConfig?: Record<string, unknown>
   projectEnvironmentId: string
-  automationEnvironmentId: string
+  automationEnvironmentId?: string
   notificationEmails: string[]
 }
 
 export function listTimedTask(query?: TestTimedTaskPageQuery) {
   return http.get<PageRes<TestTimedTaskResp[]>>(BASE_URL, query)
+}
+
+export function getTimedTaskCapability() {
+  return http.get<TestTimedTaskCapabilityResp>(`${BASE_URL}/capability`)
 }
 
 export function getTimedTask(id: string) {
@@ -112,6 +137,10 @@ export function exportTimedTask(query: TestTimedTaskQuery) {
 
 export function updateTimedTaskStatus(id: string, status: string) {
   return http.post(`${BASE_URL}/${id}/status?status=${status}`)
+}
+
+export function retryTimedTaskSync(id: string) {
+  return http.post(`${BASE_URL}/${id}/sync`)
 }
 
 export function triggerTimedTask(id: string) {

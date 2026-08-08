@@ -27,11 +27,11 @@
           <template #reason="{ record }"><span :title="record.failureReason">{{ record.failureReason || '-' }}</span></template>
           <template #notification="{ record }">
             <a-tooltip v-if="record.notificationError" :content="record.notificationError">
-              <a-tag :color="record.notificationStatus === 'SENT' ? 'green' : record.notificationStatus === 'FAILED' ? 'red' : 'gray'">
+              <a-tag :color="record.notificationStatus === 'SENT' ? 'green' : record.notificationStatus === 'FAILED' ? 'red' : record.notificationStatus === 'SENDING' ? 'blue' : 'gray'">
                 {{ notificationLabel(record.notificationStatus) }}
               </a-tag>
             </a-tooltip>
-            <a-tag v-else :color="record.notificationStatus === 'SENT' ? 'green' : 'gray'">{{ notificationLabel(record.notificationStatus) }}</a-tag>
+            <a-tag v-else :color="record.notificationStatus === 'SENT' ? 'green' : record.notificationStatus === 'SENDING' ? 'blue' : 'gray'">{{ notificationLabel(record.notificationStatus) }}</a-tag>
           </template>
           <template #links="{ record }">
             <a-space>
@@ -48,6 +48,17 @@
       <a-tab-pane key="logs" title="调度日志">
         <a-alert type="info" class="log-alert">调度日志用于底层排障，日常执行结果请以“业务执行记录”为准。</a-alert>
         <a-table :data="logs" :columns="logColumns" :loading="loading" :pagination="false" row-key="id" />
+        <div class="pagination-row">
+          <a-pagination
+            v-model:current="logQuery.page"
+            v-model:page-size="logQuery.size"
+            :total="logTotal"
+            show-total
+            show-page-size
+            @change="loadLogs"
+            @page-size-change="searchLogs"
+          />
+        </div>
       </a-tab-pane>
     </a-tabs>
   </a-drawer>
@@ -70,9 +81,11 @@ const task = ref<TestTimedTaskResp>()
 const runs = ref<TestTimedTaskRunResp[]>([])
 const logs = ref<TestTimedTaskLogResp[]>([])
 const total = ref(0)
+const logTotal = ref(0)
 const timeRange = ref<string[]>([])
 const query = reactive({ page: 1, size: 10, status: undefined as string | undefined, triggerMode: undefined as string | undefined })
-const statusOptions = ['RUNNING', 'PASSED', 'FAILED', 'SKIPPED'].map((value) => ({ label: statusLabel(value), value }))
+const logQuery = reactive({ page: 1, size: 10 })
+const statusOptions = ['RUNNING', 'PASSED', 'FAILED', 'CANCELLED', 'SKIPPED'].map((value) => ({ label: statusLabel(value), value }))
 const triggerOptions = [{ label: '定时', value: 'SCHEDULE' }, { label: '手动', value: 'MANUAL' }]
 
 const runColumns: TableInstance['columns'] = [
@@ -94,13 +107,13 @@ const logColumns: TableInstance['columns'] = [
 ]
 
 function statusLabel(status?: string) {
-  return ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', SKIPPED: '已跳过' } as Record<string, string>)[status || ''] || status || '-'
+  return ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', CANCELLED: '已取消', SKIPPED: '已跳过' } as Record<string, string>)[status || ''] || status || '-'
 }
 function statusColor(status?: string) {
-  return ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', SKIPPED: 'orange' } as Record<string, string>)[status || ''] || 'gray'
+  return ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', CANCELLED: 'gray', SKIPPED: 'orange' } as Record<string, string>)[status || ''] || 'gray'
 }
 function notificationLabel(status?: string) {
-  return ({ PENDING: '待发送', SENT: '已发送', FAILED: '发送失败' } as Record<string, string>)[status || ''] || '-'
+  return ({ PENDING: '待发送', SENDING: '发送中', SENT: '已发送', FAILED: '发送失败' } as Record<string, string>)[status || ''] || '-'
 }
 function durationLabel(value?: number) {
   if (value === undefined || value === null) return '-'
@@ -132,10 +145,16 @@ const loadLogs = async () => {
   if (!task.value) return
   loading.value = true
   try {
-    logs.value = (await listTimedTaskLogs(task.value.id, { page: 1, size: 50 })).data?.list || []
+    const { data } = await listTimedTaskLogs(task.value.id, logQuery)
+    logs.value = data?.list || []
+    logTotal.value = data?.total || 0
   } finally {
     loading.value = false
   }
+}
+const searchLogs = () => {
+  logQuery.page = 1
+  loadLogs()
 }
 const loadActiveTab = () => activeTab.value === 'runs' ? loadRuns() : loadLogs()
 const open = (record: TestTimedTaskResp) => {
@@ -144,6 +163,7 @@ const open = (record: TestTimedTaskResp) => {
   query.page = 1
   query.status = undefined
   query.triggerMode = undefined
+  logQuery.page = 1
   timeRange.value = []
   visible.value = true
   loadRuns()

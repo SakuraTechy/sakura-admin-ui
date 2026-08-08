@@ -7,6 +7,7 @@ export type TestReportType = 'SELENIUM' | 'PLAYWRIGHT_RUNNER' | 'CHROME_DEVTOOLS
 export interface TestReportResp {
   id: string
   projectId: string
+  versionId?: string
   projectName: string
   versionName?: string
   testPlanId?: string
@@ -64,6 +65,7 @@ export interface TestReportUiStatistic {
 export interface TestReportQuery {
   id?: string
   projectId?: number
+  versionId?: string
   testPlanId?: string
   name?: string
   triggerMode?: string
