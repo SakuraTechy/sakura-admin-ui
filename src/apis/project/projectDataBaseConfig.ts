@@ -102,6 +102,7 @@ export function exportProjectDataBaseConfig(query: ProjectDataBaseConfigQuery) {
 }
 
 /** @desc 测试项目管理-数据库配置 */
-export function testProjectDataBaseConfig(data: any) {
-  return http.post(`${BASE_URL}/test`, data)
+export function testProjectDataBaseConfig(data: any, id?: string) {
+  const query = id ? `?id=${encodeURIComponent(id)}` : ''
+  return http.post(`${BASE_URL}/test${query}`, data)
 }

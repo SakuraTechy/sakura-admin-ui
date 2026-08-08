@@ -197,19 +197,6 @@ const selectionDisabled = ref(false)
 const sceneSelection = ref(false)
 const sceneSelectionSummary = ref('')
 const isSceneSelection = computed(() => sceneSelection.value)
-const isInfrastructureAction = (value: unknown) => ['server_command', 'database_sql', 'database_native', 'infra-server-command', 'infra-database-sql', 'infra-database-native']
-  .includes(String(value || '').trim().toLowerCase())
-const requiresInfrastructure = (record: any) => Boolean(
-  record?.requiresInfrastructure
-  || (Array.isArray(record?.caseList) && record.caseList.some((testCase: any) =>
-    Array.isArray(testCase?.stepList) && testCase.stepList.some((step: any) => {
-      const action = Array.isArray(step?.configList)
-        ? step.configList.find((item: any) => item?.paramsName === 'action_type')?.paramsValue
-        : ''
-      return isInfrastructureAction(action || step?.operationValue)
-    }),
-  )),
-)
 
 const casesWithLiveStatus = computed(() => {
   const recordSource = executionContext.value.recordSource || 'debug'
@@ -295,17 +282,9 @@ async function onOpen(
       ? record
       : record?.id ? (await getAutomationUiScene(String(record.id))).data : record
     scene.value = detail || record
-    if (executionType.value === 'extension-cdp' && requiresInfrastructure(scene.value)) {
-      executionType.value = 'playwright-runner'
-      Message.info('检测到服务器或数据库步骤，已协商为 Playwright Runner 执行')
-    }
     loadSelectionRows(scene.value, options.caseIds || [])
   } catch (error: any) {
     scene.value = record
-    if (executionType.value === 'extension-cdp' && requiresInfrastructure(scene.value)) {
-      executionType.value = 'playwright-runner'
-      Message.info('检测到服务器或数据库步骤，已协商为 Playwright Runner 执行')
-    }
     loadSelectionRows(record, options.caseIds || [])
     Message.error(error?.message || '读取场景用例和执行记录失败')
   } finally {

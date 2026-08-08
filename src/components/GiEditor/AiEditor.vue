@@ -1,6 +1,6 @@
 <!-- 未完善 -->
 <template>
-  <div ref="divRef" class="container">
+  <div ref="divRef" class="container" :class="{ 'container--compact': compact }">
     <div class="aie-container">
       <div class="aie-header-panel">
         <div class="aie-container-header">
@@ -35,6 +35,7 @@ const props = defineProps<{
   options?: AiEditorOptions
   readonly?: boolean
   defaultFormat?: 'markdown' | 'html'
+  compact?: boolean
 }>()
 const emit = defineEmits<(e: 'update:modelValue', value: string) => void>()
 const appStore = useAppStore()
@@ -75,6 +76,10 @@ const editorConfig = reactive<AiEditorOptions>({
   placeholder: '请输入内容',
   content: '',
   draggable: false,
+  toolbarKeys: props.compact
+    ? ['undo', 'redo', 'divider', 'bold', 'italic', 'underline', 'strike', 'divider', 'bullet-list', 'ordered-list', 'link']
+    : undefined,
+  toolbarSize: props.compact ? 'small' : undefined,
   onChange: (editor: AiEditor) => {
     const content = editor.getHtml()
     emit('update:modelValue', content)
@@ -106,7 +111,7 @@ watch(() => props.readonly, (readonly) => {
 const init = () => {
   editorConfig.element = divRef.value
   editorConfig.content = props.modelValue
-  editorConfig.editable = props.readonly
+  editorConfig.editable = !props.readonly
   aieditor.value = new AiEditor(editorConfig)
 }
 
@@ -118,10 +123,6 @@ onMounted(() => {
 // 销毁阶段
 onUnmounted(() => {
   aieditor.value?.destroy()
-})
-
-// 暴露方法供父组件调用（当前无）
-defineExpose({
 })
 </script>
 
@@ -232,6 +233,37 @@ export default {}
 
 #outline {
     text-indent: 2rem;
+}
+
+.container--compact {
+    height: 240px;
+}
+
+.container--compact .aie-header-panel {
+    position: static;
+    padding: 4px 8px;
+}
+
+.container--compact .aie-main {
+    min-height: 0;
+    padding: 0;
+}
+
+.container--compact .aie-directory-content {
+    display: none;
+}
+
+.container--compact .aie-container-panel {
+    width: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 8px 10px;
+    border: 0;
+}
+
+.container--compact :deep(aie-header > div) {
+    flex-wrap: nowrap !important;
+    overflow: hidden;
 }
 
 .aie-directory-content {

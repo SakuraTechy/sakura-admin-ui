@@ -377,7 +377,7 @@ export function findNodePath(data, key1, value1, titleKey = 'title') {
 //     "id": "a115ae2a989a4bb4afd648fade36cdf2",
 //     "name": "数据库安全审计系统1",
 //     "paramsName": "VM_PassWord",
-//     "paramsValue": "3edc$RFV"
+//     "paramsValue": "${DB_PASSWORD}"
 //   }
 // ];
 

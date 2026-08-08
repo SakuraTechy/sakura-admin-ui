@@ -7,6 +7,8 @@ export interface AutomationPlaywrightRunnerJobReq {
   caseKey: string
   batchId?: string
   executionId?: string
+  /** 批次创建时签发的短时 capability，仅随当前 Runner 任务请求传递。 */
+  executionCapability?: string
   projectEnvironmentId: string
   startStep?: number
   options: AutomationPlaywrightRunnerOptions
@@ -32,10 +34,14 @@ export interface AutomationPlaywrightBatchCase {
   executionId: string
   status: string
   stepTotal: number
+  /** Admin 在创建批次时冻结的最终配置，客户端不得重新合并默认值。 */
+  effectiveExecutionConfig?: Record<string, unknown>
 }
 
 export interface AutomationPlaywrightBatchResp {
   batchId: string
+  /** Admin 不落明文，前端只在当前批次创建后转发给 Runner Job。 */
+  executionCapability?: string
   executionType: string
   executeName: string
   executeEmail?: string
@@ -60,7 +66,7 @@ export interface AutomationPlaywrightCaseCancellationResp {
 export interface AutomationPlaywrightRunnerOptions {
   browser: 'chromium' | 'firefox' | 'webkit'
   liveFrameQuality: 'smooth' | 'high' | 'ultra' | '8k'
-  sessionMode: 'isolated' | 'reuse-auth'
+  sessionMode: 'isolated' | 'reuse-auth' | 'reuse-browser'
   headed: boolean
   ignoreHttpsErrors: boolean
   pageErrorCheckEnabled?: boolean
@@ -134,10 +140,10 @@ export function getAutomationPlaywrightBatchCaseCancellation(sceneKey: string, b
   )
 }
 
-export function getAutomationPlaywrightCase(caseKey: string, projectEnvironmentId: string) {
+export function getAutomationPlaywrightCase(caseKey: string, projectEnvironmentId: string, batchId?: string) {
   return http.get<any>(
     `/automation/playwright/testcases/${encodeAdminCasePath(caseKey)}`,
-    { projectEnvironmentId },
+    { projectEnvironmentId, ...(batchId ? { batchId } : {}) },
   )
 }
 

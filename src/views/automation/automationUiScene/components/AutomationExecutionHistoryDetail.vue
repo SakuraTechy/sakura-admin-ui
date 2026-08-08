@@ -157,6 +157,7 @@ function stepState(step: ExecutionHistoryStepRow) {
   return label === '通过' ? 'passed' : label === '失败' ? 'failed' : 'skipped'
 }
 function sessionModeLabel(value: string) {
+  if (value === 'reuse-browser') return '同一浏览器窗口'
   return value === 'reuse-auth' ? '复用登录态' : '独立登录'
 }
 </script>

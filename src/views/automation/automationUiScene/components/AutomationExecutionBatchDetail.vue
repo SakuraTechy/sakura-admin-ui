@@ -227,6 +227,7 @@ function caseDurationTotal(cases: ExecutionHistoryCaseRow[]) {
 }
 
 function sessionModeLabel(value: string) {
+  if (value === 'reuse-browser') return '同一浏览器窗口'
   return value === 'reuse-auth' ? '复用登录态' : '独立登录'
 }
 

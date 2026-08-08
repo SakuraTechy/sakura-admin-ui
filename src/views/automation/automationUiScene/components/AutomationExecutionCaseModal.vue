@@ -182,8 +182,9 @@
                               <div class="page-error-policy-help">
                                 <div><strong>独立登录：</strong>保持原有隔离行为，每条用例使用全新浏览器上下文。</div>
                                 <div><strong>复用登录态：</strong>串行复用上一条成功用例的 Cookie、localStorage 和 IndexedDB。</div>
+                                <div><strong>同一浏览器窗口：</strong>串行复用同一个浏览器、标签页和页面内存。</div>
                                 <div class="page-error-policy-help__note">
-                                  不复用 sessionStorage、标签页和页面内存；成功注销也会传递给下一条用例。
+                                  复用登录态不复用 sessionStorage、标签页和页面内存；成功注销也会传递给下一条用例。
                                 </div>
                               </div>
                             </template>
@@ -227,7 +228,11 @@
                   </a-col>
                   <a-col :span="12">
                     <a-form-item label="录屏保留策略">
-                      <a-select v-model="runnerConfig.video" :disabled="running" :options="artifactPolicyOptions" />
+                      <a-select
+                        v-model="runnerConfig.video"
+                        :disabled="running"
+                        :options="artifactPolicyOptions"
+                      />
                     </a-form-item>
                   </a-col>
                   <a-col :span="12">
@@ -363,6 +368,7 @@ interface PlaybackCaseRow {
   finishedAt?: number
   liveLogs: LiveExecutionLog[]
   lastEventSequence: number
+  effectiveExecutionConfig?: Record<string, unknown>
 }
 
 interface ExtensionCompletion {
@@ -417,6 +423,7 @@ const activeCaseKey = ref('')
 const batchState = ref<BatchState>('idle')
 const batchCaseIds = ref<string[]>([])
 const batchId = ref('')
+const batchExecutionCapability = ref('')
 const batchExecuteName = ref('')
 const cancelRequested = ref(false)
 const cancelledCaseIds = ref(new Set<string>())
@@ -467,6 +474,7 @@ const liveFrameQualityOptions = [
 const runnerSessionModeOptions = [
   { label: '每条用例独立登录（默认）', value: 'isolated' },
   { label: '复用本批次上一条成功用例的登录态', value: 'reuse-auth' },
+  { label: '同一浏览器窗口连续执行', value: 'reuse-browser' },
 ]
 
 // 计划正式报告绑定按场景数据库 ID 校验；优先使用 id，避免把业务场景编号
@@ -533,6 +541,7 @@ const resetBatchState = () => {
   batchState.value = 'idle'
   batchCaseIds.value = []
   batchId.value = ''
+  batchExecutionCapability.value = ''
   batchExecuteName.value = ''
   activeCaseId.value = ''
   activeCaseKey.value = ''
@@ -621,9 +630,9 @@ async function refreshSelectedEnvironmentStatus() {
   }
 }
 
-const fetchPlaybackCase = async (caseId: string) => {
+const fetchPlaybackCase = async (caseId: string, frozenBatchId?: string) => {
   const caseKey = `${playbackSceneKey.value}:${caseId}`
-  const { data } = await getAutomationPlaywrightCase(caseKey, form.projectEnvironmentId)
+  const { data } = await getAutomationPlaywrightCase(caseKey, form.projectEnvironmentId, frozenBatchId)
   return data
 }
 
@@ -812,12 +821,15 @@ async function startBatch(caseIds: string[]) {
   batchCaseIds.value = [...caseIds]
   batchState.value = 'running'
   batchId.value = createdBatch.batchId
+  batchExecutionCapability.value = createdBatch.executionCapability || ''
   batchExecuteName.value = createdBatch.executeName || '-'
   cancelRequested.value = false
   cancelledCaseIds.value = new Set()
   runnerJob.value = undefined
   caseRows.value.forEach((item) => {
-    item.executionId = batchCases.get(item.caseId)?.executionId || ''
+    const batchCase = batchCases.get(item.caseId)
+    item.executionId = batchCase?.executionId || ''
+    item.effectiveExecutionConfig = batchCase?.effectiveExecutionConfig
     item.jobId = ''
     item.stepCompleted = 0
     item.stepPass = 0
@@ -894,25 +906,31 @@ async function startBatch(caseIds: string[]) {
 }
 
 async function executeOneCase(row: PlaybackCaseRow) {
-  const data = await fetchPlaybackCase(row.caseId)
+  if (executionType.value === 'extension-cdp' && !row.effectiveExecutionConfig) {
+    throw new Error('Admin 未返回批次冻结的 EffectiveExecutionConfig，已拒绝客户端自行合并配置')
+  }
+  // 批次执行必须读取绑定 revision；不带 batchId 的接口只用于执行前预览。
+  const data = await fetchPlaybackCase(row.caseId, batchId.value)
+  if (executionType.value === 'extension-cdp'
+    && (!data?.definitionRevisionId || !data?.effectiveExecutionConfig)) {
+    throw new Error('Admin 未返回批次绑定的 definition revision 与冻结配置')
+  }
   previewCaseId.value = row.caseId
   previewCase.value = data
   previewError.value = ''
-  const startUrl = data?.start_url || data?.startUrl || ''
-  if (!startUrl) throw new Error('当前用例没有可用的回放起始地址')
   if (!Array.isArray(data?.steps) || data.steps.length === 0) {
     throw new Error('当前用例没有可执行步骤')
   }
   if (cancelRequested.value || cancelledCaseIds.value.has(row.caseId)) throw new Error('用例已取消')
 
   if (executionType.value === 'extension-cdp') {
-    await executeExtensionCase(row, startUrl)
+    await executeExtensionCase(row)
   } else {
     await executeRunnerCase(row)
   }
 }
 
-async function executeExtensionCase(row: PlaybackCaseRow, startUrl: string) {
+async function executeExtensionCase(row: PlaybackCaseRow) {
   const completionPromise = new Promise<ExtensionCompletion>((resolve) => {
     extensionCompletionResolver = resolve
   })
@@ -921,13 +939,9 @@ async function executeExtensionCase(row: PlaybackCaseRow, startUrl: string) {
       caseKey: activeCaseKey.value,
       caseId: row.caseId,
       batchId: batchId.value,
+      executionCapability: batchExecutionCapability.value,
       executionId: row.executionId,
       projectEnvironmentId: form.projectEnvironmentId,
-      startUrl,
-      viewportMode: cdpConfig.windowSizeMode,
-      viewportWidth: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportWidth : undefined,
-      viewportHeight: cdpConfig.windowSizeMode === 'custom' ? cdpConfig.viewportHeight : undefined,
-      pageErrorCheckEnabled: cdpConfig.pageErrorCheckEnabled,
     })
   } catch (error) {
     extensionCompletionResolver = undefined
@@ -957,6 +971,7 @@ async function executeRunnerCase(row: PlaybackCaseRow) {
     caseKey: activeCaseKey.value,
     batchId: batchId.value,
     executionId: row.executionId,
+    executionCapability: batchExecutionCapability.value,
     projectEnvironmentId: form.projectEnvironmentId,
     options: buildRunnerOptions(),
   })
@@ -1008,7 +1023,7 @@ async function pollRunnerJob(jobId: string, row: PlaybackCaseRow) {
 }
 
 function updateRunnerStepProgress(row: PlaybackCaseRow, job: AutomationPlaywrightRunnerJobResp) {
-  const outcomes = new Map<number | string, 'success' | 'error'>()
+  const outcomes = new Map<number | string, 'success' | 'error' | 'skip'>()
   const incrementalLogs = (job.logs || []).map((item: AutomationPlaywrightRunnerLog) => ({
     sequence: item.sequence,
     timestamp: item.timestamp,
@@ -1017,8 +1032,8 @@ function updateRunnerStepProgress(row: PlaybackCaseRow, job: AutomationPlaywrigh
     message: item.message,
     detail: item.detail,
   }))
-  const mergedLogs = new Map(row.liveLogs.map(item => [item.sequence, item]))
-  incrementalLogs.forEach(item => mergedLogs.set(item.sequence, item))
+  const mergedLogs = new Map(row.liveLogs.map((item) => [item.sequence, item]))
+  incrementalLogs.forEach((item) => mergedLogs.set(item.sequence, item))
   // 浏览器只保留最近日志，避免长任务让页面内存持续增长。
   row.liveLogs = [...mergedLogs.values()].sort((a, b) => a.sequence - b.sequence).slice(-500)
   const logs = row.liveLogs
@@ -1028,16 +1043,20 @@ function updateRunnerStepProgress(row: PlaybackCaseRow, job: AutomationPlaywrigh
     if (durationMatch) row.durationMs = Number(durationMatch[1])
   }
   logs.forEach((item) => {
-    if (item.detail || item.phase !== 'step' || !['success', 'error'].includes(item.level)) return
+    if (item.detail || item.phase !== 'step' || !['success', 'warning', 'error'].includes(item.level)) return
     const stepNumber = /步骤\s+(\d+)/.exec(item.message)?.[1]
-    outcomes.set(stepNumber ? Number(stepNumber) : `log-${item.sequence}`, item.level as 'success' | 'error')
+    outcomes.set(
+      stepNumber ? Number(stepNumber) : `log-${item.sequence}`,
+      item.level === 'success' ? 'success' : item.level === 'warning' ? 'skip' : 'error',
+    )
   })
   const numericSteps = [...outcomes.keys()].filter((value): value is number => typeof value === 'number')
-  const inferredCompleted = numericSteps.length ? Math.max(...numericSteps) : outcomes.size
+  const inferredCompleted = numericSteps.length || outcomes.size
   const outcomeValues = [...outcomes.values()]
   row.stepCompleted = Math.min(row.stepTotal, Math.max(row.stepCompleted, inferredCompleted))
   row.stepPass = Math.max(row.stepPass, outcomeValues.filter((value) => value === 'success').length)
   row.stepFail = Math.max(row.stepFail, outcomeValues.filter((value) => value === 'error').length)
+  row.stepSkip = Math.max(row.stepSkip, outcomeValues.filter((value) => value === 'skip').length)
 }
 
 function waitForRunnerPoll() {
@@ -1319,13 +1338,18 @@ const handleExtensionPlaybackProgress = (event: MessageEvent) => {
       ? `步骤 ${stepNumber}: ${description}，执行成功，耗时 ${duration}ms`
       : status === 'skipped'
         ? `步骤 ${stepNumber}: ${description}，已跳过`
-        : `步骤 ${stepNumber}: ${description}，执行失败${suffix}`
-    level = status === 'passed' ? 'success' : status === 'skipped' ? 'warning' : 'error'
+        : status === 'failed'
+          ? `步骤 ${stepNumber}: ${description}，执行失败${suffix}`
+          : `步骤 ${stepNumber}: ${description}，状态=${status || 'unknown'}${suffix}`
+    level = status === 'passed' ? 'success' : status === 'skipped' ? 'warning' : status === 'failed' ? 'error' : 'warning'
   } else if (!message && data.phase === 'case-finished') {
     const duration = Number(data.durationMs) || 0
     const failed = status === 'failed' || Boolean(data.error)
-    message = `CDP 执行${failed ? '失败' : '完成'}${duration ? `，耗时 ${duration}ms` : ''}`
-    level = failed ? 'error' : 'success'
+    const terminal = status === 'passed' || status === 'failed' || status === 'cancelled'
+    message = terminal
+      ? `CDP 执行${failed ? '失败' : status === 'cancelled' ? '取消' : '完成'}${duration ? `，耗时 ${duration}ms` : ''}`
+      : `CDP 执行状态=${status || 'unknown'}${duration ? `，耗时 ${duration}ms` : ''}`
+    level = failed ? 'error' : status === 'passed' ? 'success' : status === 'cancelled' ? 'warning' : 'warning'
   }
   if (!message) return
   row.liveLogs.push({
