@@ -286,10 +286,28 @@ const getRecordingSteps = (caseItem: any) => {
   })
 }
 
-const getConfigValue = (step: any, name: string) => {
+const getDirectConfigValue = (step: any, name: string) => {
   const configList = Array.isArray(step?.configList) ? step.configList : []
   const config = configList.find((item: any) => item?.paramsName === name)
   return config?.paramsValue == null ? '' : String(config.paramsValue)
+}
+
+const getConfigValue = (step: any, name: string) => {
+  const directValue = getDirectConfigValue(step, name)
+  if (directValue) return directValue
+  if (!['target_selector', 'target_xpath', 'url', 'locator_meta', 'value'].includes(name)) return ''
+  if (name === 'value' && ['1', 'true'].includes(getDirectConfigValue(step, 'value_masked').toLowerCase())) return ''
+  if (name === 'locator_meta') {
+    const originalLocatorMeta = getDirectConfigValue(step, 'original_locator_meta')
+    if (originalLocatorMeta) return originalLocatorMeta
+  }
+  try {
+    const originalStep = JSON.parse(getDirectConfigValue(step, 'original_playwright_step') || '{}')
+    const value = originalStep?.[name]
+    return value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
+  } catch {
+    return ''
+  }
 }
 
 const formatJson = (value: unknown) => {

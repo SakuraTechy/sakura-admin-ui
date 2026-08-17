@@ -7,12 +7,12 @@
             <template #extra>
               <a-button type="outline" size="small" @click="goTargetConfig">去配置</a-button>
             </template>
-            <a-form-item :label="kind === 'server' ? '服务器 IP' : '数据库地址'" required class="target-item">
+            <a-form-item :label="kind === 'server' ? '服务器角色' : '数据库角色'" required class="target-item">
               <a-select
                 v-model="form.targetConfigId"
                 :loading="targetConfigLoading"
                 :disabled="!projectId"
-                :placeholder="kind === 'server' ? '请选择目标服务器' : '请选择目标数据库'"
+                :placeholder="kind === 'server' ? '请选择服务器角色' : '请选择数据库角色'"
                 allow-search
               >
                 <a-option
@@ -21,31 +21,18 @@
                   :value="item.value"
                   :label="item.label"
                 >
-                  <div class="option-row">
-                    <span class="option-main">{{ item.label }}</span>
-                    <a-tag size="small" :color="targetOnlineColor(item.online)">
-                      {{ targetOnlineLabel(item.online) }}
-                    </a-tag>
-                  </div>
+                  <div class="option-row"><span class="option-main">{{ item.label }}</span><code>{{ item.code }}</code></div>
                 </a-option>
               </a-select>
             </a-form-item>
             <div v-if="selectedTarget" class="summary-list">
               <div class="summary-item">
-                <span class="summary-label">{{ kind === 'server' ? '服务器类型' : '数据库类型' }}</span>
-                <a-tag size="small" color="arcoblue">{{ selectedTarget.type || '未知类型' }}</a-tag>
+                <span class="summary-label">资源角色</span>
+                <a-tag size="small" color="arcoblue">{{ selectedTarget.label }}</a-tag>
               </div>
               <div class="summary-item">
-                <span class="summary-label">{{ kind === 'server' ? '服务器 IP' : '数据库地址' }}</span>
-                <span class="summary-value">{{ selectedTarget.address }}</span>
-              </div>
-              <div class="summary-item">
-                <a-tooltip content="在线仅表示 Admin 节点到目标端口可达；执行时仍由 Agent 按配置 ID 重新认证。">
-                  <span class="summary-label summary-label-with-help">在线状态 <icon-question-circle /></span>
-                </a-tooltip>
-                <a-tag size="small" :color="targetOnlineColor(selectedTarget.online)">
-                  {{ targetOnlineLabel(selectedTarget.online) }}
-                </a-tag>
+                <span class="summary-label">角色编码</span>
+                <span class="summary-value">{{ selectedTarget.code }}</span>
               </div>
               <div class="summary-item">
                 <span class="summary-label">启用状态</span>
@@ -144,16 +131,15 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { type AutomationInfrastructureTarget, type AutomationUiStepConfig, listAutomationInfrastructureTargets } from '@/apis/automation/automationUiScene'
+import { type AutomationUiStepConfig } from '@/apis/automation/automationUiScene'
+import { listEnvironmentResourceSlots } from '@/apis/automation/environmentResources'
 
 type InfrastructureActionType = 'server_command' | 'database_sql' | 'database_native'
 
 interface TargetConfigOption {
   value: string
   label: string
-  type: string
-  address: string
-  online?: boolean
+  code: string
 }
 
 const props = defineProps<{
@@ -217,6 +203,14 @@ const form = reactive({
   document: '',
   timeoutMs: 30000,
 })
+const normalizeShellValue = (value: unknown) => {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  if (['bash', '/bin/bash', 'linux', 'shell', 'shell 类型', 'shell type', '脚本类型', 'shell 脚本类型'].includes(normalized)) return 'bash'
+  if (['sh', '/bin/sh'].includes(normalized)) return 'sh'
+  if (['powershell', 'powershell.exe', 'pwsh', 'power shell'].includes(normalized)) return 'powershell'
+  // 旧表单可能保存了展示文案而不是选项值，回填受控默认值后即可正常编辑保存。
+  return 'bash'
+}
 const commandPlaceholders: Record<string, string> = {
   bash: '例如：systemctl status nginx --no-pager',
   sh: '例如：ps -ef | grep \'[j]ava\'',
@@ -245,11 +239,15 @@ const mongoFilterPlaceholder = computed(() => mongoFilterPlaceholders[form.mongo
 const mongoDocumentPlaceholder = computed(() => mongoDocumentPlaceholders[form.mongoOperation] || '请输入 JSON 对象')
 const targetConfigOptions = ref<TargetConfigOption[]>([])
 const selectedTarget = computed(() => targetConfigOptions.value.find((item) => item.value === form.targetConfigId))
-const selectedServerType = computed(() => targetConfigOptions.value
-  .find((item) => item.value === form.targetConfigId)?.type.toLowerCase() || '')
-const shellOptions = computed(() => selectedServerType.value.includes('windows')
-  ? windowsShellOptions
-  : linuxShellOptions)
+// 服务器操作系统由执行时环境绑定的真实资源决定；角色本身不固化系统类型。
+const selectedServerType = computed(() => '')
+const shellOptions = computed(() => {
+  const options = selectedServerType.value.includes('windows') ? windowsShellOptions : linuxShellOptions
+  const current = normalizeShellValue(form.shell)
+  if (options.some((item) => item.value === current)) return options
+  const label = current === 'powershell' ? 'PowerShell' : current
+  return [{ label, value: current }, ...options]
+})
 const targetConfigLoading = ref(false)
 let syncing = false
 let targetConfigRequestSequence = 0
@@ -279,8 +277,8 @@ const syncFromModel = () => {
       return {}
     }
   })()
-  form.targetConfigId = String(methodConfig?.target_ref?.config_id || target?.config_id || getConfig(items, 'target_config_id') || '')
-  form.shell = String(methodConfig?.shell || getConfig(items, 'shell') || 'bash')
+  form.targetConfigId = String(methodConfig?.target_ref?.slot_id || target?.slot_id || '')
+  form.shell = normalizeShellValue(methodConfig?.shell || methodConfig?.shell_type || getConfig(items, 'shell') || getConfig(items, 'shell_type'))
   form.command = String(methodConfig?.command || getConfig(items, 'command') || '')
   form.sqlMode = String(methodConfig?.sql_mode || getConfig(items, 'sql_mode') || 'update')
   form.sql = String(methodConfig?.sql || getConfig(items, 'sql') || '')
@@ -293,15 +291,6 @@ const syncFromModel = () => {
   syncing = false
 }
 
-const targetAddress = (item: AutomationInfrastructureTarget) => {
-  const address = [item.ip, item.port ? `:${item.port}` : ''].filter(Boolean).join('')
-  const database = 'dataBase' in item && item.dataBase ? `/${item.dataBase}` : ''
-  return `${address || '-'}${database}`
-}
-
-const targetOnlineLabel = (online?: boolean) => online === true ? '在线' : online === false ? '离线' : '未检测'
-const targetOnlineColor = (online?: boolean) => online === true ? 'green' : online === false ? 'red' : 'gray'
-
 const goTargetConfig = () => emit('go-target-config', kind.value)
 
 const loadTargetConfigOptions = async () => {
@@ -313,14 +302,12 @@ const loadTargetConfigOptions = async () => {
   }
   targetConfigLoading.value = true
   try {
-    const { data } = await listAutomationInfrastructureTargets(projectId, kind.value)
+    const { data } = await listEnvironmentResourceSlots(projectId, kind.value === 'server' ? 'SERVER' : 'DATABASE')
     if (requestSequence !== targetConfigRequestSequence) return
     targetConfigOptions.value = (data || []).map((item) => ({
-      label: targetAddress(item),
-      value: String(item.id),
-      type: String(item.type || ''),
-      address: targetAddress(item),
-      online: item.online,
+      label: item.resourceName,
+      value: String(item.slotId),
+      code: item.resourceCode,
     }))
   } finally {
     if (requestSequence === targetConfigRequestSequence) targetConfigLoading.value = false
@@ -330,9 +317,9 @@ const loadTargetConfigOptions = async () => {
 const emitStep = () => {
   if (syncing) return
   const targetRef = {
-    scope: 'project_config',
+    scope: 'project_environment',
     kind: kind.value,
-    config_id: form.targetConfigId,
+    slot_id: form.targetConfigId,
   }
   const methodConfig = {
     target_ref: targetRef,

@@ -166,20 +166,21 @@
               @click="toggleExpanded(record.rowKey)"
             >
               <span class="history-status-dot" :class="`history-status-dot--${resultStateClass(record.executeResult)}`"></span>
+              <!-- <icon-down class="history-expand-icon" :class="{ 'history-expand-icon--active': isExpanded(record) }" /> -->
               <span class="history-record-identity">
                 <strong>{{ isMultiScene ? `${record.sceneName} / ${record.caseName}` : record.caseName }}</strong>
                 <span>{{ record.caseId }} · {{ record.executionId }}</span>
               </span>
               <a-tag color="arcoblue">{{ executionTypeLabel(record.executionType) }}</a-tag>
+              <AutomationExecutionProgress :progress="record.progress" :indeterminate="record.progressIndeterminate" />
+              <span class="history-compact-stat">{{ formatExecutionDuration(record.duration) }}</span>
+              <span class="history-compact-stat metric-success">通过 {{ record.stepPass }}</span>
+              <span class="history-compact-stat metric-danger">失败 {{ record.stepFail }}</span>
+              <span class="history-compact-stat metric-warning">跳过 {{ record.stepSkip }}</span>
               <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
                 {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
               </a-tag>
-              <span class="history-compact-stat metric-success">通过 {{ record.stepPass }}</span>
-              <span class="history-compact-stat metric-danger">失败 {{ record.stepFail }}</span>
-              <AutomationExecutionProgress :progress="record.progress" :indeterminate="record.progressIndeterminate" />
-              <span class="history-compact-stat">{{ formatExecutionDuration(record.duration) }}</span>
               <span class="history-compact-time">{{ formatExecutionDateTime(record.startedAt) }}</span>
-              <icon-down class="history-expand-icon" :class="{ 'history-expand-icon--active': isExpanded(record) }" />
             </button>
             <a-space class="history-actions" size="mini">
               <a-link v-if="isCaseCancellable(record)" status="danger" @click="requestCaseCancel(record)">
@@ -234,17 +235,16 @@
               <span><icon-clock-circle />{{ formatExecutionDuration(record.duration) }}</span>
             </div> -->
             <div class="history-metric-strip">
-              <div style="display: flex; gap: 32px;">
-                <span>步骤 <strong>{{ record.stepTotal }}</strong></span>
+              <div style="display: flex; gap: 25px;">
+                <span>总步骤 <strong>{{ record.stepTotal }}</strong></span>
                 <span class="metric-success">通过 <strong>{{ record.stepPass }}</strong></span>
                 <span class="metric-danger">失败 <strong>{{ record.stepFail }}</strong></span>
                 <span>跳过 <strong>{{ record.stepSkip }}</strong></span>
                 <span>通过率 <strong>{{ record.stepPassRate }}</strong></span>
-              </div>
-              <div style="display: flex; gap: 32px;">
+                <span><icon-calendar /> {{ formatExecutionDateTime(record.startedAt) }}</span>
+                <span><icon-calendar /> {{ formatExecutionDateTime(record.finishedAt) }}</span>
                 <span><icon-clock-circle /> {{ formatExecutionDuration(record.duration) }}</span>
                 <span><icon-user /> {{ record.executeName }}</span>
-                <span><icon-calendar /> {{ formatExecutionDateTime(record.startedAt) }}</span>
               </div>
               <a-space class="history-actions" size="mini">
                 <a-link v-if="isCaseCancellable(record)" status="danger" @click="requestCaseCancel(record)">
@@ -279,12 +279,18 @@
                 <span>{{ isMultiScene ? `${record.sceneName} / ${record.caseName}` : record.caseName }}</span>
                 <div class="history-card-subtitle">
                   <span>{{ record.caseId }} · {{ record.executionId }}</span>
-                  <a-tag color="arcoblue">{{ executionTypeLabel(record.executionType) }}</a-tag>
+                  <!-- <span><icon-user /> {{ record.executeName }}</span> -->
                 </div>
               </button>
-              <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
-                {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
-              </a-tag>
+              <a-space wrap> 
+                <a-tag color="arcoblue">{{ executionTypeLabel(record.executionType) }}</a-tag>
+                <a-tag :color="executionStatusColor(record.executeStatus)">
+                  {{ executionStatusLabel(record.executeStatus) }}
+                </a-tag>
+                <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
+                  {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
+                </a-tag>
+              </a-space>
             </div>
             <!-- <div class="history-card-subtitle">
               <a-tag color="arcoblue">{{ executionTypeLabel(record.executionType) }}</a-tag>
@@ -299,9 +305,10 @@
             </div>
             <div class="history-card-footer">
               <div>
-                <span>{{ record.executeName }}</span>
-                <span>{{ formatExecutionDateTime(record.startedAt) }}</span>
-                <strong>{{ formatExecutionDuration(record.duration) }}</strong>
+                <span><icon-user /> {{ record.executeName }}</span>
+                <span><icon-calendar /> {{ formatExecutionDateTime(record.startedAt) }}</span>
+                <!-- <span><icon-clock-circle /> {{ formatExecutionDateTime(record.finishedAt) }}</span> -->
+                <span><icon-clock-circle /> {{ formatExecutionDuration(record.duration) }}</span>
               </div>
               <a-space class="history-actions" size="mini">
                 <a-link v-if="isCaseCancellable(record)" status="danger" @click="requestCaseCancel(record)">
@@ -1588,6 +1595,7 @@ function cssEscape(value: string) {
 
 .history-compact-row {
   display: flex;
+  justify-content: space-between;
   min-width: 0;
   align-items: center;
   gap: 12px;
@@ -1596,12 +1604,12 @@ function cssEscape(value: string) {
 }
 
 .history-record-toggle {
-  display: grid;
+  display: flex;
   min-width: 870px;
   flex: 1;
   grid-template-columns: 12px minmax(230px, 1.5fr) auto auto auto auto minmax(140px, .8fr) auto minmax(150px, auto) 18px;
   align-items: center;
-  gap: 12px;
+  gap: 15px;
   padding: 0;
   border: 0;
   background: transparent;

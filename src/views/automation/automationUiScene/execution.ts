@@ -23,6 +23,7 @@ export interface ExecutionCaseOpenOptions extends ExecutionContext {
   planExecution?: boolean
   projectEnvironmentId?: string
   autoStart?: boolean
+  cdpOptions?: import('@/apis/automation/automationPlaywrightRunner').AutomationCdpPlaybackOptions
 }
 
 export interface ExecutionRecordTarget {
@@ -55,6 +56,7 @@ export interface ExecutionHistoryStepRow {
   locatorType: string
   locatorValue: string
   matchedCount: number | string
+  visibleCount: number | string
   configuredLocators: Array<{ type: string, value: string }>
   hasActualLocator: boolean
   valueMasked: boolean
@@ -90,6 +92,12 @@ export interface ExecutionHistoryCaseRow {
   browser: string
   liveFrameQuality: string
   sessionMode: string
+  appliedSessionMode: string
+  browserSessionSource: string
+  sessionReset: boolean
+  sessionResetCount: number
+  sessionResetReason: string
+  sessionNavigationDecision: string
   headed: string
   startUrl: string
   windowSizeMode: string
@@ -199,7 +207,7 @@ export interface LiveExecutionCase {
   stepPass?: number
   stepFail?: number
   stepSkip?: number
-  status: 'waiting' | 'starting' | 'queued' | 'running' | 'cancelling' | 'passed' | 'failed' | 'cancelled'
+  status: 'waiting' | 'starting' | 'queued' | 'running' | 'cancelling' | 'passed' | 'failed' | 'skipped' | 'cancelled'
   error?: string
   durationMs?: number
   startedAt?: number
@@ -800,6 +808,18 @@ function buildExecutionHistoryRow(
     || playwrightResult.executionConfig
     || record.executionConfig,
   )
+  const resultDetail = objectValue(playwrightResult.detail)
+  const sessionTransition = objectValue(
+    caseResult.session_transition
+    || caseResult.sessionTransition
+    || playwrightResult.session_transition
+    || playwrightResult.sessionTransition
+    || rawConfig.session_transition
+    || rawConfig.sessionTransition
+    || resultDetail.session_transition
+    || resultDetail.sessionTransition
+    || record.sessionTransition,
+  )
   const caseId = stringValue(caseResult.case_id || caseResult.caseId || record.caseId)
   const caseName = stringValue(caseResult.case_name || caseResult.caseName || record.caseName)
   const rawSteps = Array.isArray(caseResult.steps)
@@ -870,6 +890,8 @@ function buildExecutionHistoryRow(
     resolvedStepFail,
     resolvedStepSkip,
   )
+  const defaultSessionMode = executionType === 'extension-cdp' ? 'legacy-profile' : 'isolated'
+  const defaultBrowserSessionSource = executionType === 'extension-cdp' ? 'current-profile' : '-'
 
   return {
     rowKey,
@@ -909,12 +931,39 @@ function buildExecutionHistoryRow(
       || record.liveFrameQuality,
     ) || '-',
     sessionMode: stringValue(
+      sessionTransition.requestedMode
+      || sessionTransition.requested_mode
+      || executionConfig.sessionMode
+      || executionConfig.session_mode
+      || playwrightResult.sessionMode
+      || playwrightResult.session_mode
+      || rawConfig.session_mode,
+    ) || defaultSessionMode,
+    appliedSessionMode: stringValue(
+      sessionTransition.appliedMode
+      || sessionTransition.applied_mode,
+    ) || stringValue(
       executionConfig.sessionMode
       || executionConfig.session_mode
       || playwrightResult.sessionMode
       || playwrightResult.session_mode
       || rawConfig.session_mode,
-    ) || 'isolated',
+    ) || defaultSessionMode,
+    browserSessionSource: stringValue(
+      sessionTransition.browserSessionSource
+      || sessionTransition.browser_session_source
+      || executionConfig.browserSessionSource
+      || executionConfig.browser_session_source
+      || rawConfig.browser_session_source,
+    ) || defaultBrowserSessionSource,
+    sessionReset: sessionTransition.reset === true || sessionTransition.reset === 'true',
+    sessionResetCount: Number(sessionTransition.resetCount ?? sessionTransition.reset_count) || 0,
+    sessionResetReason: stringValue(
+      sessionTransition.resetReason || sessionTransition.reset_reason,
+    ) || '-',
+    sessionNavigationDecision: stringValue(
+      sessionTransition.navigationDecision || sessionTransition.navigation_decision,
+    ) || '-',
     headed: booleanLabel(
       playwrightResult.headed
       ?? (playwrightResult.headless == null ? undefined : !playwrightResult.headless),
@@ -1000,6 +1049,7 @@ function normalizeHistoryStep(step: any, parentKey: string, index: number): Exec
     locatorType: locatorType || '-',
     locatorValue: locatorValue || '-',
     matchedCount: valueOrDash(step.matched_count ?? step.matchedCount),
+    visibleCount: valueOrDash(step.visible_count ?? step.visibleCount),
     configuredLocators: normalizeConfiguredLocators(step),
     hasActualLocator: Boolean(locatorSource),
     valueMasked: ['1', 'true'].includes(String(step.value_masked ?? step.valueMasked ?? '').toLowerCase()),
@@ -1012,6 +1062,16 @@ function normalizeHistoryStep(step: any, parentKey: string, index: number): Exec
 
 function normalizeHistoryStepDetails(step: any) {
   const details = parseObjectValue(step.details)
+  const locatorError = step.locator_error || step.locatorError
+  if (locatorError && typeof locatorError === 'object' && !Array.isArray(locatorError)) {
+    details.locator_error = details.locator_error || locatorError
+  }
+  const locatorDiagnostics = step.locator_diagnostics || step.locatorDiagnostics
+  if (locatorDiagnostics && typeof locatorDiagnostics === 'object' && !Array.isArray(locatorDiagnostics)) {
+    details.locator_diagnostics = details.locator_diagnostics || locatorDiagnostics
+  }
+  const errorCode = stringValue(step.error_code || step.errorCode)
+  if (errorCode) details.error_code = details.error_code || errorCode
   const directInfrastructure = step.infrastructure || parseObjectValue(step.result).infrastructure
   if (directInfrastructure && typeof directInfrastructure === 'object' && !Array.isArray(directInfrastructure)) {
     details.infrastructure = details.infrastructure || directInfrastructure
@@ -1322,10 +1382,17 @@ export function executionStatusColor(value: unknown) {
   return 'gray'
 }
 
-export const isExecutableCase = (caseItem: any) => {
-  const enabled = caseItem?.status == null || ['1', 'true', 'enabled', 'enable'].includes(String(caseItem.status).toLowerCase())
-  return enabled && Array.isArray(caseItem?.stepList) && caseItem.stepList.length > 0
-}
+const isEnabledDefinitionNode = (node: any) => node?.status == null
+  || ['1', 'true', 'enabled', 'enable'].includes(String(node.status).toLowerCase())
+
+export const isExecutableStep = (step: any) => isEnabledDefinitionNode(step)
+
+export const executableStepCount = (caseItem: any) => Array.isArray(caseItem?.stepList)
+  ? caseItem.stepList.filter(isExecutableStep).length
+  : 0
+
+export const isExecutableCase = (caseItem: any) => isEnabledDefinitionNode(caseItem)
+  && executableStepCount(caseItem) > 0
 
 export function getArtifactMap(record: any): Record<string, any> {
   const value = record?.artifactUrls

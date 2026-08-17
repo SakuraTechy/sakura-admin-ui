@@ -179,6 +179,17 @@ export interface AutomationUiStepConfig {
   paramsValue: string
 }
 
+export interface AutomationCertificateUploadResp {
+  reference: string
+  fileName: string
+  size: number
+}
+
+/** 上传证书到当前 Admin 托管的 Playwright Runner 工作区。 */
+export function uploadAutomationCertificate(sceneDbId: string | number, data: FormData, signal?: AbortSignal) {
+  return http.post<AutomationCertificateUploadResp>(`${BASE_URL}/${sceneDbId}/certificate-files`, data, { signal })
+}
+
 /** 基础设施步骤下拉目标；接口不返回账号、密码或连接串。 */
 export interface AutomationInfrastructureTarget {
   id: string
@@ -329,9 +340,10 @@ export interface AutomationUiCaseEditReq {
 export interface AutomationUiStepEditReq {
   pid?: string
   id?: string
+  order?: number
   name?: string
   remark?: string
-  status?: number | string
+  status: number | string
   operationType?: string
   operationName?: string
   operationValue?: string
@@ -343,6 +355,7 @@ export interface AutomationUiStepEditReq {
 }
 
 export interface AutomationUiStepCopyReq {
+  order?: number
   name?: string
   remark?: string
   status?: number | string

@@ -58,13 +58,17 @@
             <div class="batch-case-summary">
               <button type="button" class="batch-case-toggle" @click="toggleCase(record)">
                 <icon-down :class="{ active: expandedKey === record.rowKey }" />
-                <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
-                  {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
-                </a-tag>
                 <span class="batch-case-identity">
-                  <strong>{{ record.caseName }}</strong>
+                  <div style="display: flex; align-items: center; gap: 8px;"> 
+                    <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
+                      {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
+                    </a-tag>
+                    <strong>{{ record.caseId }} · </strong>
+                    <strong>{{ record.caseName }}</strong>
+                  </div>
                   <span class="batch-case-metrics">
-                    <small>{{ record.caseId }} · {{ record.executionId }} · {{ sessionModeLabel(record.sessionMode) }}</small>
+                    <small>执行ID：{{ record.executionId }}</small>
+                    <small>会话模式：{{ sessionModeLabel(record.sessionMode) }}</small>
                     <span>总步骤 <strong>{{ record.stepTotal }}</strong></span>
                     <span class="success">通过 <strong>{{ record.stepPass }}</strong></span>
                     <span class="danger">失败 <strong>{{ record.stepFail }}</strong></span>
@@ -79,7 +83,7 @@
                         :indeterminate="record.progressIndeterminate"
                       />
                     </span>
-                    <span class="batch-case-duration">耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
+                    <span class="batch-case-duration">耗时：<strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
                   </span>
                 </span> 
               </button>
@@ -100,29 +104,28 @@
                     <span class="batch-case-duration">耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
                   </span>
               </div> -->
-              <a-space class="batch-case-actions" size="mini">
-                <a-button
-                  size="mini"
-                  :type="expandedKey === record.rowKey && activeTab === 'log' ? 'primary' : 'secondary'"
-                  @click="selectContent(record, 'log')"
-                >
-                  日志
-                </a-button>
-                <a-button
-                  size="mini"
-                  :type="expandedKey === record.rowKey && activeTab === 'live' ? 'primary' : 'secondary'"
-                  @click="selectContent(record, 'live')"
-                >
-                  实时画面
-                </a-button>
-                <a-button
-                  size="mini"
-                  :type="expandedKey === record.rowKey && activeTab === 'report' ? 'primary' : 'secondary'"
-                  @click="selectContent(record, 'report')"
-                >
-                  报告
-                </a-button>
-              </a-space>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <!-- <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">
+                  {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
+                </a-tag> -->
+                <a-space class="batch-case-actions" size="mini">
+                  <a-button size="mini"
+                    :type="expandedKey === record.rowKey && activeTab === 'log' ? 'primary' : 'secondary'"
+                    @click="selectContent(record, 'log')">
+                    日志
+                  </a-button>
+                  <a-button size="mini"
+                    :type="expandedKey === record.rowKey && activeTab === 'live' ? 'primary' : 'secondary'"
+                    @click="selectContent(record, 'live')">
+                    实时画面
+                  </a-button>
+                  <a-button size="mini"
+                    :type="expandedKey === record.rowKey && activeTab === 'report' ? 'primary' : 'secondary'"
+                    @click="selectContent(record, 'report')">
+                    报告
+                  </a-button>
+                </a-space>
+              </div>
             </div>
 
             <Transition name="batch-case-expand">
@@ -419,7 +422,7 @@ function numericValue(value: unknown) {
 .batch-detail {
   box-sizing: border-box;
   max-height: min(460px, calc(100vh - 240px));
-  padding: 12px;
+  padding: 8px;
   overflow-x: hidden;
   overflow-y: auto;
   border: 1px solid var(--color-border-2);
@@ -553,7 +556,7 @@ function numericValue(value: unknown) {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 6px 10px;
   scroll-margin-block: 12px;
 }
 
@@ -586,7 +589,7 @@ function numericValue(value: unknown) {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 .batch-case-identity strong,
@@ -632,6 +635,7 @@ function numericValue(value: unknown) {
 
 .batch-case-actions {
   flex: none;
+  gap: 8px !important;
   white-space: nowrap;
 }
 
@@ -665,14 +669,22 @@ function numericValue(value: unknown) {
 }
 
 .batch-report-content :deep(.step-inspector) {
-  height: auto;
-  max-height: none;
+  height: min(520px, calc(100dvh - 280px));
+  max-height: min(520px, calc(100dvh - 280px));
   min-height: 0;
-  overflow: visible;
+  overflow: hidden;
+}
+
+.batch-report-content :deep(.step-inspector__nav) {
+  height: 100%;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .batch-report-content :deep(.step-inspector__content) {
-  overflow: visible;
+  min-height: 0;
+  overflow: auto;
 }
 
 .batch-case-expand-enter-active,

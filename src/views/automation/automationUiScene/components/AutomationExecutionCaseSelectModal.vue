@@ -132,6 +132,7 @@ import {
   executionStatusColor,
   executionStatusLabel,
   executionTypeLabel,
+  executableStepCount,
   formatExecutionDuration,
   getExecutionBatchRows,
   getExecutionHistoryRows,
@@ -371,7 +372,7 @@ function loadCases(record: any, preferredCaseIds: string[]) {
           sceneCaseTotal: executableCases.length,
           caseId,
           name: item.name || caseId,
-          stepTotal: Array.isArray(item.stepList) ? item.stepList.length : 0,
+          stepTotal: executableStepCount(item),
           executeStatus: latest?.executeStatus || 'not_started',
           lastResult: latest?.executeResult || '',
           duration: latest?.duration,
@@ -446,6 +447,10 @@ defineExpose({ onOpen })
 
 .case-select-summary strong {
   color: rgb(var(--primary-6));
+}
+
+:deep(.arco-table-body) {
+  min-height: 0px;
 }
 
 @media (max-width: 700px) {

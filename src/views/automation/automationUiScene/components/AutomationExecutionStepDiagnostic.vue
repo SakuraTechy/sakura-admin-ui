@@ -3,6 +3,10 @@
     <div v-if="step.error !== '-'" class="step-diagnostic__error">
       {{ step.errorCode !== '-' ? `[${step.errorCode}] ` : '' }}{{ step.error }}
     </div>
+    <a-alert v-if="locatorErrorCode" type="warning">
+      <template #title>{{ locatorErrorCode }}</template>
+      {{ locatorErrorHint }}
+    </a-alert>
     <div v-if="operationDiagnostic" class="step-diagnostic__operation">
       <div class="step-diagnostic__heading">
         <span>执行摘要</span>
@@ -38,10 +42,10 @@
           <a-descriptions-item label="断言对象">{{ operationAssertion.subject || '-' }}</a-descriptions-item>
           <a-descriptions-item label="操作符">{{ assertionOperatorLabel(operationAssertion.operator) }}</a-descriptions-item>
           <a-descriptions-item label="期望值">
-            <code>{{ operationValueLabel(operationAssertion.expected) }}</code>
+            <code class="step-diagnostic__assertion-value">{{ operationValueLabel(operationAssertion.expected) }}</code>
           </a-descriptions-item>
           <a-descriptions-item label="实际值">
-            <code>{{ operationValueLabel(operationAssertion.actual) }}</code>
+            <code class="step-diagnostic__assertion-value">{{ operationValueLabel(operationAssertion.actual) }}</code>
           </a-descriptions-item>
           <a-descriptions-item label="判定" :span="2">
             <a-tag :color="operationAssertion.passed === true ? 'green' : 'red'">
@@ -53,19 +57,36 @@
       <div v-if="operationProfileView.showInputs" class="step-diagnostic__operation-inputs">
         <div class="step-diagnostic__operation-subtitle">{{ operationProfileView.inputTitle }}</div>
         <div v-if="operationInputs.length" class="step-diagnostic__operation-input-grid">
-          <div class="step-diagnostic__operation-input-head">
+          <div class="step-diagnostic__operation-input-head" :class="{ 'has-actual': operationInputHasActualColumn }">
             <span>参数</span>
             <span>配置值</span>
             <span>执行值</span>
+            <span v-if="operationInputHasActualColumn">实际值</span>
             <span>来源</span>
           </div>
-          <div v-for="input in operationInputs" :key="input.key" class="step-diagnostic__operation-input">
+          <div
+            v-for="input in operationInputs"
+            :key="input.key"
+            class="step-diagnostic__operation-input"
+            :class="{ 'has-actual': operationInputHasActualColumn }"
+          >
             <div class="step-diagnostic__operation-input-name">
               <span>{{ input.label || input.key }}</span>
               <small>{{ operationInputRoleLabel(input.role) }}</small>
             </div>
-            <code>{{ operationInputValue(input.configured) }}</code>
-            <code>{{ operationInputValue(input.effective, input.configured ? '执行器未返回' : '-') }}</code>
+            <code
+              :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
+              :title="operationInputValue(input.configured)"
+            >{{ operationInputValue(input.configured) }}</code>
+            <code
+              :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
+              :title="operationInputValue(operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-')"
+            >{{ operationInputValue(operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-') }}</code>
+            <code
+              v-if="operationInputHasActualColumn"
+              :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
+              :title="operationInputValue(operationInputActualValue(input))"
+            >{{ operationInputValue(operationInputActualValue(input)) }}</code>
             <span class="step-diagnostic__operation-input-source">{{ operationInputSourceLabel(input) }}</span>
           </div>
         </div>
@@ -134,7 +155,10 @@
         <a-descriptions-item label="变量名">
           <code>{{ variableResult.variable_name || '-' }}</code>
         </a-descriptions-item>
-        <a-descriptions-item label="变量值">
+        <a-descriptions-item label="引用方式">
+          <code>{{ variableReferenceLabel(variableResult) }}</code>
+        </a-descriptions-item>
+        <a-descriptions-item label="变量值" :span="2">
           <code :class="{ 'is-masked': isVariableMasked(variableResult) }">
             {{ variableDisplayValue(variableResult) }}
           </code>
@@ -277,7 +301,7 @@
         >
           <span>{{ locator.type }}</span>
           <code>{{ locator.value }}</code>
-          <!-- <a-tag v-if="isActualLocator(locator, index)" color="green" size="small">已命中</a-tag> -->
+          <a-tag v-if="isActualLocator(locator, index)" color="green" size="small">已命中</a-tag>
           <small v-if="isActualLocator(locator, index)" class="step-diagnostic__hit-meta">
             耗时 {{ locatorDiagnostics?.wait?.wall_ms ?? 0 }} ms
             <template v-if="locatorDiagnostics?.selected?.score != null">
@@ -291,36 +315,60 @@
       </div>
       <a-empty v-else-if="!step.hasActualLocator" description="该步骤未保存元素定位信息" />
     </div>
-    <div v-if="!isInfrastructureStep && locatorDiagnostics" class="step-diagnostic__semantic">
+    <div v-if="!isInfrastructureStep && (locatorDiagnostics || locatorError)" class="step-diagnostic__semantic">
+      <div>
+        <span>定位来源</span>
+        <strong>{{ step.locatorSource || locatorDiagnostics?.selected?.source || '-' }}</strong>
+      </div>
+      <div v-if="locatorDiagnostics?.selected?.execution_source">
+        <span>执行定位通道</span>
+        <strong>{{ locatorDiagnostics.selected.execution_source }}</strong>
+      </div>
+      <div>
+        <span>定位类型</span>
+        <strong>{{ step.locatorType }}</strong>
+      </div>
+      <div>
+        <span>命中 / 可见</span>
+        <strong>{{ step.matchedCount }} / {{ step.visibleCount }}</strong>
+      </div>
       <div>
         <span>定位模式</span>
-        <strong>{{ locatorDiagnostics.mode || '-' }}</strong>
+        <strong>{{ locatorDiagnostics?.mode || '-' }}</strong>
       </div>
       <div>
         <span>定位结果</span>
-        <strong>{{ locatorDiagnostics.outcome || '-' }}</strong>
+        <strong>{{ locatorDiagnostics?.outcome || '-' }}</strong>
       </div>
       <div>
-        <span>等待耗时</span>
-        <strong>{{ locatorDiagnostics.wait?.wall_ms ?? 0 }} ms</strong>
+        <span>{{ locatorDurationLabel }}</span>
+        <strong>{{ locatorDiagnostics?.wait?.wall_ms ?? 0 }} ms</strong>
       </div>
       <div>
-        <span>语义评分</span>
-        <strong>{{ locatorDiagnostics.selected?.score ?? '-' }}</strong>
+        <span>{{ locatorScoreLabel }}</span>
+        <strong>{{ locatorScoreValue }}</strong>
       </div>
       <div
-        v-if="locatorDiagnostics.selected?.normalization_rule"
+        v-if="locatorDiagnostics?.selected?.normalization_rule"
         class="step-diagnostic__semantic-target"
       >
         <span>目标标准化</span>
-        <strong>{{ locatorDiagnostics.selected.normalization_rule }}</strong>
+        <strong>{{ locatorDiagnostics?.selected?.normalization_rule }}</strong>
       </div>
       <div
-        v-if="locatorDiagnostics.selected?.normalization_rule && locatorDiagnostics.selected?.effective_target"
+        v-if="locatorDiagnostics?.selected?.normalization_rule && locatorDiagnostics?.selected?.effective_target"
         class="step-diagnostic__semantic-target"
       >
         <span>标准化后操作目标</span>
-        <code>{{ locatorDiagnostics.selected.effective_target }}</code>
+        <code>{{ locatorDiagnostics?.selected?.effective_target }}</code>
+      </div>
+      <div v-if="locatorError?.raw_xpath" class="step-diagnostic__semantic-target">
+        <span>原始 XPath</span>
+        <code>{{ locatorError.raw_xpath }}</code>
+      </div>
+      <div v-if="locatorError?.normalized_xpath" class="step-diagnostic__semantic-target">
+        <span>规范化 XPath</span>
+        <code>{{ locatorError.normalized_xpath }}</code>
       </div>
     </div>
     <a-alert v-if="step.valueMasked" type="warning">
@@ -380,14 +428,70 @@ const operationFacts = computed<Record<string, any>[]>(() => (
     ? operationDiagnostic.value.outcome.facts.filter((item: any) => item && typeof item === 'object')
     : []
 ))
+const downloadAssertionComparisons = [
+  { expectedKey: 'expected_filename', actualKey: 'actual_filename', subject: '下载文件名', operator: 'contains' },
+  { expectedKey: 'expected_mime', actualKey: 'actual_mime', subject: '下载文件 MIME', operator: 'contains' },
+  { expectedKey: 'expected_min_bytes', actualKey: 'actual_bytes', subject: '下载文件大小', operator: 'greater_than_or_equal' },
+  { expectedKey: 'expected_max_bytes', actualKey: 'actual_bytes', subject: '下载文件大小', operator: 'less_than_or_equal' },
+  { expectedKey: 'expected_sha256', actualKey: 'actual_sha256', subject: '下载文件 SHA256', operator: 'equals' },
+] as const
 const operationAssertion = computed<Record<string, any> | null>(() => {
   const value = operationDiagnostic.value?.outcome?.assertion
-  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const actionType = String(operationDiagnostic.value?.method?.action_type || props.step.actionType || '').toLowerCase()
+  if (actionType !== 'assert_download' || value.actual?.value_state !== 'unavailable') return value
+  const comparison = downloadAssertionComparisons.find(({ expectedKey, actualKey }) => (
+    stepDetails.value[expectedKey] !== undefined || stepDetails.value[actualKey] !== undefined
+  ))
+  if (!comparison) return value
+  const expected = stepDetails.value[comparison.expectedKey]
+  const actual = stepDetails.value[comparison.actualKey]
+  return {
+    ...value,
+    subject: comparison.subject,
+    operator: comparison.operator,
+    ...(expected !== undefined ? { expected: { value_state: 'visible', preview: String(expected) } } : {}),
+    actual: actual !== undefined
+      ? { value_state: 'visible', preview: String(actual) }
+      : { value_state: 'unavailable' },
+  }
 })
+const operationInputHasActualColumn = computed(() => Boolean(operationAssertion.value?.actual))
 const locatorDiagnostics = computed<Record<string, any> | null>(() => {
   const details = stepDetails.value
   const value = details.locator_diagnostics || details.locatorDiagnostics
   return value && typeof value === 'object' ? value : null
+})
+const locatorScoreLabel = computed(() => {
+  if (locatorDiagnostics.value?.mode === 'semantic-v1') return '语义评分'
+  if (locatorDiagnostics.value?.selected?.score_kind === 'recording_candidate') return '录制候选评分'
+  return '候选评分'
+})
+const locatorScoreValue = computed(() => {
+  const score = locatorDiagnostics.value?.selected?.score
+  return score == null || score === '' ? '未评分' : score
+})
+const locatorDurationLabel = computed(() => (
+  locatorDiagnostics.value?.wait?.measurement === 'step_total' ? '步骤耗时' : '等待耗时'
+))
+const locatorError = computed<Record<string, any> | null>(() => {
+  const value = stepDetails.value.locator_error || stepDetails.value.locatorError
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+})
+const locatorErrorCode = computed(() => {
+  const code = String(locatorError.value?.code || stepDetails.value.error_code || props.step.errorCode || '')
+  return code === '-' ? '' : code
+})
+const locatorErrorHint = computed(() => {
+  const hints: Record<string, string> = {
+    LOCATOR_XPATH_INVALID: 'XPath 无法解析，请检查括号、引号、谓词和函数写法。',
+    LOCATOR_XPATH_UNSUPPORTED: 'XPath 必须返回页面节点，请改用 XPath 1.0 节点表达式。',
+    LOCATOR_STRATEGY_UNSUPPORTED: '该私有定位语法不能直接执行，请改用 CSS、XPath 或结构化语义定位。',
+    LOCATOR_AMBIGUOUS: '定位命中多个可见节点，请增加稳定属性、文本、表格行列或索引。',
+    LOCATOR_NOT_FOUND: '所有合法候选均未命中，请检查页面状态和前置步骤。',
+    LOCATOR_HIDDEN: '目标已命中但不可见，请检查浮层、加载状态或隐藏样式。',
+  }
+  return hints[locatorErrorCode.value] || String(locatorError.value?.message || '定位器执行失败。')
 })
 
 const variableResult = computed<Record<string, any> | null>(() => {
@@ -424,7 +528,7 @@ const isDatabaseSqlStep = computed(() => String(props.step.actionType).toLowerCa
 const isServerCommandStep = computed(() => String(props.step.actionType).toLowerCase() === 'server_command')
 const isDefinitionStatementStep = computed(() => isDatabaseSqlStep.value || isServerCommandStep.value)
 const showLocatorSection = computed(() => !isInfrastructureStep.value && (
-  props.step.configuredLocators.length > 0 || props.step.hasActualLocator || locatorDiagnostics.value != null
+  props.step.configuredLocators.length > 0 || props.step.hasActualLocator || locatorDiagnostics.value != null || locatorError.value != null
 ))
 const loadedInfrastructureResult = ref<Record<string, any> | null>(null)
 const infrastructureLoading = ref(false)
@@ -792,7 +896,9 @@ function variableDisplayValue(variable: Record<string, any>) {
 
 function variableReferenceLabel(variable: Record<string, any>) {
   const reference = String(variable.reference || variable.variable_name || '').trim()
-  return reference ? `\${${reference}}` : '-'
+  if (!reference) return '-'
+  const normalized = reference.replace(/^\$\{([^{}]+)}$/, '$1').replace(/^\{\{([^{}]+)}}$/, '$1')
+  return `{{${normalized}}}`
 }
 
 function variableSourceLabel(source: unknown) {
@@ -851,6 +957,28 @@ function operationInputValue(value: Record<string, any> | null | undefined, miss
   if (value.value_state === 'restricted') return '需通过定义快照查看'
   if (value.value_state === 'unavailable') return '执行器未返回'
   return value.preview == null || value.preview === '' ? '-' : String(value.preview)
+}
+
+function operationInputEffectiveValue(input: Record<string, any>) {
+  return input.effective
+}
+
+function operationInputActualValue(input: Record<string, any>) {
+  return input.actual || assertionActualForInput(input)
+}
+
+function assertionActualForInput(input: Record<string, any>) {
+  const actionType = String(operationDiagnostic.value?.method?.action_type || props.step.actionType || '').trim().toLowerCase()
+  const assertionProfile = operationDiagnostic.value?.profile === 'assertion'
+    || actionType.startsWith('assert_')
+  const inputKey = String(input.key || '').trim().toLowerCase()
+  const expectedInput = input.role === 'expected'
+    || ['expect', 'regex', 'attribute'].includes(inputKey)
+  // 兼容旧目录/旧执行结果未回填 role 的情况；断言实际值仍必须来自执行器返回。
+  if (!assertionProfile || !expectedInput) return null
+  const actual = operationAssertion.value?.actual
+  if (!actual || typeof actual !== 'object' || actual.value_state === 'unavailable') return null
+  return actual
 }
 
 function operationInputRoleLabel(role: unknown) {
@@ -916,6 +1044,9 @@ function assertionOperatorLabel(operator: unknown) {
     not_contains: '不包含',
     equals: '等于',
     regex_match: '匹配正则',
+    greater_than_or_equal: '大于等于',
+    less_than_or_equal: '小于等于',
+    matches: '符合',
   }
   const value = String(operator || '')
   return labels[value] || value || '-'
@@ -923,10 +1054,29 @@ function assertionOperatorLabel(operator: unknown) {
 
 function isActualLocator(locator: { type: string, value: string }, index: number) {
   if (!props.step.hasActualLocator) return false
-  if (locator.type === props.step.locatorType && locator.value === props.step.locatorValue) return true
-  const sourceMatch = props.step.locatorSource.match(/^locator_meta\.candidates\[(\d+)\]$/)
+  const exactIndex = props.step.configuredLocators.findIndex(item => (
+    item.type === props.step.locatorType && item.value === props.step.locatorValue
+  ))
+  if (exactIndex >= 0) return exactIndex === index
+  const sourceMatch = props.step.locatorSource
+    .replace(/^(?:(?:frame|overlay|table|table_text):)+/, '')
+    .match(/^locator_meta\.candidates\[(\d+)\]$/)
   if (sourceMatch) return Number(sourceMatch[1]) === index
-  return false
+  const compatibleIndex = props.step.configuredLocators.findIndex(item => (
+    item.value === props.step.locatorValue && locatorTypeMatches(item.type, props.step.locatorType)
+  ))
+  return compatibleIndex === index
+}
+
+function locatorTypeMatches(configuredType: string, actualType: string) {
+  const configured = String(configuredType || '').toLowerCase()
+  const actual = String(actualType || '').toLowerCase()
+  if (!configured || !actual) return false
+  if (configured === actual) return true
+  return (configured === 'css' && actual === 'css_fallback')
+    || (configured === 'css_fallback' && actual === 'css')
+    || (configured === 'xpath' && actual === 'xpath_fallback')
+    || (configured === 'xpath_fallback' && actual === 'xpath')
 }
 
 const shouldShowMatchedCount = computed(() => {
@@ -945,7 +1095,7 @@ function prettyJson(value: unknown) {
   min-width: 0;
   flex-direction: column;
   gap: 10px;
-  padding: 15px;
+  padding: 10px;
   border-radius: 9px;
   background: var(--color-fill-1);
 }
@@ -1030,11 +1180,17 @@ function prettyJson(value: unknown) {
 .step-diagnostic__operation-facts > div {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(112px, 0.3fr) minmax(130px, 0.8fr) minmax(130px, 0.9fr) minmax(100px, 0.35fr);
+  grid-template-columns: minmax(112px, 0.3fr) minmax(180px, 0.9fr) minmax(180px, 0.9fr) minmax(100px, 0.25fr);
   align-items: start;
   gap: 10px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--color-border-1);
+}
+
+.step-diagnostic__operation-input-head.has-actual,
+.step-diagnostic__operation-input.has-actual {
+  min-width: 920px;
+  grid-template-columns: minmax(112px, 0.3fr) repeat(3, minmax(180px, 0.9fr)) minmax(100px, 0.25fr);
 }
 
 .step-diagnostic__operation-input-head {
@@ -1074,8 +1230,28 @@ function prettyJson(value: unknown) {
 }
 
 .step-diagnostic__operation-input > code {
+  display: block;
   min-width: 0;
+  max-height: none;
+  overflow: visible;
   overflow-wrap: anywhere;
+  text-overflow: clip;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
+.step-diagnostic code.step-diagnostic__assertion-value,
+.step-diagnostic code.step-diagnostic__human-value {
+  display: inline-block;
+  width: 100%;
+  color: var(--color-text-2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
   white-space: pre-wrap;
 }
 

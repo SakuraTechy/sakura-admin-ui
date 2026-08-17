@@ -1,4 +1,5 @@
 import { getToken } from '@/utils/auth'
+import type { AutomationCdpPlaybackOptions } from '@/apis/automation/automationPlaywrightRunner'
 
 const buildExtensionApiBase = () => {
   const prefix = import.meta.env.VITE_API_PREFIX || ''
@@ -23,7 +24,10 @@ const waitForExtensionAck = (type: string, payload: Record<string, unknown>, tim
       if (type === 'AT_PLATFORM_PING' && data.type === 'AT_PLATFORM_PONG' && data.nonce === nonce) {
         cleanup()
         resolve(data)
-      } else if (type !== 'AT_PLATFORM_PING' && data.type === 'AT_PLATFORM_ACK' && data.original === type) {
+      } else if (type !== 'AT_PLATFORM_PING'
+        && data.type === 'AT_PLATFORM_ACK'
+        && data.original === type
+        && (!data.nonce || data.nonce === nonce)) {
         cleanup()
         resolve(data.response)
       }
@@ -39,6 +43,12 @@ const waitForExtensionAck = (type: string, payload: Record<string, unknown>, tim
   })
 }
 
+const extensionPlaybackError = (response: any, fallback: string) => {
+  const error = new Error(response?.error || fallback) as Error & { code?: string }
+  if (response?.errorCode) error.code = String(response.errorCode)
+  return error
+}
+
 export interface ExtensionCdpPlaybackOptions {
   caseKey: string
   caseId: string
@@ -46,6 +56,74 @@ export interface ExtensionCdpPlaybackOptions {
   executionCapability?: string
   executionId: string
   projectEnvironmentId: string
+  sessionMode: AutomationCdpPlaybackOptions['sessionMode']
+  browserSessionSource: AutomationCdpPlaybackOptions['browserSessionSource']
+}
+
+export interface ExtensionCdpCapabilities {
+  managedBrowserContext: boolean
+  managedSessionStrategy?: string
+  supportedSessionModes: string[]
+  reason?: string
+  errorCode?: string
+}
+
+export const getExtensionCdpCapabilities = async (): Promise<ExtensionCdpCapabilities> => {
+  // 隔离探测会顺序创建并销毁两个无痕会话，慢环境下必须覆盖两次页面加载。
+  const response = await waitForExtensionAck('AT_PLATFORM_CDP_CAPABILITIES', {}, 25000)
+  const managedBrowserContext = response?.managedBrowserContext === true
+  return {
+    managedBrowserContext,
+    managedSessionStrategy: response?.managedSessionStrategy
+      ? String(response.managedSessionStrategy)
+      : undefined,
+    supportedSessionModes: Array.isArray(response?.supportedSessionModes)
+      ? response.supportedSessionModes.map(String)
+      : [],
+    reason: response?.reason
+      || response?.error
+      || (managedBrowserContext ? '' : 'CueCast 未通过受控用例会话能力探测'),
+    errorCode: response?.errorCode ? String(response.errorCode) : undefined,
+  }
+}
+
+export const beginExtensionCdpBatch = async (options: {
+  batchId: string
+  sessionMode: AutomationCdpPlaybackOptions['sessionMode']
+  browserSessionSource: AutomationCdpPlaybackOptions['browserSessionSource']
+  executionCapability?: string
+}) => {
+  const response = await waitForExtensionAck('AT_PLATFORM_BEGIN_PLAYBACK_BATCH', options, 12000)
+  if (response?.ok === false) throw extensionPlaybackError(response, '扩展 CDP 批次会话启动失败')
+  return response
+}
+
+export const endExtensionCdpBatch = async (
+  batchId: string,
+  browserSessionSource: AutomationCdpPlaybackOptions['browserSessionSource'],
+  executionCapability?: string,
+) => {
+  const response = await waitForExtensionAck('AT_PLATFORM_END_PLAYBACK_BATCH', {
+    batchId,
+    browserSessionSource,
+    executionCapability,
+  }, 30000)
+  if (response?.ok === false) throw extensionPlaybackError(response, '扩展 CDP 批次会话清理失败')
+  return response
+}
+
+export const abortExtensionCdpBatch = async (
+  batchId: string,
+  browserSessionSource: AutomationCdpPlaybackOptions['browserSessionSource'],
+  executionCapability?: string,
+) => {
+  const response = await waitForExtensionAck('AT_PLATFORM_ABORT_PLAYBACK_BATCH', {
+    batchId,
+    browserSessionSource,
+    executionCapability,
+  }, 30000)
+  if (response?.ok === false) throw extensionPlaybackError(response, '扩展 CDP 批次会话中止失败')
+  return response
 }
 
 export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOptions) => {
@@ -65,16 +143,18 @@ export const startExtensionCdpPlayback = async (options: ExtensionCdpPlaybackOpt
     executionCapability: options.executionCapability,
     executionId: options.executionId,
     projectEnvironmentId,
+    sessionMode: options.sessionMode,
+    browserSessionSource: options.browserSessionSource,
     dataSource: 'admin',
     executionSource: 'extension-cdp',
     locale: 'zh',
   }, 8000)
-  if (response?.ok === false) throw new Error(response.error || '扩展 CDP 回放启动失败')
+  if (response?.ok === false) throw extensionPlaybackError(response, '扩展 CDP 回放启动失败')
   return response
 }
 
 export const stopExtensionCdpPlayback = async () => {
   const response = await waitForExtensionAck('AT_PLATFORM_STOP_PLAYBACK', {}, 6000)
-  if (response?.ok === false) throw new Error(response.error || '停止扩展 CDP 回放失败')
+  if (response?.ok === false) throw extensionPlaybackError(response, '停止扩展 CDP 回放失败')
   return response
 }
