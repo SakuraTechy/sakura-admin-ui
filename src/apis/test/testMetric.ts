@@ -34,6 +34,7 @@ export interface TestMetricSummaryResp {
   skipCount: number
   cancelCount: number
   infraFailCount: number
+  otherCount: number
   caseTotal: number
   casePass: number
   caseFail: number
@@ -43,6 +44,8 @@ export interface TestMetricSummaryResp {
   stepFail: number
   stepSkip: number
   averageDurationMs: number
+  durationTotalMs: number
+  durationSampleCount: number
   exactDimensionCount: number
   inferredDimensionCount: number
   missingDimensionCount: number
@@ -53,12 +56,16 @@ export interface TestMetricSummaryResp {
 export interface TestMetricTrendPoint {
   date: string
   runCount: number
-  executedCount: number
+  sceneExecutionCount: number
+  executedSceneCount: number
   passCount: number
   failCount: number
   skipCount: number
   cancelCount: number
   infraFailCount: number
+  otherCount: number
+  durationTotalMs: number
+  durationSampleCount: number
   passRate: number
 }
 

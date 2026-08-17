@@ -68,9 +68,12 @@ export interface TestTimedTaskRunResp extends TimedTaskRunSummary {
 
 export interface TestTimedTaskLogResp {
   id: string
-  jobId: number
-  taskBatchStatus?: string
-  operationReason?: string
+  jobId: string
+  groupName?: string
+  jobName?: string
+  taskBatchStatus?: number | string
+  operationReason?: number | string
+  executorType?: number
   executorInfo?: string
   executionAt?: string
   createDt?: string
@@ -88,8 +91,16 @@ export interface TestTimedTaskQuery {
 export interface TestTimedTaskPageQuery extends TestTimedTaskQuery, PageQuery {}
 
 export interface TestTimedTaskRunQuery extends PageQuery {
+  runId?: string
+  testReportId?: string
   status?: string
   triggerMode?: string
+  startTime?: string
+  endTime?: string
+}
+
+export interface TestTimedTaskLogQuery extends PageQuery {
+  taskBatchStatus?: number
   startTime?: string
   endTime?: string
 }
@@ -151,6 +162,6 @@ export function listTimedTaskRuns(id: string, query?: TestTimedTaskRunQuery) {
   return http.get<PageRes<TestTimedTaskRunResp[]>>(`${BASE_URL}/${id}/runs`, query)
 }
 
-export function listTimedTaskLogs(id: string, query?: { page?: number, size?: number }) {
+export function listTimedTaskLogs(id: string, query?: TestTimedTaskLogQuery) {
   return http.get<PageRes<TestTimedTaskLogResp[]>>(`${BASE_URL}/${id}/logs`, query)
 }

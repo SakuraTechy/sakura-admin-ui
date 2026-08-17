@@ -1,12 +1,16 @@
 <template>
   <div class="gi_table_page timed-task-page">
     <a-tabs
-      default-active-key="task-list"
+      v-model:active-key="activeTab"
       type="card-gutter"
       size="medium"
       class="timed-task-tabs"
+      :class="{ 'timed-task-tabs--records': activeTab !== 'task-list' }"
+      editable
+      :show-add-button="false"
+      @delete="onRunTabDelete"
     >
-      <a-tab-pane key="task-list" title="任务列表">
+      <a-tab-pane key="task-list" title="任务列表" :closable="false">
         <div class="task-list-pane">
           <a-alert v-if="scheduleCapability && !scheduleCapability.ready" type="warning" class="schedule-alert">
             调度服务不可用：{{ scheduleCapability.message }}
@@ -128,7 +132,7 @@
               <a-space>
                 <a-link v-if="scheduleReady" v-permission="['test:timedTask:execute']" @click="onTrigger(record)">立即执行</a-link>
                 <a-tooltip v-else content="调度服务不可用"><span class="disabled-action">立即执行</span></a-tooltip>
-                <a-link v-permission="['test:timedTask:list']" @click="runDrawerRef?.open(record)">执行记录</a-link>
+                <a-link v-permission="['test:timedTask:list']" @click="openRunTab(record)">执行记录</a-link>
                 <a-dropdown trigger="click">
                   <a-link>更多<icon-down /></a-link>
                   <template #content>
@@ -142,17 +146,24 @@
           </GiTable>
         </div>
       </a-tab-pane>
+      <a-tab-pane
+        v-for="tab in runTabs"
+        :key="tab.key"
+        :title="tab.title"
+        :closable="true"
+      >
+        <TimedTaskRunPanel :task="tab.task" />
+      </a-tab-pane>
     </a-tabs>
 
     <TimedTaskDrawer ref="drawerRef" :plans="plans" @success="search" />
-    <TimedTaskRunDrawer ref="runDrawerRef" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { Message, Modal, type TableInstance } from '@arco-design/web-vue'
 import TimedTaskDrawer from './components/TimedTaskDrawer.vue'
-import TimedTaskRunDrawer from './components/TimedTaskRunDrawer.vue'
+import TimedTaskRunPanel from './components/TimedTaskRunPanel.vue'
 import { type ProjectConfigResp, getProjectConfigList } from '@/apis/project/projectConfig'
 import { type TestPlanResp, getTestPlanList } from '@/apis/test/testPlan'
 import {
@@ -172,7 +183,8 @@ import { useTable } from '@/hooks'
 defineOptions({ name: 'TestTimedTask' })
 
 const drawerRef = ref<InstanceType<typeof TimedTaskDrawer>>()
-const runDrawerRef = ref<InstanceType<typeof TimedTaskRunDrawer>>()
+const activeTab = ref('task-list')
+const runTabs = ref<Array<{ key: string, title: string, task: TestTimedTaskResp }>>([])
 const projects = ref<ProjectConfigResp[]>([])
 const plans = ref<TestPlanResp[]>([])
 const scheduleCapability = ref<TestTimedTaskCapabilityResp>()
@@ -244,6 +256,24 @@ const resultLabel = (status: string) => ({ RUNNING: '执行中', PASSED: '通过
 const resultColor = (status: string) => ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', CANCELLED: 'gray', SKIPPED: 'orange' } as Record<string, string>)[status] || 'gray'
 const syncLabel = (status: string) => ({ PENDING: '待同步', SYNCING: '同步中', SYNCED: '已同步', FAILED: '同步失败', DELETING: '删除中' } as Record<string, string>)[status] || status || '-'
 const syncColor = (status: string) => ({ PENDING: 'blue', SYNCING: 'blue', SYNCED: 'green', FAILED: 'red', DELETING: 'orange' } as Record<string, string>)[status] || 'gray'
+
+const openRunTab = (record: TestTimedTaskResp) => {
+  const key = `runs-${record.id}`
+  const existing = runTabs.value.find((item) => item.key === key)
+  if (existing) {
+    existing.task = { ...record }
+    existing.title = `${record.name} · 执行记录`
+  } else {
+    runTabs.value.push({ key, title: `${record.name} · 执行记录`, task: { ...record } })
+  }
+  activeTab.value = key
+}
+
+const onRunTabDelete = (key: string | number) => {
+  const normalizedKey = String(key)
+  runTabs.value = runTabs.value.filter((item) => item.key !== normalizedKey)
+  if (activeTab.value === normalizedKey) activeTab.value = 'task-list'
+}
 
 const onUpdateStatus = async (record: TestTimedTaskResp, status: string) => {
   if (!scheduleReady.value) return

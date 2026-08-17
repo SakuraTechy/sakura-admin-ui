@@ -1,0 +1,447 @@
+{
+  "schemaVersion": 2,
+  "fixtureType": "test-metric-v2-local-demo",
+  "generatedAt": "2026-08-11T00:00:00+08:00",
+  "databaseWriteRequired": false,
+  "scope": {
+    "startDate": "2026-07-13",
+    "endDate": "2026-08-11",
+    "previousStartDate": "2026-06-13",
+    "previousEndDate": "2026-07-12"
+  },
+  "project": {
+    "id": "metric-demo-local",
+    "name": "测试度量演示项目",
+    "abbreviate": "METRIC_DEMO_LOCAL",
+    "description": "仅用于本地测试度量页面展示，不写入数据库",
+    "lastVersion": "V1.0",
+    "status": 1,
+    "delFlag": 3
+  },
+  "versions": [
+    {
+      "id": "metric-demo-v1",
+      "projectId": "metric-demo-local",
+      "name": "V1.0",
+      "description": "测试度量演示主线版本",
+      "type": "1",
+      "status": 1,
+      "delFlag": 3
+    }
+  ],
+  "environments": [
+    {
+      "id": "metric-demo-test",
+      "projectId": "metric-demo-local",
+      "name": "测试环境",
+      "description": "本地 JSON 演示环境",
+      "status": 1,
+      "delFlag": 3
+    },
+    {
+      "id": "metric-demo-staging",
+      "projectId": "metric-demo-local",
+      "name": "预发布环境",
+      "description": "本地 JSON 演示环境",
+      "status": 1,
+      "delFlag": 3
+    }
+  ],
+  "modules": [
+    {
+      "id": "metric-module-auth",
+      "projectId": "metric-demo-local",
+      "versionId": "metric-demo-v1",
+      "name": "身份认证",
+      "path": "/身份认证",
+      "status": 1
+    },
+    {
+      "id": "metric-module-order",
+      "projectId": "metric-demo-local",
+      "versionId": "metric-demo-v1",
+      "name": "订单交易",
+      "path": "/订单交易",
+      "status": 1
+    },
+    {
+      "id": "metric-module-report",
+      "projectId": "metric-demo-local",
+      "versionId": "metric-demo-v1",
+      "name": "报表分析",
+      "path": "/报表分析",
+      "status": 1
+    },
+    {
+      "id": "metric-module-ops",
+      "projectId": "metric-demo-local",
+      "versionId": "metric-demo-v1",
+      "name": "系统运维",
+      "path": "/系统运维",
+      "status": 1
+    }
+  ],
+  "inventory": {
+    "moduleTotal": 4,
+    "sceneTotal": 12,
+    "moduleItems": [
+      { "key": "metric-module-auth", "label": "身份认证", "count": 3 },
+      { "key": "metric-module-order", "label": "订单交易", "count": 3 },
+      { "key": "metric-module-report", "label": "报表分析", "count": 3 },
+      { "key": "metric-module-ops", "label": "系统运维", "count": 3 }
+    ],
+    "levelItems": [
+      { "key": "P0", "label": "P0（冒烟）", "count": 4 },
+      { "key": "P1", "label": "P1（核心）", "count": 4 },
+      { "key": "P2", "label": "P2（全量）", "count": 3 },
+      { "key": "P3", "label": "P3（其他）", "count": 1 }
+    ]
+  },
+  "valueMetrics": {
+    "baselineScenesPerPersonDay": 70,
+    "defectMetricDefinition": "按测试报告中的功能失败场景次数统计，不等同缺陷系统唯一缺陷单",
+    "laborMetricDefinition": "按场景执行数除以标准每日执行场景数估算，不等同实际人力节省"
+  },
+  "summary": {
+    "projectId": "metric-demo-local",
+    "versionId": "metric-demo-v1",
+    "startDate": "2026-07-13",
+    "endDate": "2026-08-11",
+    "runCount": 60,
+    "sceneExecutionCount": 240,
+    "eligibleSceneCount": 12,
+    "executedSceneCount": 12,
+    "passCount": 181,
+    "failCount": 20,
+    "skipCount": 16,
+    "cancelCount": 8,
+    "infraFailCount": 14,
+    "otherCount": 1,
+    "caseTotal": 1080,
+    "casePass": 914,
+    "caseFail": 62,
+    "caseSkip": 44,
+    "stepTotal": 4181,
+    "stepPass": 3812,
+    "stepFail": 129,
+    "stepSkip": 96,
+    "averageDurationMs": 87445,
+    "durationTotalMs": 20986800,
+    "durationSampleCount": 240,
+    "exactDimensionCount": 240,
+    "inferredDimensionCount": 0,
+    "missingDimensionCount": 0,
+    "passRate": {
+      "numerator": 181,
+      "denominator": 201,
+      "rate": 90.05,
+      "previousRate": 84.34,
+      "changePoints": 5.71
+    },
+    "executionCoverage": {
+      "numerator": 12,
+      "denominator": 12,
+      "rate": 100.0,
+      "previousRate": 100.0,
+      "changePoints": 0.0
+    }
+  },
+  "trends": {
+    "points": [
+      { "date": "2026-07-13", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-14", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 7, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 87.5 },
+      { "date": "2026-07-15", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-07-16", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 7, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 87.5 },
+      { "date": "2026-07-17", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-07-18", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-19", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-20", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-07-21", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-22", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-23", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-24", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-25", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-07-26", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-27", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-28", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-29", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-07-30", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-07-31", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-01", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-08-02", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-03", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-04", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-08-05", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-06", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 0, "cancelCount": 1, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-08-07", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 1, "cancelCount": 0, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-08", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-09", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 0, "skipCount": 1, "cancelCount": 1, "infraFailCount": 0, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 },
+      { "date": "2026-08-10", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 6, "failCount": 1, "skipCount": 0, "cancelCount": 0, "infraFailCount": 1, "otherCount": 0, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 85.71 },
+      { "date": "2026-08-11", "runCount": 2, "sceneExecutionCount": 8, "executedSceneCount": 8, "passCount": 5, "failCount": 0, "skipCount": 1, "cancelCount": 0, "infraFailCount": 1, "otherCount": 1, "durationTotalMs": 699560, "durationSampleCount": 8, "passRate": 100.0 }
+    ]
+  },
+  "breakdowns": {
+    "result": {
+      "dimension": "result",
+      "total": 240,
+      "items": [
+        { "key": "PASSED", "label": "通过", "count": 181, "ratio": 75.42 },
+        { "key": "FAILED", "label": "失败", "count": 20, "ratio": 8.33 },
+        { "key": "SKIPPED", "label": "跳过", "count": 16, "ratio": 6.67 },
+        { "key": "CANCELLED", "label": "取消", "count": 8, "ratio": 3.33 },
+        { "key": "INFRA_FAILED", "label": "基础设施失败", "count": 14, "ratio": 5.83 },
+        { "key": "OTHER", "label": "其他", "count": 1, "ratio": 0.42 }
+      ]
+    },
+    "engine": {
+      "dimension": "engine",
+      "total": 240,
+      "items": [
+        { "key": "selenium", "label": "Selenium", "count": 64, "ratio": 26.67 },
+        { "key": "playwright-runner", "label": "Playwright Runner", "count": 60, "ratio": 25.0 },
+        { "key": "extension-cdp", "label": "Chrome DevTools Protocol", "count": 60, "ratio": 25.0 },
+        { "key": "jenkins", "label": "Jenkins", "count": 56, "ratio": 23.33 }
+      ]
+    },
+    "trigger": {
+      "dimension": "trigger",
+      "total": 240,
+      "items": [
+        { "key": "manual", "label": "手动", "count": 64, "ratio": 26.67 },
+        { "key": "test-plan", "label": "测试计划", "count": 60, "ratio": 25.0 },
+        { "key": "schedule", "label": "定时任务", "count": 60, "ratio": 25.0 },
+        { "key": "jenkins", "label": "Jenkins", "count": 56, "ratio": 23.33 }
+      ]
+    },
+    "level": {
+      "dimension": "level",
+      "total": 240,
+      "items": [
+        { "key": "P0", "label": "P0", "count": 88, "ratio": 36.67 },
+        { "key": "P1", "label": "P1", "count": 84, "ratio": 35.0 },
+        { "key": "P2", "label": "P2", "count": 52, "ratio": 21.67 },
+        { "key": "P3", "label": "P3", "count": 16, "ratio": 6.67 }
+      ]
+    },
+    "module": {
+      "dimension": "module",
+      "total": 240,
+      "items": [
+        { "key": "metric-module-auth", "label": "身份认证", "count": 60, "ratio": 25.0 },
+        { "key": "metric-module-order", "label": "订单交易", "count": 60, "ratio": 25.0 },
+        { "key": "metric-module-report", "label": "报表分析", "count": 60, "ratio": 25.0 },
+        { "key": "metric-module-ops", "label": "系统运维", "count": 60, "ratio": 25.0 }
+      ]
+    }
+  },
+  "testPlans": [
+    {
+      "id": "metric-plan-regression",
+      "name": "V1.0 核心链路回归",
+      "type": "回归测试",
+      "status": "RUNNING",
+      "sceneCount": 12,
+      "executedCount": 9,
+      "testProgress": 75,
+      "owner": "张敏",
+      "plannedStartTime": "2026-08-08 09:00:00",
+      "plannedEndTime": "2026-08-12 18:00:00"
+    },
+    {
+      "id": "metric-plan-smoke",
+      "name": "支付与登录冒烟验证",
+      "type": "冒烟测试",
+      "status": "RUNNING",
+      "sceneCount": 4,
+      "executedCount": 2,
+      "testProgress": 50,
+      "owner": "李然",
+      "plannedStartTime": "2026-08-11 10:00:00",
+      "plannedEndTime": "2026-08-11 16:00:00"
+    },
+    {
+      "id": "metric-plan-release",
+      "name": "预发布环境全量验收",
+      "type": "全量测试",
+      "status": "NOT_STARTED",
+      "sceneCount": 12,
+      "executedCount": 0,
+      "testProgress": 0,
+      "owner": "王维",
+      "plannedStartTime": "2026-08-12 09:00:00",
+      "plannedEndTime": "2026-08-14 18:00:00"
+    }
+  ],
+  "timedTasks": [
+    {
+      "id": "metric-task-smoke",
+      "name": "核心链路每日冒烟",
+      "testPlanName": "支付与登录冒烟验证",
+      "cronExpression": "0 0 3 * * ?",
+      "executionEngine": "PLAYWRIGHT_RUNNER",
+      "environmentName": "测试环境",
+      "nextExecuteTime": "2026-08-12 03:00:00",
+      "status": "ENABLED",
+      "lastRunStatus": "PASSED",
+      "lastRunTime": "2026-08-11 03:04:28"
+    },
+    {
+      "id": "metric-task-regression",
+      "name": "工作日回归巡检",
+      "testPlanName": "V1.0 核心链路回归",
+      "cronExpression": "0 30 8 ? * MON-FRI",
+      "executionEngine": "SELENIUM",
+      "environmentName": "预发布环境",
+      "nextExecuteTime": "2026-08-12 08:30:00",
+      "status": "ENABLED",
+      "lastRunStatus": "FAILED",
+      "lastRunTime": "2026-08-11 08:36:52"
+    },
+    {
+      "id": "metric-task-health",
+      "name": "环境健康检查",
+      "testPlanName": "预发布环境全量验收",
+      "cronExpression": "0 */30 * * * ?",
+      "executionEngine": "PLAYWRIGHT_RUNNER",
+      "environmentName": "预发布环境",
+      "nextExecuteTime": "2026-08-11 16:30:00",
+      "status": "ENABLED",
+      "lastRunStatus": "PASSED",
+      "lastRunTime": "2026-08-11 16:01:17"
+    }
+  ],
+  "failures": {
+    "items": [
+      {
+        "sceneId": "metric-scene-browser-session",
+        "sceneKey": "METRIC-DEMO-SCENE-11",
+        "sceneName": "浏览器会话恢复",
+        "moduleId": "metric-module-ops",
+        "moduleName": "系统运维",
+        "sceneLevel": "P2",
+        "failCount": 2,
+        "infraFailCount": 3,
+        "lastFailedAt": "2026-08-10T15:18:42",
+        "lastErrorCode": "BROWSER_SESSION_LOST",
+        "lastErrorMessage": "浏览器会话意外中断，自动恢复失败"
+      },
+      {
+        "sceneId": "metric-scene-order-payment",
+        "sceneKey": "METRIC-DEMO-SCENE-05",
+        "sceneName": "订单支付",
+        "moduleId": "metric-module-order",
+        "moduleName": "订单交易",
+        "sceneLevel": "P0",
+        "failCount": 4,
+        "infraFailCount": 0,
+        "lastFailedAt": "2026-08-11T09:24:16",
+        "lastErrorCode": "ASSERTION_FAILED",
+        "lastErrorMessage": "预期订单状态为已支付，实际状态为处理中"
+      },
+      {
+        "sceneId": "metric-scene-health-check",
+        "sceneKey": "METRIC-DEMO-SCENE-10",
+        "sceneName": "服务健康检查",
+        "moduleId": "metric-module-ops",
+        "moduleName": "系统运维",
+        "sceneLevel": "P0",
+        "failCount": 1,
+        "infraFailCount": 3,
+        "lastFailedAt": "2026-08-09T15:31:05",
+        "lastErrorCode": "NETWORK_TIMEOUT",
+        "lastErrorMessage": "健康检查请求超时，目标服务未在阈值内响应"
+      },
+      {
+        "sceneId": "metric-scene-daily-report",
+        "sceneKey": "METRIC-DEMO-SCENE-07",
+        "sceneName": "日报生成",
+        "moduleId": "metric-module-report",
+        "moduleName": "报表分析",
+        "sceneLevel": "P2",
+        "failCount": 3,
+        "infraFailCount": 1,
+        "lastFailedAt": "2026-08-08T09:42:37",
+        "lastErrorCode": "ASSERTION_FAILED",
+        "lastErrorMessage": "日报汇总金额与明细合计不一致"
+      },
+      {
+        "sceneId": "metric-scene-schedule-check",
+        "sceneKey": "METRIC-DEMO-SCENE-12",
+        "sceneName": "定时任务巡检",
+        "moduleId": "metric-module-ops",
+        "moduleName": "系统运维",
+        "sceneLevel": "P3",
+        "failCount": 1,
+        "infraFailCount": 3,
+        "lastFailedAt": "2026-08-07T15:16:49",
+        "lastErrorCode": "EXECUTOR_UNAVAILABLE",
+        "lastErrorMessage": "执行节点暂不可用，任务未能正常派发"
+      },
+      {
+        "sceneId": "metric-scene-dashboard",
+        "sceneKey": "METRIC-DEMO-SCENE-09",
+        "sceneName": "经营看板查询",
+        "moduleId": "metric-module-report",
+        "moduleName": "报表分析",
+        "sceneLevel": "P1",
+        "failCount": 1,
+        "infraFailCount": 2,
+        "lastFailedAt": "2026-08-06T09:53:12",
+        "lastErrorCode": "ENVIRONMENT_UNAVAILABLE",
+        "lastErrorMessage": "预发布环境依赖服务未就绪"
+      },
+      {
+        "sceneId": "metric-scene-sms-login",
+        "sceneKey": "METRIC-DEMO-SCENE-02",
+        "sceneName": "短信验证码登录",
+        "moduleId": "metric-module-auth",
+        "moduleName": "身份认证",
+        "sceneLevel": "P1",
+        "failCount": 3,
+        "infraFailCount": 0,
+        "lastFailedAt": "2026-08-05T15:27:54",
+        "lastErrorCode": "ASSERTION_FAILED",
+        "lastErrorMessage": "验证码发送状态未在预期时间内更新"
+      },
+      {
+        "sceneId": "metric-scene-permission",
+        "sceneKey": "METRIC-DEMO-SCENE-03",
+        "sceneName": "用户权限校验",
+        "moduleId": "metric-module-auth",
+        "moduleName": "身份认证",
+        "sceneLevel": "P1",
+        "failCount": 1,
+        "infraFailCount": 2,
+        "lastFailedAt": "2026-08-04T09:35:18",
+        "lastErrorCode": "BROWSER_CONTEXT_CLOSED",
+        "lastErrorMessage": "浏览器上下文提前关闭，权限页面未完成加载"
+      },
+      {
+        "sceneId": "metric-scene-refund",
+        "sceneKey": "METRIC-DEMO-SCENE-06",
+        "sceneName": "订单退款",
+        "moduleId": "metric-module-order",
+        "moduleName": "订单交易",
+        "sceneLevel": "P1",
+        "failCount": 2,
+        "infraFailCount": 0,
+        "lastFailedAt": "2026-08-03T15:44:26",
+        "lastErrorCode": "ASSERTION_FAILED",
+        "lastErrorMessage": "退款完成后订单金额未正确回写"
+      },
+      {
+        "sceneId": "metric-scene-export",
+        "sceneKey": "METRIC-DEMO-SCENE-08",
+        "sceneName": "统计报表导出",
+        "moduleId": "metric-module-report",
+        "moduleName": "报表分析",
+        "sceneLevel": "P2",
+        "failCount": 2,
+        "infraFailCount": 0,
+        "lastFailedAt": "2026-08-02T09:19:33",
+        "lastErrorCode": "ASSERTION_FAILED",
+        "lastErrorMessage": "导出文件行数与查询结果数量不一致"
+      }
+    ]
+  }
+}
