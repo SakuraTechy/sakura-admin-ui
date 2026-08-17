@@ -25,7 +25,7 @@
         </a-descriptions>
 
         <a-row :gutter="16" class="config-row">
-          <a-col :span="12">
+          <a-col :span="11">
             <a-card title="产品环境" size="small" class="config-card">
               <template #extra>
                 <a-button type="outline" size="small" :disabled="running" @click="goProjectEnvironmentConfig">
@@ -33,7 +33,7 @@
                 </a-button>
               </template>
               <a-form :model="form" layout="vertical">
-                <a-form-item label="服务器 IP" required>
+                <a-form-item label="所属环境" required>
                   <a-select
                     v-model="form.projectEnvironmentId"
                     placeholder="请选择产品环境"
@@ -48,6 +48,7 @@
                       :label="item.label"
                     >
                       <div class="option-row">
+                        <span class="option-main">{{ item.name }}</span>
                         <span class="option-main">{{ item.label }}</span>
                         <a-tag :color="item.statusColor">{{ item.statusLabel }}</a-tag>
                       </div>
@@ -86,7 +87,7 @@
             </a-card>
           </a-col>
 
-          <a-col :span="12">
+          <a-col :span="13">
             <a-card
               :title="executionType === 'extension-cdp' ? 'CDP 回放配置' : 'Playwright Runner 配置'"
               size="small"
@@ -94,12 +95,52 @@
             >
               <div v-if="executionType === 'extension-cdp'" class="cdp-config">
                 <a-form :model="form" layout="vertical">
-                  <a-form-item label="浏览器" required>
-                    <a-select placeholder="使用当前浏览器" allow-search disabled>
-                      <a-option value="chromium">当前浏览器</a-option>
-                    </a-select>
+                  <a-row :gutter="12">
+                    <a-col :span="12">
+                      <a-form-item label="浏览器" required>
+                        <a-select placeholder="使用当前浏览器" allow-search disabled>
+                          <a-option value="chromium">当前浏览器</a-option>
+                        </a-select>
+                      </a-form-item>
+                    </a-col>
+                    <a-col :span="12">
+                      <a-form-item label="忽略 HTTPS 证书错误">
+                        <a-switch v-model="cdpConfig.ignoreHttpsErrors" :disabled="running" />
+                      </a-form-item>
+                    </a-col>
+                  </a-row>
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label-with-help">
+                        <span>用例会话</span>
+                        <a-tooltip position="top">
+                          <template #content>
+                            <div class="page-error-policy-help">
+                              <div><strong>当前浏览器兼容模式：</strong>新建普通 Chrome 回放窗口，批次内持续复用并共享 Chrome Profile。</div>
+                              <div><strong>同一浏览器窗口：</strong>复用标签页、sessionStorage 和页面内存。</div>
+                              <div><strong>复用登录态：</strong>仅提交上一条成功用例的认证状态。</div>
+                              <div><strong>独立登录：</strong>每条用例使用全新受控无痕会话。</div>
+                            </div>
+                          </template>
+                          <icon-question-circle class="form-label-help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-select
+                      v-model="cdpConfig.sessionMode"
+                      :disabled="running"
+                      :options="cdpSessionModeOptions"
+                    />
                   </a-form-item>
                 </a-form>
+                <!-- <a-alert v-if="cdpConfig.sessionMode === 'legacy-profile'" type="warning" show-icon class="cdp-capability-alert">
+                  默认新建并复用一个普通 Chrome 回放窗口；共享登录态和站点存储，不提供无痕隔离。
+                </a-alert> -->
+                <a-alert v-if="!cdpManagedContextAvailable || !cdpGrayEnabled" type="warning" show-icon class="cdp-capability-alert">
+                  当前只能使用浏览器兼容模式。
+                  <span v-if="!cdpManagedContextAvailable && cdpCapabilitiesReason">{{ cdpCapabilitiesReason }}</span>
+                  <span v-else-if="cdpGrayReason">{{ cdpGrayReason }}</span>
+                </a-alert>
                 <fieldset class="option-group">
                   <legend>执行窗口尺寸</legend>
                   <a-radio-group v-model="cdpConfig.windowSizeMode" direction="vertical" :disabled="running">
@@ -129,7 +170,7 @@
                       </a-form-item>
                     </a-col>
                   </a-row>
-                  <div class="option-tip">当前窗口尺寸由扩展读取本页所在 Chrome 窗口。</div>
+                  <!-- <div class="option-tip">当前窗口尺寸由扩展读取本页所在 Chrome 窗口。</div> -->
                 </fieldset>
                 <div class="failure-analysis-card">
                   <div class="option-row">
@@ -147,7 +188,7 @@
                   <a-col :span="12">
                     <a-form-item label="浏览器">
                       <a-select v-model="runnerConfig.browser" :disabled="running">
-                        <a-option value="chromium">Chromium 浏览器</a-option>
+                        <a-option value="chromium">Chromium 浏览器（推荐）</a-option>
                         <a-option value="firefox">Firefox 浏览器</a-option>
                         <a-option value="webkit">WebKit 浏览器</a-option>
                       </a-select>
@@ -180,11 +221,11 @@
                           <a-tooltip position="top">
                             <template #content>
                               <div class="page-error-policy-help">
-                                <div><strong>独立登录：</strong>保持原有隔离行为，每条用例使用全新浏览器上下文。</div>
-                                <div><strong>复用登录态：</strong>串行复用上一条成功用例的 Cookie、localStorage 和 IndexedDB。</div>
                                 <div><strong>同一浏览器窗口：</strong>串行复用同一个浏览器、标签页和页面内存。</div>
+                                <div><strong>复用登录态：</strong>串行复用上一条成功用例的 Cookie、localStorage、IndexedDB 和同源 sessionStorage。</div>
+                                <div><strong>独立登录：</strong>保持原有隔离行为，每条用例使用全新浏览器上下文。</div>
                                 <div class="page-error-policy-help__note">
-                                  复用登录态不复用 sessionStorage、标签页和页面内存；成功注销也会传递给下一条用例。
+                                  复用登录态不复用标签页、页面内存和 WebSocket；成功注销也会传递给下一条用例。
                                 </div>
                               </div>
                             </template>
@@ -310,12 +351,21 @@ import {
   type ExecutionType,
   type LiveExecutionCase,
   type LiveExecutionLog,
+  executableStepCount,
   executionTypeLabel,
   isExecutableCase,
 } from '../execution'
-import { startExtensionCdpPlayback, stopExtensionCdpPlayback } from '../extensionPlayback'
+import {
+  abortExtensionCdpBatch,
+  beginExtensionCdpBatch,
+  endExtensionCdpBatch,
+  getExtensionCdpCapabilities,
+  startExtensionCdpPlayback,
+  stopExtensionCdpPlayback,
+} from '../extensionPlayback'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import {
+  type AutomationCdpPlaybackOptions,
   type AutomationPlaywrightRunnerJobResp,
   type AutomationPlaywrightRunnerLog,
   type AutomationPlaywrightRunnerOptions,
@@ -324,6 +374,7 @@ import {
   cancelAutomationPlaywrightRunnerJob,
   createAutomationPlaywrightBatch,
   createAutomationPlaywrightRunnerJob,
+  getAutomationCdpPlaybackAvailability,
   getAutomationPlaywrightBatchCaseCancellation,
   getAutomationPlaywrightCase,
   getAutomationPlaywrightRunnerJob,
@@ -348,7 +399,7 @@ interface ProjectEnvironmentOption {
 }
 
 type SelectChangeValue = string | number | boolean | Record<string, any> | Array<any>
-type CasePlaybackStatus = 'idle' | 'waiting' | 'starting' | 'queued' | 'running' | 'passed' | 'failed' | 'cancelled'
+type CasePlaybackStatus = 'idle' | 'waiting' | 'starting' | 'queued' | 'running' | 'passed' | 'failed' | 'skipped' | 'cancelled'
 type BatchState = 'idle' | 'running' | 'cancelling' | 'completed' | 'cancelled'
 
 interface PlaybackCaseRow {
@@ -382,7 +433,7 @@ interface PlanExecutionStartPayload {
   caseIds: string[]
   projectEnvironmentId: string
   runnerOptions?: AutomationPlaywrightRunnerOptions
-  cdpOptions?: Record<string, unknown>
+  cdpOptions?: AutomationCdpPlaybackOptions
 }
 
 const emit = defineEmits<{
@@ -435,16 +486,23 @@ let previewSequence = 0
 let extensionCompletionResolver: ((result: ExtensionCompletion) => void) | undefined
 
 const form = reactive({ projectEnvironmentId: '' })
-const cdpConfig = reactive({
+const cdpConfig = reactive<AutomationCdpPlaybackOptions>({
+  browserSessionSource: 'current-profile',
+  sessionMode: 'legacy-profile',
+  ignoreHttpsErrors: false,
   windowSizeMode: 'maximized' as 'maximized' | 'current' | 'custom',
   viewportWidth: 1920,
   viewportHeight: 1080,
   pageErrorCheckEnabled: true,
 })
+const cdpManagedContextAvailable = ref(false)
+const cdpCapabilitiesReason = ref('')
+const cdpGrayEnabled = ref(false)
+const cdpGrayReason = ref('')
 const runnerConfig = reactive<AutomationPlaywrightRunnerOptions>({
   browser: 'chromium',
   liveFrameQuality: 'high',
-  sessionMode: 'isolated',
+  sessionMode: 'reuse-browser',
   headed: false,
   ignoreHttpsErrors: true,
   trace: 'retain-on-failure',
@@ -461,21 +519,28 @@ const runnerPageErrorPolicyOptions = [
   { label: '本次任务关闭', value: 'disabled' },
 ]
 const artifactPolicyOptions = [
-  { label: '关闭', value: 'off' },
+  { label: '仅失败保留（推荐）', value: 'retain-on-failure' },
   { label: '始终保留', value: 'on' },
-  { label: '仅失败保留', value: 'retain-on-failure' },
+  { label: '关闭', value: 'off' },
 ]
 const liveFrameQualityOptions = [
   { label: '流畅（1080P，低带宽）', value: 'smooth' },
   { label: '高清（推荐）', value: 'high' },
   { label: '超清（4K，高带宽）', value: 'ultra' },
-  { label: '8K（极高资源占用）', value: '8k' },
+  { label: '原画（8K，极高资源占用）', value: '8k' },
 ]
 const runnerSessionModeOptions = [
-  { label: '每条用例独立登录（默认）', value: 'isolated' },
-  { label: '复用本批次上一条成功用例的登录态', value: 'reuse-auth' },
-  { label: '同一浏览器窗口连续执行', value: 'reuse-browser' },
+  { label: '同一浏览器窗口（默认）', value: 'reuse-browser' },
+  { label: '复用登录态', value: 'reuse-auth' },
+  { label: '独立登录', value: 'isolated' },
 ]
+const cdpSessionModeOptions = computed(() => [
+  // ...(cdpManagedContextAvailable.value && cdpGrayEnabled.value ? runnerSessionModeOptions : []),
+  { label: '默认使用当前浏览器（兼容模式）', value: 'legacy-profile' },
+  { label: '同一浏览器窗口（无痕模式）', value: 'reuse-browser' },
+  { label: '复用登录态（无痕模式）', value: 'reuse-auth' },
+  { label: '独立登录（无痕模式）', value: 'isolated' },
+])
 
 // 计划正式报告绑定按场景数据库 ID 校验；优先使用 id，避免把业务场景编号
 // （例如 AAS_P_SMOKE_007）当成 report progress 的数值 ID。
@@ -485,20 +550,28 @@ const selectedProjectEnvironment = computed(() => projectEnvironmentOptions.valu
 const effectiveStartUrl = computed(() => previewCase.value?.start_url || previewCase.value?.startUrl || '')
 const running = computed(() => ['running', 'cancelling'].includes(batchState.value))
 const activeCaseRow = computed(() => caseRows.value.find((item) => item.caseId === activeCaseId.value))
-const terminalStatuses: CasePlaybackStatus[] = ['passed', 'failed', 'cancelled']
+const terminalStatuses: CasePlaybackStatus[] = ['passed', 'failed', 'skipped', 'cancelled']
 const batchRows = computed(() => {
   const ids = new Set(batchCaseIds.value)
   return caseRows.value.filter((item) => ids.has(item.caseId))
 })
 const passedCount = computed(() => batchRows.value.filter((item) => item.status === 'passed').length)
 const failedCount = computed(() => batchRows.value.filter((item) => item.status === 'failed').length)
+const skippedCount = computed(() => batchRows.value.filter((item) => item.status === 'skipped').length)
 const selectedCaseRows = computed(() => {
   const selectedIds = new Set(selectedCaseKeys.value.map(String))
   return caseRows.value.filter((item) => selectedIds.has(item.caseId))
 })
-const cdpConfigValid = computed(() => cdpConfig.windowSizeMode !== 'custom' || (
-  cdpConfig.viewportWidth >= 320 && cdpConfig.viewportWidth <= 10000
-  && cdpConfig.viewportHeight >= 320 && cdpConfig.viewportHeight <= 10000
+const cdpConfigValid = computed(() => (
+  cdpConfig.windowSizeMode !== 'custom' || (
+    cdpConfig.viewportWidth >= 320 && cdpConfig.viewportWidth <= 10000
+    && cdpConfig.viewportHeight >= 320 && cdpConfig.viewportHeight <= 10000
+  )
+) && (
+  (cdpConfig.browserSessionSource === 'current-profile' && cdpConfig.sessionMode === 'legacy-profile')
+  || (cdpConfig.browserSessionSource === 'managed-context'
+    && cdpConfig.sessionMode !== 'legacy-profile'
+    && ((cdpManagedContextAvailable.value && cdpGrayEnabled.value) || running.value))
 ))
 const runnerConfigValid = computed(() => runnerConfig.stepTimeoutMs >= 1000
   && runnerConfig.caseTimeoutMs >= runnerConfig.stepTimeoutMs
@@ -516,7 +589,7 @@ const resetRunnerConfig = () => {
   Object.assign(runnerConfig, {
     browser: 'chromium',
     liveFrameQuality: 'high',
-    sessionMode: 'isolated',
+    sessionMode: 'reuse-browser',
     headed: false,
     ignoreHttpsErrors: true,
     trace: 'retain-on-failure',
@@ -528,6 +601,24 @@ const resetRunnerConfig = () => {
   })
   runnerPageErrorPolicy.value = 'inherit'
 }
+
+const resetCdpConfig = () => {
+  Object.assign(cdpConfig, {
+    browserSessionSource: 'current-profile',
+    sessionMode: 'legacy-profile',
+    ignoreHttpsErrors: false,
+    windowSizeMode: 'maximized',
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    pageErrorCheckEnabled: true,
+  })
+}
+
+watch(() => cdpConfig.sessionMode, (sessionMode) => {
+  cdpConfig.browserSessionSource = sessionMode === 'legacy-profile'
+    ? 'current-profile'
+    : 'managed-context'
+})
 
 const buildRunnerOptions = (): AutomationPlaywrightRunnerOptions => ({
   ...runnerConfig,
@@ -693,10 +784,32 @@ const onOpen = async (
   previewCaseId.value = ''
   cdpConfiguredCaseId.value = ''
   resetRunnerConfig()
+  resetCdpConfig()
   resetBatchState()
   visible.value = true
   loading.value = true
   try {
+    if (type === 'extension-cdp') {
+      const [capabilityResult, availabilityResult] = await Promise.allSettled([
+        getExtensionCdpCapabilities(),
+        getAutomationCdpPlaybackAvailability().then((response) => response.data),
+      ])
+      if (capabilityResult.status === 'fulfilled') {
+        cdpManagedContextAvailable.value = capabilityResult.value.managedBrowserContext
+        cdpCapabilitiesReason.value = capabilityResult.value.reason || ''
+      } else {
+        cdpManagedContextAvailable.value = false
+        cdpCapabilitiesReason.value = capabilityResult.reason?.message || '未检测到扩展受控浏览器能力'
+      }
+      if (availabilityResult.status === 'fulfilled') {
+        cdpGrayEnabled.value = availabilityResult.value.managedContextEnabled
+        cdpGrayReason.value = availabilityResult.value.reason || ''
+      } else {
+        cdpGrayEnabled.value = false
+        cdpGrayReason.value = availabilityResult.reason?.message || '无法确认 Admin 灰度资格'
+      }
+      resetCdpConfig()
+    }
     const data = options.planExecution && record?.__planAggregate
       ? record
       : (await getAutomationUiScene(String(record.id))).data
@@ -710,7 +823,7 @@ const onOpen = async (
         executionId: '',
         jobId: '',
         name: item.name || String(item.id),
-        stepTotal: Array.isArray(item.stepList) ? item.stepList.length : 0,
+        stepTotal: executableStepCount(item),
         stepCompleted: 0,
         stepPass: 0,
         stepFail: 0,
@@ -730,6 +843,12 @@ const onOpen = async (
       await refreshSelectedEnvironmentStatus()
     }
     await loadPlaybackPreview()
+    if (options.cdpOptions) {
+      if (options.cdpOptions.browserSessionSource === 'managed-context' && !cdpManagedContextAvailable.value) {
+        throw new Error(`当前 CueCast 不支持受控用例会话：${cdpCapabilitiesReason.value || '能力探测未通过'}`)
+      }
+      Object.assign(cdpConfig, options.cdpOptions)
+    }
     if (options.autoStart && selectedCaseKeys.value.length) {
       await startBatch(selectedCaseKeys.value.map(String))
     }
@@ -816,9 +935,22 @@ async function startBatch(caseIds: string[]) {
     executionConfig: executionType.value === 'extension-cdp'
       ? { ...cdpConfig }
       : buildRunnerOptions(),
+    cdpOptions: executionType.value === 'extension-cdp' ? { ...cdpConfig } : undefined,
   })
   const batchCases = new Map(createdBatch.cases.map((item) => [String(item.caseId), item]))
-  batchCaseIds.value = [...caseIds]
+  const createdCaseIds = createdBatch.cases.map((item) => String(item.caseId))
+  const requestedCdpBatch = executionType.value === 'extension-cdp'
+  const appliedSessionConfig = createdBatch.sessionConfig
+  if (requestedCdpBatch && appliedSessionConfig?.browserSessionSource !== cdpConfig.browserSessionSource) {
+    await cancelAutomationPlaywrightBatch(playbackSceneKey.value, createdBatch.batchId).catch(() => {})
+    throw new Error(`Admin 返回的 CDP 会话来源与请求不一致：${cdpConfig.browserSessionSource}/${appliedSessionConfig?.browserSessionSource || '-'}`)
+  }
+  if (requestedCdpBatch && appliedSessionConfig?.sessionMode !== cdpConfig.sessionMode) {
+    await cancelAutomationPlaywrightBatch(playbackSceneKey.value, createdBatch.batchId).catch(() => {})
+    throw new Error(`Admin 返回的 CDP 会话模式与请求不一致：${cdpConfig.sessionMode}/${appliedSessionConfig?.sessionMode || '-'}`)
+  }
+  const extensionCdpBatch = executionType.value === 'extension-cdp'
+  batchCaseIds.value = createdCaseIds
   batchState.value = 'running'
   batchId.value = createdBatch.batchId
   batchExecutionCapability.value = createdBatch.executionCapability || ''
@@ -835,7 +967,7 @@ async function startBatch(caseIds: string[]) {
     item.stepPass = 0
     item.stepFail = 0
     item.stepSkip = 0
-    item.status = caseIds.includes(item.caseId) ? 'waiting' : 'idle'
+    item.status = createdCaseIds.includes(item.caseId) ? 'waiting' : 'idle'
     item.error = ''
     item.durationMs = undefined
     item.startedAt = undefined
@@ -843,52 +975,104 @@ async function startBatch(caseIds: string[]) {
     item.liveLogs = []
     item.lastEventSequence = 0
   })
+  if (extensionCdpBatch) {
+    try {
+      await beginExtensionCdpBatch({
+        batchId: batchId.value,
+        sessionMode: cdpConfig.sessionMode,
+        browserSessionSource: cdpConfig.browserSessionSource,
+        executionCapability: batchExecutionCapability.value,
+      })
+    } catch (error) {
+      await cancelAutomationPlaywrightBatch(playbackSceneKey.value, batchId.value).catch(() => {})
+      markWaitingCasesCancelled()
+      batchState.value = 'cancelled'
+      publishBatchState()
+      throw error
+    }
+  }
   startBatchTimer()
   publishBatchState()
   visible.value = false
   emit('started')
 
-  for (const caseId of caseIds) {
-    if (cancelRequested.value) break
-    const row = caseRows.value.find((item) => item.caseId === caseId)
-    if (!row) continue
-    await syncRemoteCancellation(row)
-    if (cancelRequested.value) break
-    if (cancelledCaseIds.value.has(caseId)) {
-      row.status = 'cancelled'
-      row.error = row.error || '用例已取消，未开始执行'
-      row.finishedAt = Date.now()
-      await updateBatchCaseStatus(row, 'cancelled', { error: row.error })
-      continue
-    }
-    activeCaseId.value = caseId
-    activeCaseKey.value = `${playbackSceneKey.value}:${caseId}`
-    row.startedAt = Date.now()
-    row.status = 'starting'
-    row.error = ''
-    publishBatchState()
-    await updateBatchCaseStatus(row, 'starting')
-    try {
-      await executeOneCase(row)
-    } catch (error: any) {
-      if (cancelRequested.value || cancelledCaseIds.value.has(row.caseId)) {
+  let cdpSessionCleanupError: Error | undefined
+  try {
+    for (const caseId of createdCaseIds) {
+      if (cancelRequested.value) break
+      const row = caseRows.value.find((item) => item.caseId === caseId)
+      if (!row) continue
+      if (batchCases.get(caseId)?.status !== 'queued') continue
+      await syncRemoteCancellation(row)
+      if (cancelRequested.value) break
+      if (cancelledCaseIds.value.has(caseId)) {
         row.status = 'cancelled'
-        row.error = row.error || (cancelRequested.value ? '批次已取消' : '用例已取消')
-      } else {
-        row.status = 'failed'
-        row.error = error?.message || `${executionTypeLabel(executionType.value)}执行失败`
+        row.error = row.error || '用例已取消，未开始执行'
+        row.finishedAt = Date.now()
+        await updateBatchCaseStatus(row, 'cancelled', { error: row.error })
+        continue
       }
-    } finally {
-      row.finishedAt = Date.now()
-      if (['failed', 'cancelled'].includes(row.status)) {
-        await updateBatchCaseStatus(row, row.status, { error: row.error })
-      }
+      activeCaseId.value = caseId
+      activeCaseKey.value = `${playbackSceneKey.value}:${caseId}`
+      row.startedAt = Date.now()
+      row.status = 'starting'
+      row.error = ''
       publishBatchState()
-      await refreshSceneAfterCase()
-      activeCaseId.value = ''
-      activeCaseKey.value = ''
-      runnerJob.value = undefined
+      await updateBatchCaseStatus(row, 'starting')
+      try {
+        await executeOneCase(row)
+      } catch (error: any) {
+        if (cancelRequested.value || cancelledCaseIds.value.has(row.caseId)) {
+          row.status = 'cancelled'
+          row.error = row.error || (cancelRequested.value ? '批次已取消' : '用例已取消')
+        } else {
+          row.status = 'failed'
+          row.error = error?.message || `${executionTypeLabel(executionType.value)}执行失败`
+        }
+      } finally {
+        row.finishedAt = Date.now()
+        if (['failed', 'cancelled'].includes(row.status)) {
+          await updateBatchCaseStatus(row, row.status, { error: row.error })
+        }
+        publishBatchState()
+        await refreshSceneAfterCase()
+        activeCaseId.value = ''
+        activeCaseKey.value = ''
+        runnerJob.value = undefined
+      }
     }
+  } finally {
+    if (extensionCdpBatch) {
+      try {
+        if (cancelRequested.value) {
+          await abortExtensionCdpBatch(batchId.value, cdpConfig.browserSessionSource, batchExecutionCapability.value)
+        } else {
+          await endExtensionCdpBatch(batchId.value, cdpConfig.browserSessionSource, batchExecutionCapability.value)
+        }
+      } catch (error) {
+        const cleanedByAbort = await abortExtensionCdpBatch(
+          batchId.value,
+          cdpConfig.browserSessionSource,
+          batchExecutionCapability.value,
+        )
+          .then(() => true)
+          .catch(() => false)
+        if (!cleanedByAbort) {
+          cdpSessionCleanupError = new Error(`CDP 批次会话清理失败：${(error as Error)?.message || String(error)}`)
+        } else if (!cancelRequested.value) {
+          Message.warning('CDP 批次正常结束失败，已通过 ABORT 完成清理')
+        }
+      }
+    }
+  }
+
+  if (cdpSessionCleanupError) {
+    markWaitingCasesCancelled()
+    batchState.value = 'cancelled'
+    publishBatchState()
+    clearBatchTimer()
+    emit('finished', { cancelled: true })
+    throw cdpSessionCleanupError
   }
 
   if (cancelRequested.value) {
@@ -897,7 +1081,7 @@ async function startBatch(caseIds: string[]) {
     Message.warning('批量执行已取消')
   } else {
     batchState.value = 'completed'
-    Message.success(`批量执行完成：通过 ${passedCount.value}，失败 ${failedCount.value}`)
+    Message.success(`批量执行完成：通过 ${passedCount.value}，失败 ${failedCount.value}，跳过 ${skippedCount.value}`)
   }
   publishBatchState()
   clearBatchTimer()
@@ -942,6 +1126,8 @@ async function executeExtensionCase(row: PlaybackCaseRow) {
       executionCapability: batchExecutionCapability.value,
       executionId: row.executionId,
       projectEnvironmentId: form.projectEnvironmentId,
+      sessionMode: cdpConfig.sessionMode,
+      browserSessionSource: cdpConfig.browserSessionSource,
     })
   } catch (error) {
     extensionCompletionResolver = undefined
@@ -1383,6 +1569,10 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
 </script>
 
 <style scoped lang="scss">
+:deep(.arco-form-item) {
+  margin-bottom: 10px;
+}
+
 .execute-modal {
   display: flex;
   flex-direction: column;
@@ -1486,7 +1676,7 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
 
 .option-group {
   margin: 0;
-  padding: 12px;
+  padding: 8px;
   border: 1px solid var(--color-border-2);
   border-radius: 10px;
 }
@@ -1502,7 +1692,7 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
 
 .failure-analysis-card {
   margin-top: 12px;
-  padding: 14px;
+  padding: 12px 12px;
   border: 1px solid var(--color-border-2);
   border-left: 3px solid rgb(var(--primary-6));
   border-radius: 10px;
@@ -1515,6 +1705,10 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
 
 .runner-config :deep(.arco-form-item) {
   margin-bottom: 10px;
+}
+
+.cdp-capability-alert {
+  margin-bottom: 12px;
 }
 
 :deep(.arco-card-body) {

@@ -4,12 +4,18 @@
     :title="title"
     :mask-closable="false"
     :esc-to-close="false"
-    :width="width >= 600 ? 600 : '100%'"
+    :width="width >= 900 ? 860 : '100%'"
     draggable
     @before-ok="save"
     @close="reset"
   >
     <GiForm ref="formRef" v-model="form" :columns="columns" />
+    <EnvironmentResourceBindings
+      v-if="dataId && form.projectId"
+      :environment-id="dataId"
+      :project-id="form.projectId"
+    />
+    <a-alert v-else type="info">保存环境后可继续绑定服务器、数据库和证书。</a-alert>
   </a-modal>
 </template>
 
@@ -26,6 +32,7 @@ import KeyValuePairForm from '@/components/KeyValuePairForm'
 import { getProjectVersionConfigList } from '@/apis/project/projectVersionConfig'
 import { getProjectServerConfigList } from '@/apis/project/projectServerConfig'
 import { getProjectDataBaseConfigList } from '@/apis/project/projectDataBaseConfig'
+import EnvironmentResourceBindings from './EnvironmentResourceBindings.vue'
 
 const props = defineProps({
   projectList: {

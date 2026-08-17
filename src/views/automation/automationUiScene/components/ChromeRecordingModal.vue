@@ -1401,10 +1401,14 @@ const onWindowMessage = (event: MessageEvent) => {
   if (event.source !== window) return
   const data = event.data || {}
   if (data.type === 'AT_RECORDING_LIVE') {
+    // 页面可能同时挂载场景列表和场景详情两个录制弹窗；只有当前打开的实例可以消费录制事件。
+    if (!visible.value) return
     recordingActive.value = true
     liveStepCount.value = Number(data.stepCount || 0)
   }
   if (data.type === 'AT_RECORDING_END') {
+    // 未打开的弹窗不能抢先去重事件，否则详情页不会刷新自己的用例树。
+    if (!visible.value) return
     const recordingEndEventRegistry = window as Window & { __SAKURA_RECORDING_END_EVENTS__?: Set<string> }
     const handledRecordingEndEvents = recordingEndEventRegistry.__SAKURA_RECORDING_END_EVENTS__
       ??= new Set<string>()

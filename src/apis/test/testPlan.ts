@@ -1,4 +1,5 @@
 import http from '@/utils/http'
+import type { AutomationCdpPlaybackOptions } from '@/apis/automation/automationPlaywrightRunner'
 
 const BASE_URL = '/test/testPlan'
 
@@ -62,7 +63,7 @@ export interface TestPlanExecuteReq {
   sceneIds?: string[]
   executionEngine?: TestExecutionEngine
   runnerOptions?: Record<string, unknown>
-  cdpOptions?: Record<string, unknown>
+  cdpOptions?: AutomationCdpPlaybackOptions
   executeName?: string
   executeEmail?: string
 }

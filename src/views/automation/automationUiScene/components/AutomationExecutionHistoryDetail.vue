@@ -40,6 +40,22 @@
       </a-space>
     </div>
 
+    <div
+      v-if="record.browserSessionSource !== '-' || record.sessionNavigationDecision !== '-'"
+      class="session-audit"
+    >
+      <span><small>请求模式</small><strong>{{ sessionModeLabel(record.sessionMode) }}</strong></span>
+      <span><small>实际模式</small><strong>{{ sessionModeLabel(record.appliedSessionMode) }}</strong></span>
+      <span><small>会话来源</small><strong>{{ browserSessionSourceLabel(record.browserSessionSource) }}</strong></span>
+      <span>
+        <small>失败重置</small>
+        <strong>{{ record.sessionReset ? `是（累计 ${record.sessionResetCount} 次）` : '否' }}</strong>
+      </span>
+      <span v-if="record.sessionNavigationDecision !== '-'">
+        <small>导航决策</small><strong>{{ navigationDecisionLabel(record.sessionNavigationDecision) }}</strong>
+      </span>
+    </div>
+
     <!-- <a-alert v-if="record.error !== '-'" type="error" class="record-alert">
       {{ record.errorCode !== '-' ? `[${record.errorCode}] ` : '' }}{{ record.error }}
     </a-alert> -->
@@ -59,8 +75,8 @@
         >
           <i :class="`state-${stepState(step)}`">{{ step.stepNumber }}</i>
           <span>
-            <strong>{{ step.stepName }}</strong>
-            <small style="margin-top: 5px;">{{ step.actionType }}</small>
+            <strong :title="step.stepName">{{ step.stepName }}</strong>
+            <small style="margin-top: 5px;" :title="step.actionType">{{ step.actionType }}</small>
           </span>
           <div style="display: flex; align-items: center; gap: 16px;">
             <em>{{ formatExecutionDuration(step.duration) }}</em>
@@ -158,7 +174,26 @@ function stepState(step: ExecutionHistoryStepRow) {
 }
 function sessionModeLabel(value: string) {
   if (value === 'reuse-browser') return '同一浏览器窗口'
-  return value === 'reuse-auth' ? '复用登录态' : '独立登录'
+  if (value === 'reuse-auth') return '复用登录态'
+  if (value === 'legacy-profile') return '当前浏览器兼容模式'
+  return value === 'isolated' ? '独立登录' : value || '-'
+}
+
+function browserSessionSourceLabel(value: string) {
+  if (value === 'managed-context') return '受控隔离会话'
+  if (value === 'current-profile') return '当前 Chrome Profile'
+  return value || '-'
+}
+
+function navigationDecisionLabel(value: string) {
+  const labels: Record<string, string> = {
+    'reused-browser-page': '接管上一用例页面，不重新导航',
+    'reused-browser-navigated': '复用浏览器并导航到用例起始页',
+    'auth-restored': '恢复上一条成功用例登录态',
+    'clean-context-created': '创建全新受控会话',
+    'browser-not-required': '纯基础设施用例，无需浏览器会话',
+  }
+  return labels[value] || value || '-'
 }
 </script>
 
@@ -263,6 +298,31 @@ function sessionModeLabel(value: string) {
   margin-bottom: 12px;
 }
 
+.session-audit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 12px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--color-border-2);
+}
+
+.session-audit span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.session-audit small {
+  color: var(--color-text-3);
+}
+
+.session-audit strong {
+  color: var(--color-text-1);
+  font-weight: 500;
+}
+
 .step-inspector {
   display: grid;
   min-height: 0;
@@ -288,7 +348,7 @@ function sessionModeLabel(value: string) {
   display: grid;
   box-sizing: border-box;
   width: 100%;
-  height: 48px;
+  height: 46px;
   grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
@@ -376,6 +436,7 @@ function sessionModeLabel(value: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
 
 .step-inspector__nav small,

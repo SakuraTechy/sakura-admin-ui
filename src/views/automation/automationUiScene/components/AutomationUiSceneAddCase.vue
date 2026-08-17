@@ -170,7 +170,8 @@
 
 <script setup lang="tsx">
 import { computed, defineEmits, defineProps, h, nextTick, reactive, ref, watch } from 'vue'
-import { Collapse, CollapseItem, Message } from '@arco-design/web-vue'
+import { Collapse, CollapseItem, Message, Tooltip } from '@arco-design/web-vue'
+import { IconQuestionCircle } from '@arco-design/web-vue/es/icon'
 import { useRouter } from 'vue-router'
 import { buildCaseTree, canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, toMovePosition } from '../caseTree'
 import type { AutomationUiCaseTreeNode } from '../caseTree'
@@ -262,6 +263,7 @@ const normalizeOperationCatalog = (source: any): AutomationOperationCatalog => (
               label: String(method?.label ?? ''),
               legacy_action: String(method?.legacy_action ?? method?.legacyAction ?? ''),
               action_type: String(method?.action_type ?? method?.actionType ?? ''),
+              description: String(method?.description ?? ''),
               aliases: Array.isArray(method?.aliases) ? method.aliases.map(String) : [],
               form_schema: Array.isArray(method?.form_schema ?? method?.formSchema)
                 ? method?.form_schema ?? method?.formSchema
@@ -350,12 +352,13 @@ const getInfrastructureActionType = (step: any) => {
   return ['server_command', 'database_sql', 'database_native'].includes(actionType || '') ? actionType : ''
 }
 const shouldUseInfrastructureConfig = (step: any) => Boolean(getInfrastructureActionType(step))
-// GiFormModal 保存回调可能持有打开弹窗时复制的表单对象；自定义配置组件始终更新 modalConfig.form。
-// 提交前显式取最新 configList，保证目录元数据与方法参数不会被旧表单快照覆盖。
+// GiFormModal 保存回调可能持有打开弹窗时复制的表单对象；自定义配置和状态开关会同步 modalConfig.form。
+// 提交前显式取最新状态和 configList，避免父子表单的旧快照覆盖用户刚刚修改的值。
 const withCurrentStepConfig = (data: any) => {
   const catalogMethod = getSelectedCatalogMethod(modalConfig.form) || getSelectedCatalogMethod(data)
   const stepData = {
     ...data,
+    status: normalizeAutomationNodeStatus(modalConfig.form.status ?? data.status),
     configList: Array.isArray(modalConfig.form.configList)
       ? modalConfig.form.configList.map((item: any) => ({ ...item }))
       : [],
@@ -387,6 +390,7 @@ const getOperationMethodOptions = () => {
     return (type?.methods || []).map((method) => ({
       label: method.label,
       value: method.method_code,
+      description: method.description,
       disabled: method.authoring_enabled === false,
       disabledReason: method.disabled_reason,
     }))
@@ -396,6 +400,23 @@ const getOperationMethodOptions = () => {
       .map((item: any) => ({ label: item.label, value: item.value, extra: item.extra }))
   }
   return []
+}
+const renderOperationMethodOption = ({ data }: { data: any }) => {
+  const method = findCatalogMethod(data?.value)
+  const label = String(data?.label || method?.label || '')
+  const description = String(method?.description || '')
+  return h('span', { class: 'operation-method-option' }, [
+    h('span', label),
+    description
+      ? h(Tooltip, { content: description, position: 'right' }, {
+        default: () => h(IconQuestionCircle, {
+          class: 'operation-method-option-help',
+          style: { marginLeft: '4px', color: 'var(--color-text-3)', cursor: 'help' },
+          'aria-label': '方法说明',
+        }),
+      })
+      : null,
+  ])
 }
 const cloneMethodConfig = (value: Record<string, unknown>) => JSON.parse(JSON.stringify(value)) as Record<string, unknown>
 const parseMethodConfig = (step: any, strict = false) => {
@@ -417,6 +438,16 @@ const newCatalogConfigList = (method: AutomationOperationMethod, methodConfig: R
   { paramsName: 'method_version', paramsValue: String(methodVersion) },
   { paramsName: 'method_config', paramsValue: JSON.stringify(methodConfig) },
 ]
+const mergeCatalogConfigList = (step: any, method: AutomationOperationMethod, methodConfig: Record<string, unknown>) => {
+  const catalogNames = new Set(['method_code', 'method_version', 'method_config'])
+  const existing = Array.isArray(step?.configList)
+    ? step.configList.filter((item: any) => item?.paramsName && !catalogNames.has(item.paramsName))
+    : []
+  return [
+    ...existing,
+    ...newCatalogConfigList(method, methodConfig, step?.methodVersion || method.method_version),
+  ]
+}
 const clearCatalogMethodDrafts = () => {
   Object.keys(catalogMethodDrafts).forEach((methodCode) => delete catalogMethodDrafts[methodCode])
 }
@@ -457,7 +488,8 @@ const normalizeCatalogStepForEdit = (step: any) => {
     operationName: method.label,
     operationValue: method.method_code,
     methodCode: method.method_code,
-    configList: newCatalogConfigList(method, methodConfig, step?.methodVersion || method.method_version),
+    // 状态切换也会走完整步骤保存，必须携带录制事实，不能只提交目录方法的三个配置项。
+    configList: mergeCatalogConfigList(step, method, methodConfig),
   }
 }
 const decorateTreeNode = (node: AutomationUiCaseTreeNode): TreeCateItem => ({
@@ -494,10 +526,12 @@ const getCreatedNodeId = (payload: any) => {
   if (typeof payload === 'string' || typeof payload === 'number') return String(payload)
   return String(payload?.stepId ?? payload?.caseId ?? payload?.id ?? '')
 }
+const getCaseStepCount = (caseId: string) => props.caseList
+  .find((item) => String(item.id) === String(caseId))?.stepList?.length || 0
 const getStepInsertMax = () => {
   const parentId = String(modalConfig.form?.pid || modalData.value?.caseId || '')
-  const parent = props.caseList.find(item => String(item.id) === parentId)
-  return (parent?.stepList?.length || 0) + 1
+  const currentSize = getCaseStepCount(parentId)
+  return modalConfig.title === '修改步骤' ? Math.max(currentSize, 1) : currentSize + 1
 }
 const getTreeCaseList = async (data?: any) => {
   let nodeToSelect: TreeCateItem | undefined
@@ -787,7 +821,6 @@ const modalConfig = reactive({
       field: 'order',
       type: 'input-number',
       required: true,
-      show: () => modalConfig.title === '新增步骤',
       props: {
         min: 1,
         max: getStepInsertMax(),
@@ -865,6 +898,9 @@ const modalConfig = reactive({
         allowClear: true,
         allowSearch: true,
       },
+      slots: {
+        option: renderOperationMethodOption,
+      },
     },
     {
       label: '操作步骤',
@@ -884,6 +920,8 @@ const modalConfig = reactive({
           'confirmReset': modalConfig.title === '修改步骤',
           'workbench': useStepWorkbenchLayout.value,
           'contextLabel': workbenchMethodContext.value,
+          'sceneDbId': uiStore.activeId,
+          'projectId': props.projectId,
           'onUpdate:modelValue': (val: any) => {
             modalConfig.form.configList = val
           },
@@ -974,6 +1012,10 @@ const modalConfig = reactive({
         uncheckedValue: 2,
         checkedText: '启用',
         uncheckedText: '禁用',
+        onChange: (value: any) => {
+          // GiFormModal 使用本地表单副本，状态必须同步到父表单，避免深度监听恢复旧值。
+          modalConfig.form.status = normalizeAutomationNodeStatus(value)
+        },
       },
     },
   ]),
@@ -1089,10 +1131,10 @@ const validateInfrastructureTargetForSave = (step: any) => {
     const methodConfig = JSON.parse(getStepConfig(step, 'method_config') || '{}')
     const targetRef = methodConfig?.target_ref
     const expectedKind = actionType === 'server_command' ? 'server' : 'database'
-    const configId = Number(targetRef?.config_id)
-    if (targetRef?.scope !== 'project_config' || targetRef?.kind !== expectedKind
-      || !Number.isInteger(configId) || configId <= 0) {
-      Message.warning(`请选择有效的${expectedKind === 'server' ? '目标服务器' : '目标数据库'}`)
+    const slotId = Number(targetRef?.slot_id)
+    if (targetRef?.scope !== 'project_environment' || targetRef?.kind !== expectedKind
+      || !Number.isInteger(slotId) || slotId <= 0) {
+      Message.warning(`请选择有效的${expectedKind === 'server' ? '服务器角色' : '数据库角色'}`)
       return false
     }
     return true
@@ -1132,6 +1174,7 @@ const buildStepEditFields = (stepData: any): Omit<AutomationUiStepEditReq, 'pid'
   const parsed = JSON.parse(getStepConfig(stepData, 'method_config') || '{}')
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('方法配置不是 JSON 对象')
   return {
+    order: stepData.order == null ? undefined : Number(stepData.order),
     name: stepData.name,
     remark: stepData.remark,
     status: stepData.status,
@@ -1283,6 +1326,7 @@ const handleSave = async (data: any) => {
         name: stepEditFields.name,
         remark: stepEditFields.remark,
         step: {
+          order: stepEditFields.order,
           name: stepEditFields.name,
           remark: stepEditFields.remark,
           status: stepEditFields.status,
@@ -1505,9 +1549,18 @@ const onMenuClick = async (data?: any) => {
               console.warn('获取步骤统一详情失败，使用树节点数据', error)
             }
           }
-          modalConfig.form = data.node?.type === 'case'
-            ? { name: detail?.name, remark: detail?.remark, type: data.node.type }
-            : normalizeCatalogStepForEdit({ ...detail, id: data.node.stepId, status: normalizeAutomationNodeStatus(detail?.status) })
+          if (data.node?.type === 'case') {
+            modalConfig.form = { name: detail?.name, remark: detail?.remark, type: data.node.type }
+          } else {
+            const copyForm = normalizeCatalogStepForEdit({
+              ...detail,
+              id: data.node.stepId,
+              status: normalizeAutomationNodeStatus(detail?.status),
+            })
+            // 复制步骤默认仍追加到末尾，只有用户主动调整序号时才改变插入位置。
+            copyForm.order = getCaseStepCount(data.node.caseId) + 1
+            modalConfig.form = copyForm
+          }
           modalData.value = data.node
         }
         break
@@ -1579,7 +1632,7 @@ export default {}
 }
 :deep(.gi-tree__tree){
   // height: 11%;
-  margin-bottom: 80px;
+  margin-bottom: 10px;
 }
 
 :global(.remark-editor-collapse .arco-collapse-item-content) {

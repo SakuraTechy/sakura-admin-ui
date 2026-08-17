@@ -12,9 +12,10 @@ export interface AutomationOperationFormField {
   default?: unknown
   placeholder?: string
   help?: string
+  tooltip?: string
   min?: number
   max?: number
-  options?: Array<{ label: string, value: string | number | boolean }>
+  options?: Array<{ label: string, value: string | number | boolean, help?: string }>
   visible_when?: AutomationOperationFormCondition
   required_when?: AutomationOperationFormCondition
   [key: string]: unknown
@@ -28,6 +29,7 @@ export interface AutomationOperationMethod {
   method_code: string
   method_version: number
   label: string
+  description?: string
   legacy_action: string
   action_type: string
   diagnostic_profile?: string

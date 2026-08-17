@@ -385,8 +385,23 @@
               size="small"
             >
               <a-alert type="warning" show-icon>
-                将使用当前已连接 CueCast 的 Chrome 会话串行执行，请保持页面和浏览器连接开启。
+                {{ execCdpConfig.sessionMode === 'legacy-profile'
+                  ? '默认新建并复用一个普通 Chrome 回放窗口；共享登录态和站点存储，不提供无痕隔离。'
+                  : execCdpManagedContextAvailable && execCdpGrayEnabled
+                    ? '将由 CueCast 在受控无痕会话中串行执行，请保持页面和浏览器连接开启。'
+                    : `当前只能使用浏览器兼容模式。${execCdpManagedContextAvailable ? execCdpGrayReason : execCdpCapabilitiesReason}` }}
               </a-alert>
+              <a-form-item label="用例会话">
+                <a-select
+                  v-model="execCdpConfig.sessionMode"
+                  :options="execCdpSessionModeOptions"
+                  :loading="execCdpCapabilityLoading"
+                  :disabled="execCdpCapabilityLoading"
+                />
+              </a-form-item>
+              <a-form-item label="忽略 HTTPS 证书错误">
+                <a-switch v-model="execCdpConfig.ignoreHttpsErrors" />
+              </a-form-item>
               <a-form-item label="执行窗口尺寸">
                 <a-radio-group v-model="execCdpConfig.windowSizeMode">
                   <a-radio value="maximized">默认最大化</a-radio>
@@ -488,8 +503,13 @@ import {
   getAutomationEnvironmentConfigList,
   getAutomationEnvironmentRuntimeStatus,
 } from '@/apis/automation/automationEnvironmentConfig'
-import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
+import {
+  getAutomationCdpPlaybackAvailability,
+  type AutomationCdpPlaybackOptions,
+  type AutomationPlaywrightRunnerOptions,
+} from '@/apis/automation/automationPlaywrightRunner'
 import { getAutomationUiSceneSelected } from '@/apis/automation/automationUiScene'
+import { getExtensionCdpCapabilities } from '@/views/automation/automationUiScene/extensionPlayback'
 import { getUser, listAllUser, listSystemUser, type UserResp } from '@/apis/system/user'
 import { useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
@@ -1018,7 +1038,10 @@ const execRunnerConfig = reactive<AutomationPlaywrightRunnerOptions>({
   slowMoMs: 0,
   finishDelayMs: 0,
 })
-const execCdpConfig = reactive({
+const execCdpConfig = reactive<AutomationCdpPlaybackOptions>({
+  browserSessionSource: 'current-profile',
+  sessionMode: 'legacy-profile',
+  ignoreHttpsErrors: false,
   windowSizeMode: 'maximized' as 'maximized' | 'current' | 'custom',
   viewportWidth: 1920,
   viewportHeight: 1080,
@@ -1035,6 +1058,15 @@ const runnerSessionModeOptions = [
   { label: '复用上一条成功用例登录态', value: 'reuse-auth' },
   { label: '同一浏览器窗口连续执行', value: 'reuse-browser' },
 ]
+const execCdpManagedContextAvailable = ref(false)
+const execCdpGrayEnabled = ref(false)
+const execCdpCapabilityLoading = ref(false)
+const execCdpCapabilitiesReason = ref('尚未完成 CueCast 能力探测。')
+const execCdpGrayReason = ref('')
+const execCdpSessionModeOptions = computed(() => [
+  { label: '当前浏览器兼容模式（非隔离）', value: 'legacy-profile' },
+  ...(execCdpManagedContextAvailable.value && execCdpGrayEnabled.value ? runnerSessionModeOptions : []),
+])
 const artifactPolicyOptions = [
   { label: '关闭', value: 'off' },
   { label: '始终保留', value: 'on' },
@@ -1146,12 +1178,55 @@ const resetExecRuntimeConfig = () => {
     finishDelayMs: 0,
   })
   Object.assign(execCdpConfig, {
+    browserSessionSource: 'current-profile',
+    sessionMode: 'legacy-profile',
+    ignoreHttpsErrors: false,
     windowSizeMode: 'maximized',
     viewportWidth: 1920,
     viewportHeight: 1080,
     pageErrorCheckEnabled: true,
   })
+  execCdpManagedContextAvailable.value = false
+  execCdpGrayEnabled.value = false
+  execCdpCapabilitiesReason.value = '尚未完成 CueCast 能力探测。'
+  execCdpGrayReason.value = ''
 }
+
+const probeExecCdpCapabilities = async () => {
+  execCdpCapabilityLoading.value = true
+  try {
+    const [capabilityResult, availabilityResult] = await Promise.allSettled([
+      getExtensionCdpCapabilities(),
+      getAutomationCdpPlaybackAvailability().then((response) => response.data),
+    ])
+    if (capabilityResult.status === 'fulfilled') {
+      execCdpManagedContextAvailable.value = capabilityResult.value.managedBrowserContext
+      execCdpCapabilitiesReason.value = capabilityResult.value.reason || ''
+    } else {
+      execCdpManagedContextAvailable.value = false
+      execCdpCapabilitiesReason.value = capabilityResult.reason?.message || '未检测到扩展受控浏览器能力'
+    }
+    if (availabilityResult.status === 'fulfilled') {
+      execCdpGrayEnabled.value = availabilityResult.value.managedContextEnabled
+      execCdpGrayReason.value = availabilityResult.value.reason || ''
+    } else {
+      execCdpGrayEnabled.value = false
+      execCdpGrayReason.value = availabilityResult.reason?.message || '无法确认 Admin 灰度资格'
+    }
+  } finally {
+    Object.assign(execCdpConfig, {
+      browserSessionSource: 'current-profile',
+      sessionMode: 'legacy-profile',
+    })
+    execCdpCapabilityLoading.value = false
+  }
+}
+
+watch(() => execCdpConfig.sessionMode, (sessionMode) => {
+  execCdpConfig.browserSessionSource = sessionMode === 'legacy-profile'
+    ? 'current-profile'
+    : 'managed-context'
+})
 
 const refreshExecProjectEnvironmentStatus = async (environmentId: string) => {
   const option = execProjectEnvironmentOptions.value.find(item => item.value === environmentId)
@@ -1277,6 +1352,9 @@ const onExecAutomationEnvironmentChange = async (value: unknown) => {
 }
 
 const onExecEngineChange = async () => {
+  if (execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL') {
+    await probeExecCdpCapabilities()
+  }
   if (execState.executionEngine === 'SELENIUM' && !execAutomationEnvironmentOptions.value.length) {
     execConfigLoading.value = true
     try {
@@ -1343,6 +1421,7 @@ const cdpPlanDispatch = ref<{
   plan: TestPlanResp
   reportId: string
   projectEnvironmentId: string
+  cdpOptions: AutomationCdpPlaybackOptions
   queue: Array<{ scene: any, caseIds: string[] }>
 } | null>(null)
 
@@ -1530,7 +1609,7 @@ const onPlanExecutionStart = async (payload: {
   executionType: Exclude<ExecutionType, 'jenkins'>
   projectEnvironmentId: string
   runnerOptions?: AutomationPlaywrightRunnerOptions
-  cdpOptions?: Record<string, unknown>
+  cdpOptions?: AutomationCdpPlaybackOptions
 }) => {
   const planTab = sceneTabs.value.find((tab) => tab.key === activeExecutionTabKey.value)
   if (!planTab || !planCaseExecutionSceneIds.value.length) {
@@ -1588,6 +1667,7 @@ const onPlaywrightExecutionFinished = async (payload?: { cancelled?: boolean }) 
         testPlanId: toIdString(cdpPlanDispatch.value.plan.id),
         testReportId: cdpPlanDispatch.value.reportId,
         projectEnvironmentId: cdpPlanDispatch.value.projectEnvironmentId,
+        cdpOptions: cdpPlanDispatch.value.cdpOptions,
         autoStart: true,
       })
       return
@@ -1847,6 +1927,7 @@ const submitExecute = async (): Promise<boolean> => {
       plan: nextRecord,
       reportId: String(executeResp.testReportId),
       projectEnvironmentId,
+      cdpOptions: { ...execCdpConfig },
       queue,
     }
     const first = cdpPlanDispatch.value.queue.shift()
@@ -1857,6 +1938,7 @@ const submitExecute = async (): Promise<boolean> => {
         testPlanId: toIdString(nextRecord.id),
         testReportId: String(executeResp.testReportId),
         projectEnvironmentId,
+        cdpOptions: cdpPlanDispatch.value.cdpOptions,
         autoStart: true,
       })
     } else {

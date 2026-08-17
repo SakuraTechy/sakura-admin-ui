@@ -16,13 +16,41 @@ export interface RecordingSceneReq {
   tags?: Array<unknown>
 }
 
+export type AutomationLocatorStrategy = 'css' | 'xpath' | 'text' | 'role' | 'label' | 'placeholder' | 'testid'
+
+export interface AutomationLocatorCandidate {
+  type: string
+  value: string
+  score?: number
+  context?: Record<string, unknown>
+}
+
+export interface AutomationLocatorMeta {
+  version?: number
+  candidates: AutomationLocatorCandidate[]
+  context?: Record<string, unknown>
+  assertion?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface AutomationTypedTargetRef {
+  strategy: AutomationLocatorStrategy
+  value: string
+  exact?: boolean
+  target_selector?: string
+  target_xpath?: string
+  locator_meta?: AutomationLocatorMeta | string
+  [key: string]: unknown
+}
+
 export interface PlaywrightRecordedStepReq {
   id?: unknown
   step_index?: number
   action_type?: string
   target_selector?: string
   target_xpath?: string
-  locator_meta?: unknown
+  target_ref?: AutomationTypedTargetRef | string
+  locator_meta?: AutomationLocatorMeta | string
   value?: unknown
   value_masked?: unknown
   url?: string

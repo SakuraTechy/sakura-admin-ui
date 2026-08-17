@@ -1116,7 +1116,7 @@ export default {}
 
 <style scoped lang="scss">
 :deep(.gi-page-layout__left) {
-  padding: 20px 35px 0px 35px!important;
+  // padding: 20px 35px 0px 35px!important;
   flex-direction: column;
 }
 

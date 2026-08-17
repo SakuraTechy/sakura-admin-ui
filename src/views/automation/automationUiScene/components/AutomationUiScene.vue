@@ -252,6 +252,7 @@ import {
   type ExecutionViewType,
   executionTypeOptions,
   executionViewLabels,
+  isExecutableCase,
 } from '../execution'
 
 defineOptions({ name: 'AutomationUiScene' })
@@ -687,7 +688,7 @@ const queueSelectedScenes = (payload: ExecutionCaseSelection) => {
     scene,
     executionType: payload.executionType,
     caseIds: (Array.isArray(scene.caseList) ? scene.caseList : [])
-      .filter(caseItem => Array.isArray(caseItem.stepList) && caseItem.stepList.length > 0)
+      .filter(isExecutableCase)
       .map(caseItem => String(caseItem.id)),
   }))
   openNextQueuedCaseExecution()

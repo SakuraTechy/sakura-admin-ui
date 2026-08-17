@@ -26,6 +26,20 @@ export interface AutomationPlaywrightBatchCreateReq {
   testPlanId?: string
   testReportId?: string
   executionConfig?: Record<string, unknown>
+  cdpOptions?: AutomationCdpPlaybackOptions
+}
+
+export type AutomationCdpSessionMode = 'legacy-profile' | 'isolated' | 'reuse-auth' | 'reuse-browser'
+export type AutomationCdpBrowserSessionSource = 'current-profile' | 'managed-context'
+
+export interface AutomationCdpPlaybackOptions {
+  browserSessionSource: AutomationCdpBrowserSessionSource
+  sessionMode: AutomationCdpSessionMode
+  ignoreHttpsErrors: boolean
+  windowSizeMode: 'maximized' | 'current' | 'custom'
+  viewportWidth: number
+  viewportHeight: number
+  pageErrorCheckEnabled: boolean
 }
 
 export interface AutomationPlaywrightBatchCase {
@@ -46,7 +60,17 @@ export interface AutomationPlaywrightBatchResp {
   executeName: string
   executeEmail?: string
   startedAt: string
+  sessionConfig?: {
+    browserSessionSource: AutomationCdpBrowserSessionSource
+    sessionMode: AutomationCdpSessionMode
+  }
   cases: AutomationPlaywrightBatchCase[]
+}
+
+/** 当前登录账号的 CDP 受控会话灰度资格；不会暴露服务端白名单。 */
+export interface AutomationCdpPlaybackAvailability {
+  managedContextEnabled: boolean
+  reason?: string
 }
 
 export interface AutomationPlaywrightBatchCaseStatusReq {
@@ -108,6 +132,10 @@ export function createAutomationPlaywrightRunnerJob(req: AutomationPlaywrightRun
 
 export function createAutomationPlaywrightBatch(req: AutomationPlaywrightBatchCreateReq) {
   return http.post<AutomationPlaywrightBatchResp>('/automation/playwright/execution-batches', req)
+}
+
+export function getAutomationCdpPlaybackAvailability() {
+  return http.get<AutomationCdpPlaybackAvailability>('/automation/playwright/execution-batches/cdp-playback/availability')
 }
 
 export function updateAutomationPlaywrightBatchCase(
