@@ -614,6 +614,7 @@ const handleOk = async () => {
           projectId: sceneList.value[0]?.projectId || sceneQuery.value.projectId,
           versionId: sceneList.value[0]?.versionId || sceneQuery.value.versionId,
           moduleId: sceneQuery.value.moduleId,
+          moduleIds: sceneQuery.value.moduleIds,
           level: sceneQuery.value.level,
           executeStatus: sceneQuery.value.executeStatus,
           executeResult: sceneQuery.value.executeResult,

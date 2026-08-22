@@ -16,7 +16,9 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import { useWindowSize } from '@vueuse/core'
-import { addAutomationUiScene, getAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { addAutomationUiScene, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { invalidateAutomationUiDefinition } from '../queryCache'
+import { loadAutomationUiExecutionSelectionScene } from '../queryCache'
 import type { ColumnItem, GiForm } from '@/components/GiForm'
 import { useResetReactive } from '@/hooks'
 import { useDict } from '@/hooks/app'
@@ -139,6 +141,7 @@ const save = async () => {
     if (isInvalid) return false
     if (isUpdate.value) {
       await updateAutomationUiScene(form, dataId.value)
+      invalidateAutomationUiDefinition(dataId.value)
       Message.success('修改成功')
     } else {
       await addAutomationUiScene(form)
@@ -162,8 +165,8 @@ const onAdd = async () => {
 const onUpdate = async (id: string) => {
   reset()
   dataId.value = id
-  const { data } = await getAutomationUiScene(id)
-  Object.assign(form, data)
+  const data = await loadAutomationUiExecutionSelectionScene(id, {}, undefined, { projectedPage: 1, projectedPageSize: 1 })
+  assignSceneFields(data)
   visible.value = true
 }
 
@@ -171,9 +174,21 @@ const onUpdate = async (id: string) => {
 const onCopy = async (id: string) => {
   reset()
   dataId.value = ''
-  const { data } = await getAutomationUiScene(id)
-  Object.assign(form, data)
+  const data = await loadAutomationUiExecutionSelectionScene(id, {}, undefined, { projectedPage: 1, projectedPageSize: 1 })
+  assignSceneFields(data)
   visible.value = true
+}
+
+const assignSceneFields = (data: any) => {
+  form.sceneId = data.sceneId
+  form.name = data.name
+  form.description = data.description
+  form.projectId = data.projectId
+  form.versionId = data.versionId
+  form.moduleId = data.moduleId
+  form.level = data.level
+  form.status = data.status
+  form.tags = data.tags
 }
 
 defineExpose({ onAdd, onUpdate, onCopy })

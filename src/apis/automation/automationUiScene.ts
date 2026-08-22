@@ -125,6 +125,7 @@ export interface AutomationUiSceneQuery {
   projectId?: string | undefined
   versionId?: string | undefined
   moduleId?: string | undefined
+  moduleIds?: string[] | undefined
   level?: string | undefined
   executeStatus?: string | undefined
   executeResult?: string | undefined
@@ -161,6 +162,7 @@ export interface AutomationUiSceneExecAllReq {
   projectId: string | number
   versionId: string | number
   moduleId?: string | number
+  moduleIds?: Array<string | number>
   level?: string
   executeStatus?: string
   executeResult?: string
@@ -251,6 +253,7 @@ export interface AutomationUiStep {
   operationType?: string
   operationName?: string
   operationValue?: string
+  continueOnFailure?: boolean
   configList: AutomationUiStepConfig[]
   order: number
   status: number | string
@@ -299,6 +302,7 @@ export interface AutomationUiStepDetail {
   operationType?: string
   operationName?: string
   operationValue?: string
+  continueOnFailure?: boolean
   methodCode?: string
   methodVersion?: number
   methodConfig?: Record<string, unknown>
@@ -347,6 +351,7 @@ export interface AutomationUiStepEditReq {
   operationType?: string
   operationName?: string
   operationValue?: string
+  continueOnFailure?: boolean
   methodCode?: string
   methodVersion?: number
   methodConfig?: Record<string, unknown>
@@ -362,6 +367,7 @@ export interface AutomationUiStepCopyReq {
   operationType?: string
   operationName?: string
   operationValue?: string
+  continueOnFailure?: boolean
   configList?: AutomationUiStepConfig[]
 }
 

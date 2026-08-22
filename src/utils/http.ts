@@ -11,6 +11,8 @@ import router from '@/router'
 export type SilentAxiosRequestConfig = AxiosRequestConfig & {
   /** 轮询和可回退的资源请求由业务组件展示局部状态，避免全局重复提示。 */
   silentError?: boolean
+  /** 新分层查询接口直接返回 DTO，由调用方显式声明后跳过旧 R 包装校验。 */
+  rawResponse?: boolean
 }
 
 interface ICodeMessage {
@@ -105,6 +107,7 @@ http.interceptors.response.use(
   (response: AxiosResponse) => {
     const { data } = response
     if (response.config.responseType === 'blob') return handleBlobResponse(response)
+    if ((response.config as SilentAxiosRequestConfig).rawResponse) return response
 
     const { success, code, msg } = data
 
@@ -158,9 +161,9 @@ const request = async <T = unknown>(config: SilentAxiosRequestConfig): Promise<A
     .catch((err: { msg: string }) => Promise.reject(err))
 }
 
-const requestNative = async <T = unknown>(config: SilentAxiosRequestConfig): Promise<AxiosResponse> => {
+const requestNative = async <T = unknown>(config: SilentAxiosRequestConfig): Promise<AxiosResponse<T>> => {
   return http.request<T>(config)
-    .then((res: AxiosResponse) => res)
+    .then((res: AxiosResponse<T>) => res)
     .catch((err: { msg: string }) => Promise.reject(err))
 }
 

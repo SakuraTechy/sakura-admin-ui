@@ -336,7 +336,7 @@
 </template>
 
 <script setup lang="tsx">
-import { Message, Modal, type TableInstance } from '@arco-design/web-vue'
+import { Message, type TableInstance } from '@arco-design/web-vue'
 import { BarChart, PieChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { use } from 'echarts/core'
@@ -344,7 +344,9 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import GiTable from '@/components/GiTable'
 import { GiCellTag, GiCellTags } from '@/components/GiCell'
-import { listAutomationUiScene, type AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
+import type { AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
+import { getAutomationUiExecution, getAutomationUiSceneSummaryPage } from '@/apis/automation/automationUiQuery'
+import { mapScopedSceneSummary } from '@/views/automation/automationUiScene/sceneSummary'
 import { usePagination } from '@/hooks'
 import { pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 import { useDict } from '@/hooks/app'
@@ -539,54 +541,69 @@ const currentSceneType = ref<'all' | 'pass' | 'fail' | 'skip'>('all')
 
 const { pagination: tablePagination, setTotal } = usePagination(() => {
   fetchSceneList(currentSceneType.value)
-}, { defaultPageSize: 10, defaultSizeOptions: [10, 20, 30, 50, 100] })
+}, { defaultPageSize: 10, defaultSizeOptions: [10, 20, 30, 50] })
 
 const getRecordField = (record: AutomationUiSceneResp, field: string) => {
   if (record.testRecord?.length) {
     const rec = record.testRecord[0] as Record<string, any>
-    if (rec?.[field]) return rec[field]
+    if (rec?.[field] !== undefined && rec[field] !== null && rec[field] !== '') return rec[field]
+  }
+  if (record.debugRecord?.length) {
+    const rec = record.debugRecord[0] as Record<string, any>
+    if (rec?.[field] !== undefined && rec[field] !== null && rec[field] !== '') return rec[field]
   }
   if (field in record) return (record as any)[field]
   return null
 }
 
-const handleConsoleUrl = (record: AutomationUiSceneResp) => {
-  const url = getRecordField(record, 'consoleUrl')
-  if (url) window.open(url, '_blank')
+const loadExecutionLink = async (record: AutomationUiSceneResp, field: 'consoleUrl' | 'testReportUrl') => {
+  const currentUrl = getRecordField(record, field)
+  if (currentUrl) return String(currentUrl)
+  const executionRecord = (record.testRecord?.[0] || record.debugRecord?.[0]) as Record<string, any> | undefined
+  const executionDbId = executionRecord?.executionDbId
+  if (!executionDbId) return ''
+  const response = await getAutomationUiExecution(executionDbId)
+  return String(response.data?.[field] || '')
 }
 
-const handleTestReportUrl = (record: AutomationUiSceneResp) => {
-  const url = getRecordField(record, 'testReportUrl')
-  if (url) window.open(url, '_blank')
+const openExecutionLink = async (record: AutomationUiSceneResp, field: 'consoleUrl' | 'testReportUrl', errorMessage: string) => {
+  const targetWindow = window.open('about:blank', '_blank')
+  try {
+    const url = await loadExecutionLink(record, field)
+    if (!url) throw new Error(errorMessage)
+    if (targetWindow) targetWindow.location.href = url
+    else window.open(url, '_blank')
+    return url
+  } catch (error: any) {
+    targetWindow?.close()
+    Message.error(error?.message || errorMessage)
+    return ''
+  }
 }
 
-const handleTestVideoUrl = (record: AutomationUiSceneResp) => {
-  const url = getRecordField(record, 'testReportUrl')
-  if (!url) return
-  const videoUrl = url.includes('/index.html')
-    ? url.replace('/index.html', `/video/${record.sceneId}.mp4`)
-    : `${url.replace(/\/$/, '')}/video/${record.sceneId}.mp4`
-  window.open(videoUrl, '_blank')
+const handleConsoleUrl = (record: AutomationUiSceneResp) => openExecutionLink(record, 'consoleUrl', '当前执行没有可用日志链接')
+
+const handleTestReportUrl = (record: AutomationUiSceneResp) => openExecutionLink(record, 'testReportUrl', '当前执行没有可用报告链接')
+
+const handleTestVideoUrl = async (record: AutomationUiSceneResp) => {
+  const targetWindow = window.open('about:blank', '_blank')
+  try {
+    const url = await loadExecutionLink(record, 'testReportUrl')
+    if (!url) throw new Error('当前执行没有可用回放链接')
+    const videoUrl = url.includes('/index.html')
+      ? url.replace('/index.html', `/video/${record.sceneId}.mp4`)
+      : `${url.replace(/\/$/, '')}/video/${record.sceneId}.mp4`
+    if (targetWindow) targetWindow.location.href = videoUrl
+    else window.open(videoUrl, '_blank')
+  } catch (error: any) {
+    targetWindow?.close()
+    Message.error(error?.message || '当前执行没有可用回放链接')
+  }
 }
 
 const toNumber = (value: unknown) => {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-const normalizeRecord = (record: AutomationUiSceneResp) => {
-  const testRecord = record.testRecord?.[0] as Record<string, any>
-  const fields = ['consoleUrl', 'testReportUrl', 'executeStatus', 'executeResult', 'duration',
-    'caseTotal', 'casePass', 'caseFail', 'caseSkip', 'casePassRate',
-    'stepTotal', 'stepPass', 'stepFail', 'stepSkip', 'stepPassRate',
-    'scenePass', 'sceneFail', 'sceneSkip', 'scenePassRate', 'executeName', 'durationStartTime', 'durationEndTime']
-  for (const field of fields) {
-    const val = testRecord?.[field]
-    if (val !== undefined) {
-      (record as any)[field] = val
-    }
-  }
-  return record
 }
 
 const fetchSceneList = async (type: 'all' | 'pass' | 'fail' | 'skip') => {
@@ -595,24 +612,26 @@ const fetchSceneList = async (type: 'all' | 'pass' | 'fail' | 'skip') => {
   }
   loading.value = true
   try {
-    const executeResultType = props.detailData?.executeMode === 'DEBUG' ? 'debug' : 'report'
+    const recordSource = props.detailData?.executeMode === 'DEBUG' ? 'debug' : 'test'
     const executeResultMap: Record<string, string | undefined> = {
       all: undefined,
       pass: '14',
       fail: '15',
       skip: '16',
     }
-    const res = await listAutomationUiScene({
-      testPlanId: testPlanId.value,
-      testReportId: testReportId.value,
-      buildNumber: buildNumber.value,
-      executeResultType: executeResultType as 'report' | 'debug',
+    const res = await getAutomationUiSceneSummaryPage({
+      recordSource,
+      scopeTestPlanId: testPlanId.value,
+      scopeTestReportId: testReportId.value,
+      scopeBuildNumber: buildNumber.value,
+      executionMatchedOnly: true,
       executeResult: executeResultMap[type],
       page: tablePagination.current,
       size: tablePagination.pageSize,
+      sort: ['sceneDbId,asc'],
     })
     const result = res.data
-    const list = (result?.list || []).map(normalizeRecord)
+    const list = (result?.list || []).map(summary => mapScopedSceneSummary(summary, recordSource))
     const total = result?.total || 0
     setTotal(total)
     if (type === 'all') {

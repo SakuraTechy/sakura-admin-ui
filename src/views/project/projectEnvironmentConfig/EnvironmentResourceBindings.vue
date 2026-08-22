@@ -5,9 +5,15 @@
         <h3>环境资源绑定</h3>
         <p>场景步骤只引用资源角色，执行时按当前环境解析实际资源。</p>
       </div>
-      <a-button type="text" shape="circle" :loading="loading" aria-label="刷新环境资源" @click="load">
-        <template #icon><icon-refresh /></template>
-      </a-button>
+      <a-space :size="8">
+        <a-button type="outline" size="small" :loading="creatingCustomDatabase" @click="addCustomDatabase">
+          <template #icon><icon-plus /></template>
+          新增自定义数据库
+        </a-button>
+        <a-button type="text" shape="circle" :loading="loading" aria-label="刷新环境资源" @click="load">
+          <template #icon><icon-refresh /></template>
+        </a-button>
+      </a-space>
     </div>
     <a-table :data="resources" :pagination="false" row-key="slotId" size="small" :loading="loading">
       <template #columns>
@@ -41,8 +47,9 @@
         </a-table-column>
         <a-table-column title="操作" :width="110" align="center">
           <template #cell="{ record }">
-            <a-space v-if="record.resourceKind === 'CERTIFICATE'" :size="4">
+            <a-space v-if="record.resourceKind === 'CERTIFICATE' || isCustomDatabase(record)" :size="4">
               <a-upload
+                v-if="record.resourceKind === 'CERTIFICATE'"
                 :accept="certificateAccept"
                 :show-file-list="false"
                 :custom-request="options => uploadCertificate(record, options)"
@@ -60,6 +67,11 @@
                   <template #icon><icon-delete /></template>
                 </a-button>
               </a-tooltip>
+              <a-tooltip v-if="isCustomDatabase(record)" content="删除自定义数据库角色">
+                <a-button type="text" status="danger" shape="circle" aria-label="删除自定义数据库角色" @click="removeCustomDatabase(record)">
+                  <template #icon><icon-delete /></template>
+                </a-button>
+              </a-tooltip>
             </a-space>
           </template>
         </a-table-column>
@@ -69,8 +81,8 @@
 </template>
 
 <script setup lang="ts">
-import { Message, type RequestOption, type SelectOptionData } from '@arco-design/web-vue'
-import { bindEnvironmentResource, listEnvironmentResources, unbindEnvironmentResource, uploadEnvironmentCertificate } from '@/apis/automation/environmentResources'
+import { Message, Modal, type RequestOption, type SelectOptionData } from '@arco-design/web-vue'
+import { bindEnvironmentResource, createCustomDatabaseSlot, deleteCustomDatabaseSlot, listEnvironmentResources, unbindEnvironmentResource, uploadEnvironmentCertificate } from '@/apis/automation/environmentResources'
 import type { EnvironmentResource, EnvironmentResourceKind } from '@/apis/automation/environmentResources'
 import { getProjectServerConfigList } from '@/apis/project/projectServerConfig'
 import { getProjectDataBaseConfigList } from '@/apis/project/projectDataBaseConfig'
@@ -84,6 +96,7 @@ const resources = ref<EnvironmentResource[]>([])
 const serverOptions = ref<SelectOptionData[]>([])
 const databaseOptions = ref<SelectOptionData[]>([])
 const loading = ref(false)
+const creatingCustomDatabase = ref(false)
 const certificateAccept = '.lic,.p12,.pfx,.pem,.crt,.cer,.der,.key,.jks,.p7b,.p7c'
 
 const kindLabel = (kind: EnvironmentResourceKind) => ({
@@ -93,6 +106,7 @@ const kindLabel = (kind: EnvironmentResourceKind) => ({
 }[kind])
 
 const resourceOptions = (kind: EnvironmentResourceKind) => kind === 'SERVER' ? serverOptions.value : databaseOptions.value
+const isCustomDatabase = (resource: EnvironmentResource) => resource.resourceKind === 'DATABASE' && resource.resourceCode.startsWith('CUSTOM_DB_')
 
 const load = async () => {
   if (!props.environmentId || !props.projectId) return
@@ -104,17 +118,23 @@ const load = async () => {
       getProjectDataBaseConfigList({ projectId: String(props.projectId), status: 1, sort: ['ip,asc'] }),
     ])
     resources.value = resourceResult.data || []
-    serverOptions.value = (serverResult.data || []).map(item => ({
+    serverOptions.value = (serverResult.data || []).map((item) => ({
       value: String(item.id),
       label: `${item.ip}${item.port ? `:${item.port}` : ''}`,
     }))
-    databaseOptions.value = (databaseResult.data || []).map(item => ({
+    databaseOptions.value = (databaseResult.data || []).map((item) => ({
       value: String(item.id),
       label: `${item.ip}${item.port ? `:${item.port}` : ''}/${item.dataBase || ''}`,
     }))
   } finally {
     loading.value = false
   }
+}
+
+const removeBinding = async (resource: EnvironmentResource) => {
+  await unbindEnvironmentResource(props.environmentId, resource.slotId)
+  Message.success(`${resource.resourceName}已解除绑定`)
+  await load()
 }
 
 const changeBinding = async (resource: EnvironmentResource, value: unknown) => {
@@ -126,6 +146,32 @@ const changeBinding = async (resource: EnvironmentResource, value: unknown) => {
   await bindEnvironmentResource(props.environmentId, resource.slotId, resourceId)
   Message.success(`${resource.resourceName}绑定成功`)
   await load()
+}
+
+const addCustomDatabase = async () => {
+  if (!props.projectId || creatingCustomDatabase.value) return
+  creatingCustomDatabase.value = true
+  try {
+    await createCustomDatabaseSlot(props.projectId)
+    Message.success('自定义数据库角色新增成功')
+    await load()
+  } finally {
+    creatingCustomDatabase.value = false
+  }
+}
+
+const removeCustomDatabase = (resource: EnvironmentResource) => {
+  Modal.warning({
+    title: '删除自定义数据库角色',
+    content: `确认删除“${resource.resourceName}”？删除后该角色将不能再用于操作步骤。`,
+    okText: '删除',
+    cancelText: '取消',
+    onOk: async () => {
+      await deleteCustomDatabaseSlot(resource.slotId)
+      Message.success(`${resource.resourceName}已删除`)
+      await load()
+    },
+  })
 }
 
 const uploadCertificate = (resource: EnvironmentResource, options: RequestOption) => {
@@ -148,12 +194,6 @@ const uploadCertificate = (resource: EnvironmentResource, options: RequestOption
     })
     .catch(onError)
   return { abort: () => controller.abort() }
-}
-
-const removeBinding = async (resource: EnvironmentResource) => {
-  await unbindEnvironmentResource(props.environmentId, resource.slotId)
-  Message.success(`${resource.resourceName}已解除绑定`)
-  await load()
 }
 
 watch(() => [props.environmentId, props.projectId], () => void load(), { immediate: true })

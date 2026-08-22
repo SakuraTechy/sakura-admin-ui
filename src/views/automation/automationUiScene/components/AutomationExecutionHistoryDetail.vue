@@ -62,7 +62,9 @@
     <a-alert v-if="record.summaryOnly" type="info" class="record-alert">
       该记录仅包含场景汇总，未保存用例步骤明细。
     </a-alert>
-    <a-empty v-if="record.steps.length === 0" description="该执行记录未回传步骤明细" />
+    <a-spin v-if="loadingSteps" class="step-loading" />
+    <a-alert v-else-if="loadError" type="error" class="record-alert">{{ loadError }}</a-alert>
+    <a-empty v-else-if="record.steps.length === 0" description="该执行记录未回传步骤明细" />
 
     <div v-else-if="variant === 'table'" class="step-inspector">
       <nav class="step-inspector__nav">
@@ -137,6 +139,19 @@
         <Transition name="step-expand"><AutomationExecutionStepDiagnostic v-if="activeStepKey === step.rowKey" :step="step" /></Transition>
       </article>
     </div>
+    <a-pagination
+      v-if="!loadingSteps && !loadError && stepTotal > stepPageSize"
+      v-model:current="stepPage"
+      v-model:page-size="stepPageSize"
+      class="step-pagination"
+      size="small"
+      :total="stepTotal"
+      :page-size-options="[20, 50, 100]"
+      show-page-size
+      show-total
+      @change="changeStepPage"
+      @page-size-change="changeStepPageSize"
+    />
   </div>
 </template>
 
@@ -149,17 +164,64 @@ const props = withDefaults(defineProps<{
   record: ExecutionHistoryCaseRow
   variant?: 'table' | 'compact' | 'timeline' | 'cards'
   embedded?: boolean
+  loadSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
+  loadStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>
 }>(), { variant: 'timeline', embedded: false })
 
 const emit = defineEmits<{
   (e: 'open', record: ExecutionHistoryCaseRow, view: Exclude<ExecutionViewType, 'record'>): void
 }>()
 const activeStepKey = ref('')
+const loadingSteps = ref(false)
+const loadError = ref('')
+const loadingStepKeys = new Set<string>()
+const stepPage = ref(props.record.stepPage || 1)
+const stepPageSize = ref(props.record.stepPageSize || 20)
+const stepTotal = computed(() => props.record.stepPageTotal ?? (Number(props.record.stepTotal) || 0))
 const activeStep = computed(() => props.record.steps.find((step) => step.rowKey === activeStepKey.value))
 
-watch(() => [props.record.rowKey, props.variant], () => {
+async function fetchSteps() {
+  if (!props.loadSteps) return
+  loadingSteps.value = true
+  loadError.value = ''
+  try {
+    await props.loadSteps(props.record, stepPage.value, stepPageSize.value)
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '执行步骤加载失败'
+  } finally {
+    loadingSteps.value = false
+  }
+}
+
+watch(() => [props.record.rowKey, props.variant, props.record.steps.map(step => step.rowKey).join('|')], () => {
   const failed = props.record.steps.find((step) => stepState(step) === 'failed')
   activeStepKey.value = failed?.rowKey || (props.variant === 'table' ? props.record.steps[0]?.rowKey || '' : '')
+}, { immediate: true })
+
+watch(
+  () => `${props.record.caseExecutionDbId || ''}:${props.record.stepsLoaded === true}`,
+  async () => {
+    if (!props.loadSteps || props.record.stepsLoaded) return
+    await fetchSteps()
+  },
+  { immediate: true },
+)
+
+function changeStepPage(page: number) {
+  stepPage.value = page
+  void fetchSteps()
+}
+
+function changeStepPageSize(size: number) {
+  stepPageSize.value = size
+  stepPage.value = 1
+  void fetchSteps()
+}
+
+watch(activeStep, (step) => {
+  if (!step || step.detailLoaded || !props.loadStepDetail || loadingStepKeys.has(step.rowKey)) return
+  loadingStepKeys.add(step.rowKey)
+  void props.loadStepDetail(step).finally(() => loadingStepKeys.delete(step.rowKey))
 }, { immediate: true })
 
 function selectStep(rowKey: string) {
@@ -204,6 +266,18 @@ function navigationDecisionLabel(value: string) {
   border-radius: 0 0 12px 12px;
   background: var(--color-fill-1);
   animation: history-expand-in 200ms ease-out;
+}
+
+.step-loading {
+  display: block;
+  min-height: 120px;
+  padding-top: 48px;
+  text-align: center;
+}
+
+.step-pagination {
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 .step-history--embedded,

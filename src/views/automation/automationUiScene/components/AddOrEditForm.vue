@@ -12,13 +12,13 @@
           <GiForm ref="formRef" v-model="form" size="medium" :columns="columns" :disabled="isReadonly" />
           <!-- <a-grid v-if="activeKey === '1'" class="grid">
             <a-button type="secondary" @click="handleCancel">取消</a-button>
-            <a-button v-if="!uiStore.activeId" type="secondary" @click="handleOk">保存并继续创建</a-button>
+            <a-button v-if="!activeSceneId" type="secondary" @click="handleOk">保存并继续创建</a-button>
             <a-button type="primary" @click="handleSubmit">保存</a-button>
           </a-grid> -->
         </a-tab-pane>
         <a-tab-pane key="2">
           <template #title>
-            <a-dropdown v-if="uiStore.activeId" trigger="hover">
+            <a-dropdown v-if="activeSceneId" trigger="hover">
               <icon-ordered-list /> 场景用例
               <template #content>
                 <a-doption v-if="!isReadonly" @click="addCase">
@@ -70,15 +70,44 @@
             </a-dropdown>
             <span v-else><icon-ordered-list /> 场景用例</span>
           </template>
+          <AutomationUiProjectedSceneTree
+            v-if="activeSceneId && sceneDefinitionMode === 'projected'"
+            :scene-db-id="activeSceneId"
+            :definition-version="sceneDetail?.definitionVersion ?? 0"
+            :readonly="isReadonly"
+            @get-case="getCase"
+            @get-step="getStep"
+            @nodes-change="projectedCaseNodes = $event"
+            @action="handleProjectedTreeAction"
+            @refresh="refreshSceneAfterMutation"
+          />
           <AutomationUiSceneAddCase
-            v-if="uiStore.activeId"
+            v-if="activeSceneId && sceneDefinitionMode === 'projected'"
+            ref="projectedCaseControllerRef"
+            controller-only
+            :scene-db-id="activeSceneId"
+            :readonly="isReadonly"
+            :case-list="projectedControllerCases"
+            :definition-version="sceneDetail?.definitionVersion ?? 0"
+            :project-id="sceneDetail?.projectId ?? form.projectId"
+            :execution-running="executionRunning"
+            :refresh-scene="refreshSceneAfterMutation"
+            @get-scene-info="refreshSceneAfterMutation"
+            @get-case="getCase"
+            @get-step="getStep"
+            @recording="openChromeRecordingFromNode"
+            @execute-case="handleCaseExecution"
+          />
+          <AutomationUiSceneAddCase
+            v-else-if="activeSceneId"
             ref="caseListRef"
             :readonly="isReadonly"
+            :scene-db-id="activeSceneId"
             :case-list="caseList"
             :definition-version="sceneDetail?.definitionVersion ?? 0"
             :project-id="sceneDetail?.projectId ?? form.projectId"
             :execution-running="executionRunning"
-            :refresh-scene="getSceneInfo"
+            :refresh-scene="refreshSceneAfterMutation"
             @get-scene-info="getSceneInfo"
             @get-case="getCase"
             @get-step="getStep"
@@ -98,7 +127,7 @@
           </div>
           <a-space class="execution-overview__actions" wrap>
             <a-button
-              v-if="uiStore.activeId && !isReadonly"
+              v-if="activeSceneId && !isReadonly"
               v-permission="['automation:automationUiScene:create', 'automation:automationUiScene:update']"
               type="primary"
               @click="openChromeRecording"
@@ -109,7 +138,7 @@
             <a-dropdown-button
               v-permission="['automation:automationUiScene:execute']"
               type="primary"
-              :disabled="!uiStore.activeId || executionRunning"
+              :disabled="!activeSceneId || executionRunning"
               @click="openExecuteModal"
               @select="handleUnifiedExecutionSelect"
             >
@@ -247,12 +276,21 @@
         <a-tab-pane key="5" title="执行历史">
           <AutomationExecutionHistoryPanel
             :scene="sceneDetail"
-            :loading="sceneInfoLoading"
+            :execution-batches="sceneExecutionBatches"
+            :execution-page="sceneExecutionPage"
+            :execution-page-size="sceneExecutionPageSize"
+            :execution-total="sceneExecutionTotal"
+            :load-execution-page="loadSceneExecutionPage"
+            :load-execution-cases="loadSceneExecutionCases"
+            :load-execution-case-history="loadSceneExecutionCaseHistory"
+            :load-execution-steps="loadSceneExecutionSteps"
+            :load-execution-step-detail="loadSceneExecutionStepDetail"
+            :loading="sceneExecutionLoading"
             :selected-case-id="selectedHistoryCaseId"
             :live-executions="liveExecutions"
             @cancel-batch="cancelHistoryBatch"
             @cancel-case="cancelHistoryCase"
-            @refresh="getSceneInfo()"
+            @refresh="loadSceneExecutionHistory"
             @show-all="showAllExecutionHistory"
           />
         </a-tab-pane>
@@ -260,7 +298,7 @@
     </div>
     <a-grid v-if="activeKey === '1' && !isReadonly" class="grid">
       <a-button type="secondary" @click="handleCancel">取消</a-button>
-      <a-button v-if="!uiStore.activeId" type="secondary" @click="handleOk">保存并继续创建</a-button>
+      <a-button v-if="!activeSceneId" type="secondary" @click="handleOk">保存并继续创建</a-button>
       <a-button type="primary" @click="handleSubmit">保存</a-button>
     </a-grid>
     <ExecuteSceneModal ref="executeSceneModalRef" @success="getSceneInfo" />
@@ -286,7 +324,7 @@
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, nextTick, reactive, ref, watch } from 'vue'
+import { computed, defineEmits, defineProps, nextTick, onUnmounted, reactive, ref, shallowRef, watch, withDefaults } from 'vue'
 import { add, mapTree } from 'xe-utils'
 import TagsInput from 'vue3-tags-input'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -297,11 +335,18 @@ import {
   type ExecutionContext,
   type ExecutionHistoryBatchRow,
   type ExecutionHistoryCaseRow,
+  type ExecutionHistoryStepRow,
   type ExecutionType,
   type LiveExecutionCase,
   executionTypeOptions,
+  buildLayeredExecutionBatchRow,
+  buildLayeredExecutionCaseRow,
+  buildLayeredExecutionCaseHistoryRow,
+  buildLayeredExecutionStepRow,
+  applyLayeredExecutionStepDetail,
 } from '../execution'
 import AutomationUiSceneAddCase from './AutomationUiSceneAddCase.vue'
+import AutomationUiProjectedSceneTree from './AutomationUiProjectedSceneTree.vue'
 import ExecuteSceneModal from './ExecuteSceneModal.vue'
 import ChromeRecordingModal from './ChromeRecordingModal.vue'
 import AutomationExecutionCaseSelectModal from './AutomationExecutionCaseSelectModal.vue'
@@ -316,8 +361,8 @@ import type { ProjectModuleConfigResp } from '@/apis/project/projectModuleConfig
 import mittBus from '@/utils/mitt'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
-import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
-import { type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiCaseDetail, getAutomationUiScene, getAutomationUiStepDetail, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { filterSceneStatusOptions } from '@/utils/automationUiSceneStatus'
+import { type AutomationUiCase, type AutomationUiSceneDetailResp, type AutomationUiSceneResp, addAutomationUiScene, copyAutomationUiScene, getAutomationUiCaseDetail, getAutomationUiStepDetail, updateAutomationUiScene } from '@/apis/automation/automationUiScene'
 import { normalizeAutomationNodeStatus } from '../caseTree'
 import { findNodePath } from '@/utils/sakura'
 import http from '@/utils/http'
@@ -325,6 +370,17 @@ import {
   cancelAutomationPlaywrightBatch,
   cancelAutomationPlaywrightBatchCase,
 } from '@/apis/automation/automationPlaywrightRunner'
+import { invalidateAutomationUiDefinition, loadAutomationUiDefinition, requestOnce } from '../queryCache'
+import {
+  type AutomationUiExecutionSummary,
+  type AutomationUiSceneSummary,
+  getAutomationUiExecutionCases,
+  getAutomationUiExecutionCaseHistory,
+  getAutomationUiExecutions,
+  getAutomationUiSceneExecutionSummary,
+  getAutomationUiExecutionStep,
+  getAutomationUiExecutionSteps,
+} from '@/apis/automation/automationUiQuery'
 
 defineOptions({ name: 'Ui' })
 
@@ -345,9 +401,25 @@ const emit = defineEmits<{
   (e: 'add-tab'): void
   (e: 'remove-tab'): void
   (e: 'update-tab', record: any): void
+  (e: 'save-success'): void
 }>()
 
+const props = withDefaults(defineProps<{
+  sceneDbId?: string | number
+  paneActive?: boolean
+  readonly?: boolean
+  copy?: boolean
+  refreshVersion?: number
+}>(), {
+  sceneDbId: '',
+  paneActive: false,
+  readonly: false,
+  copy: false,
+  refreshVersion: 0,
+})
+
 const uiStore = useUiStore()
+const activeSceneId = computed(() => String(props.sceneDbId || ''))
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { scene_level, browser_type, status_type } = useDict('scene_level', 'browser_type', 'status_type')
 
@@ -387,8 +459,8 @@ const handleTabChange = (key: string) => {
   activeKey.value = key
 }
 
-const isReadonly = computed(() => uiStore.activeReadonly)
-const isCopyMode = computed(() => uiStore.activeCopy)
+const isReadonly = computed(() => props.readonly)
+const isCopyMode = computed(() => props.copy)
 
 watch(() => form.projectId, async (newProjectId, oldProjectId) => {
   if (newProjectId) {
@@ -724,13 +796,12 @@ const openScreenshot = async (url: string) => {
 }
 
 const openExecuteModal = async () => {
-  if (!uiStore.activeId) {
+  if (!activeSceneId.value) {
     Message.warning('请先保存基础信息，再执行调试')
     activeKey.value = '1'
     return
   }
-  const { data } = await getAutomationUiScene(uiStore.activeId)
-  executeSceneModalRef.value?.onOpen([data], { source: 'ui' })
+  if (currentScene.value) executeSceneModalRef.value?.onOpen([currentScene.value], { source: 'ui' })
 }
 
 interface ExecutionCaseSelection extends ExecutionContext {
@@ -817,6 +888,7 @@ function handleExecutionStarted() {
 async function handleExecutionFinished() {
   try {
     await getSceneInfo()
+    if (detailActiveKey.value === '5') await loadSceneExecutionHistory()
     // 最终结果已落库并包含步骤明细，移除临时实时行，报告立即切换到完整历史记录。
     liveExecutions.value = []
   } finally {
@@ -880,12 +952,13 @@ const handleSubmit = async () => {
       modulePath: findNodePath(moduleSelectTree.value, 'key', form.moduleId, 'title'),
       // level: scene_level.value.filter((item) => item.value === form.level)[0].label,
     }
-    if (uiStore.activeId && !isCopyMode.value) {
-      await updateAutomationUiScene(preform, uiStore.activeId)
+    if (activeSceneId.value && !isCopyMode.value) {
+      await updateAutomationUiScene(preform, activeSceneId.value)
+      invalidateAutomationUiDefinition(activeSceneId.value)
       Message.success('修改成功')
       // uiStore.updateScene(await getAutomationUiScene(uiStore.activeId))
-    } else if (uiStore.activeId && isCopyMode.value) {
-      const res = await copyAutomationUiScene(preform, uiStore.activeId)
+    } else if (activeSceneId.value && isCopyMode.value) {
+      const res = await copyAutomationUiScene(preform, activeSceneId.value)
       const newId = res.data?.id ?? res.data
       if (newId) {
         Message.success('复制成功')
@@ -910,6 +983,7 @@ const handleSubmit = async () => {
         uiStore.activeCopy = false
       }
     }
+    emit('save-success')
     handleCancel()
     return true
   } catch (error) {
@@ -918,12 +992,122 @@ const handleSubmit = async () => {
   }
 }
 
-const caseList = ref([])
+const caseList = shallowRef<AutomationUiCase[]>([])
 const stepList = ref([])
 const sceneDetail = ref<AutomationUiSceneDetailResp>()
+const sceneDefinitionMode = ref<'inline' | 'projected'>('inline')
+const projectedCaseNodes = ref<Array<{ id: string, name: string, stepList: unknown[] }>>([])
+const projectedControllerCases = computed(() => projectedCaseNodes.value as unknown as AutomationUiCase[])
 const sceneInfoLoading = ref(false)
 let sceneInfoRequestSequence = 0
+let sceneInfoController: AbortController | undefined
+const sceneLatestExecution = ref<AutomationUiExecutionSummary>()
+const sceneExecutionBatches = ref<ExecutionHistoryBatchRow[]>([])
+const sceneExecutionLoading = ref(false)
+const sceneExecutionPage = ref(1)
+const sceneExecutionPageSize = ref(10)
+const sceneExecutionTotal = ref(0)
+let sceneExecutionController: AbortController | undefined
 const chromeRecordingModalRef = ref<{ onOpen: (record?: AutomationUiSceneResp, options?: RecordingOpenOptions) => void }>()
+const isRequestCancelled = (error: any) => ['AbortError', 'CanceledError'].includes(error?.name) || error?.code === 'ERR_CANCELED'
+
+const loadSceneExecutionHistory = async () => {
+  if (!activeSceneId.value || !props.paneActive || detailActiveKey.value !== '5') return
+  sceneExecutionController?.abort()
+  const controller = new AbortController()
+  sceneExecutionController = controller
+  sceneExecutionLoading.value = true
+  try {
+    const response = await getAutomationUiExecutions({
+      sceneDbId: activeSceneId.value,
+      recordSource: 'debug',
+      page: sceneExecutionPage.value,
+      size: sceneExecutionPageSize.value,
+      sort: ['createTime,desc'],
+    }, controller.signal)
+    if (controller.signal.aborted || !sceneDetail.value) return
+    const scene = {
+      sceneDbId: Number(activeSceneId.value),
+      sceneKey: sceneDetail.value.sceneId || activeSceneId.value,
+      name: sceneDetail.value.name || '-',
+      projectDbId: Number(sceneDetail.value.projectId || 0),
+      definitionVersion: sceneDetail.value.definitionVersion || 0,
+      globalExecutionRevision: response.data?.globalExecutionRevision || 0,
+    } as AutomationUiSceneSummary
+    sceneExecutionTotal.value = response.data?.mode === 'page' ? response.data.total : response.data?.list.length || 0
+    sceneExecutionBatches.value = (response.data?.list || []).map(record => buildLayeredExecutionBatchRow(record, scene))
+  } catch (error: any) {
+    if (!isRequestCancelled(error) && sceneExecutionController === controller && props.paneActive) {
+      Message.error(error?.message || '读取场景执行历史失败，请稍后重试')
+    }
+  } finally {
+    if (sceneExecutionController === controller) sceneExecutionLoading.value = false
+  }
+}
+
+const loadSceneExecutionPage = async (page: number, size: number) => {
+  sceneExecutionPage.value = page
+  sceneExecutionPageSize.value = size
+  await loadSceneExecutionHistory()
+}
+
+const loadSceneExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 20) => {
+  if (!batch.executionDbId) return
+  const response = await requestOnce(
+    `execution-cases:${batch.executionDbId}:${page}:${size}`,
+    () => getAutomationUiExecutionCases(batch.executionDbId!, page, size),
+  )
+  const current = sceneExecutionBatches.value.find(item => item.executionDbId === batch.executionDbId)
+  if (!current || !response.data) return
+  current.cases = response.data.list.map(record => buildLayeredExecutionCaseRow(record, current))
+  current.casesLoaded = true
+  current.casePage = page
+  current.casePageSize = size
+  current.casePageTotal = response.data.total
+}
+
+const loadSceneExecutionCaseHistory = async (caseId: string, page = 1, size = 50) => {
+  if (!activeSceneId.value || !sceneDetail.value || !caseId) return { list: [], total: 0 }
+  const response = await requestOnce(
+    `execution-case-history:${activeSceneId.value}:${caseId}:${page}:${size}`,
+    () => getAutomationUiExecutionCaseHistory({
+      sceneDbId: activeSceneId.value!, caseId, recordSource: 'debug',
+    }, page, size),
+  )
+  const scene = {
+    sceneDbId: Number(activeSceneId.value), sceneKey: sceneDetail.value.sceneId || activeSceneId.value,
+    name: sceneDetail.value.name || '-', projectDbId: Number(sceneDetail.value.projectId || 0),
+    definitionVersion: sceneDetail.value.definitionVersion || 0, globalExecutionRevision: 0,
+  } as AutomationUiSceneSummary
+  return {
+    list: (response.data?.list || []).map(record => buildLayeredExecutionCaseHistoryRow(record, scene)),
+    total: response.data?.total || 0,
+  }
+}
+
+const loadSceneExecutionSteps = async (record: ExecutionHistoryCaseRow, page = 1, size = 20) => {
+  if (!record.caseExecutionDbId) return
+  const response = await requestOnce(
+    `execution-steps:${record.caseExecutionDbId}:${page}:${size}`,
+    () => getAutomationUiExecutionSteps(record.caseExecutionDbId!, page, size),
+  )
+  if (!response.data) return
+  record.steps = response.data.list.map(buildLayeredExecutionStepRow)
+  record.stepsLoaded = true
+  record.stepPage = page
+  record.stepPageSize = size
+  record.stepPageTotal = response.data.total
+}
+
+const loadSceneExecutionStepDetail = async (step: ExecutionHistoryStepRow) => {
+  if (!step.stepExecutionDbId || step.detailLoaded) return
+  const response = await requestOnce(
+    `execution-step:${step.stepExecutionDbId}`,
+    () => getAutomationUiExecutionStep(step.stepExecutionDbId!),
+  )
+  if (!response.data) return
+  applyLayeredExecutionStepDetail(step, response.data)
+}
 
 const isInfrastructureActionType = (value: unknown) => ['server_command', 'database_sql', 'database_native', 'infra-server-command', 'infra-database-sql', 'infra-database-native']
   .includes(String(value || '').trim().toLowerCase())
@@ -940,11 +1124,11 @@ const sceneRequiresInfrastructure = (scene: any) => Boolean(
 )
 
 const currentScene = computed<AutomationUiSceneResp | null>(() => {
-  if (!uiStore.activeId) return null
+  if (!activeSceneId.value) return null
   const sceneCases = caseList.value as AutomationUiSceneResp['caseList']
   const requiresInfrastructure = sceneRequiresInfrastructure({ caseList: sceneCases })
   return {
-    id: String(uiStore.activeId),
+    id: activeSceneId.value,
     sceneId: form.sceneId,
     name: form.name,
     description: form.description,
@@ -957,28 +1141,63 @@ const currentScene = computed<AutomationUiSceneResp | null>(() => {
     level: form.level,
     status: form.status,
     tags: Array.isArray(form.tags) ? form.tags : [],
-    caseList: sceneCases,
+    // projected 模式只提供当前分页的轻量用例标识，不能重新拼装完整 caseList。
+    caseList: sceneDefinitionMode.value === 'projected'
+      ? projectedCaseNodes.value.map((item, index) => ({ ...item, type: 'case', order: index + 1, status: 1 }))
+      : sceneCases,
     definitionVersion: sceneDetail.value?.definitionVersion ?? 0,
     requiresInfrastructure,
     requiredCapabilities: requiresInfrastructure ? ['browser', 'infrastructure'] : ['browser'],
     supportedExecutors: ['playwright-runner', 'extension-cdp'],
+    latestExecution: sceneLatestExecution.value,
+    __definitionLoaded: true,
+    __projectedDefinition: sceneDefinitionMode.value === 'projected',
   } as AutomationUiSceneResp
 })
 
 const getSceneInfo = async (data1?: any) => {
-  if (!uiStore.activeId) return
+  if (!activeSceneId.value || !props.paneActive) return
+  sceneInfoController?.abort()
+  const controller = new AbortController()
+  sceneInfoController = controller
   const requestSequence = ++sceneInfoRequestSequence
-  const activeSceneId = String(uiStore.activeId)
+  const requestedSceneId = activeSceneId.value
+  sceneLatestExecution.value = undefined
   sceneInfoLoading.value = true
   try {
-    const { data } = await getAutomationUiScene(activeSceneId)
-    if (requestSequence !== sceneInfoRequestSequence || String(uiStore.activeId || '') !== activeSceneId) return
-    sceneDetail.value = data
-    Object.assign(form, data)
-    form.executeStatus = resolveSceneStatusValue(data.executeStatus, status_type.value) ?? '10'
-    // 先清空数组，再添加新元素
-    caseList.value.splice(0)
-    Object.assign(caseList.value, data.caseList ?? [])
+    const [definition, executionSummaryResponse] = await Promise.all([
+      loadAutomationUiDefinition(requestedSceneId, controller.signal),
+      getAutomationUiSceneExecutionSummary(requestedSceneId, 'debug', controller.signal).catch(() => undefined),
+    ])
+    if (!definition || !('mode' in definition)) return
+    const data = definition
+    if (requestSequence !== sceneInfoRequestSequence || activeSceneId.value !== requestedSceneId || !props.paneActive) return
+    sceneDefinitionMode.value = data.mode
+    sceneLatestExecution.value = executionSummaryResponse?.data
+    projectedCaseNodes.value = []
+    const normalizedData = {
+      ...data,
+      id: String(data.sceneDbId),
+      sceneId: data.sceneKey,
+      projectId: String(data.projectDbId || ''),
+      versionId: data.versionDbId == null ? '' : String(data.versionDbId),
+      moduleId: data.moduleDbId == null ? '' : String(data.moduleDbId),
+    }
+    sceneDetail.value = normalizedData as unknown as AutomationUiSceneDetailResp
+    form.sceneId = normalizedData.sceneId
+    form.name = normalizedData.name
+    form.description = normalizedData.description || ''
+    form.projectId = normalizedData.projectId
+    form.versionId = normalizedData.versionId
+    form.moduleId = normalizedData.moduleId
+    form.level = normalizedData.level || 'P0'
+    form.status = normalizedData.status ?? 1
+    form.tags = Array.isArray(normalizedData.tags) ? normalizedData.tags : []
+    caseList.value = data.mode === 'inline' ? data.caseList ?? [] : []
+    if (data.mode === 'projected') {
+      stepList.value = []
+      return
+    }
     // 等待 caseList/definitionVersion 传入子树后再恢复节点，避免用旧 props 重建树。
     await nextTick()
     await caseListRef.value?.getTreeCaseList(data1)
@@ -988,12 +1207,22 @@ const getSceneInfo = async (data1?: any) => {
       return list.concat(item.stepList || [])
     }, [])
     console.log('stepList', stepList.value)
+  } catch (error: any) {
+    if (!isRequestCancelled(error) && requestSequence === sceneInfoRequestSequence && props.paneActive) {
+      Message.error(error?.message || '读取场景定义失败，请稍后重试')
+    }
   } finally {
     if (requestSequence === sceneInfoRequestSequence) sceneInfoLoading.value = false
   }
 }
 
 const caseListRef = ref()
+const projectedCaseControllerRef = ref<{ onMenuClick: (data?: any) => Promise<boolean> }>()
+const refreshSceneAfterMutation = async (selection?: any) => {
+  if (!activeSceneId.value) return
+  invalidateAutomationUiDefinition(activeSceneId.value)
+  await getSceneInfo(selection)
+}
 const getCaseList = async () => {
   // const res = await getAutomationUiScene(uiStore.activeId)
   // console.log('getCaseList', res)
@@ -1003,13 +1232,18 @@ const getCaseList = async () => {
 const caseDetail = ref()
 const stepDetail = ref()
 const selectedHistoryCaseId = ref('')
-const getCase = async (id: string) => {
-  console.log('getCase', id)
-  const localCase = caseList.value.find((item: any) => String(item.id) === String(id))
-  caseDetail.value = localCase
-  if (uiStore.activeId && localCase) {
+const getCase = async (id: string | { node?: { id?: string, caseId?: string }, caseData?: Record<string, unknown> }) => {
+  const caseId = typeof id === 'object' ? String(id.node?.caseId || id.node?.id || '') : String(id)
+  console.log('getCase', caseId)
+  const localCase = caseList.value.find((item: any) => String(item.id) === caseId)
+  caseDetail.value = typeof id === 'object' && id.caseData ? id.caseData : localCase
+  if (sceneDefinitionMode.value === 'projected' && typeof id === 'object' && id.caseData) {
+    const projectedCase = projectedCaseNodes.value.find(item => String(item.id) === caseId)
+    if (projectedCase) projectedCase.stepList = Array.isArray(id.caseData.stepList) ? id.caseData.stepList : []
+  }
+  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && caseId) {
     try {
-      const { data } = await getAutomationUiCaseDetail(uiStore.activeId, id)
+      const { data } = await getAutomationUiCaseDetail(activeSceneId.value, caseId)
       // DTO 使用 steps 命名，详情面板保留现有 stepList 只读视图兼容层。
       caseDetail.value = { ...data, stepList: data.steps || [] }
     } catch (error) {
@@ -1017,7 +1251,7 @@ const getCase = async (id: string) => {
     }
   }
   stepDetail.value = undefined
-  selectedHistoryCaseId.value = String(id || '')
+  selectedHistoryCaseId.value = caseId
 }
 
 const getStep = async (data: any) => {
@@ -1025,10 +1259,11 @@ const getStep = async (data: any) => {
   const parentCaseId = data.node?.caseId || data.dropNode?.caseId || data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid
   const stepId = data.node?.stepId || data.dropNode?.stepId || data?.id || data.node?.id
   const parentCase = caseList.value.find((item: any) => String(item.id) === String(parentCaseId))
-  stepDetail.value = parentCase?.stepList?.find((item: any) => String(item.id) === String(stepId))
-  if (uiStore.activeId && parentCase && stepId) {
+  stepDetail.value = data.node?.stepData
+    || parentCase?.stepList?.find((item: any) => String(item.id) === String(stepId))
+  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && parentCaseId && stepId) {
     try {
-      const { data } = await getAutomationUiStepDetail(uiStore.activeId, String(parentCase.id), String(stepId))
+      const { data } = await getAutomationUiStepDetail(activeSceneId.value, String(parentCase.id), String(stepId))
       stepDetail.value = data
     } catch (error) {
       console.warn('统一步骤详情读取失败，使用场景详情兼容副本', error)
@@ -1036,7 +1271,7 @@ const getStep = async (data: any) => {
   }
   // console.log('caseDetail', caseDetail.value, 'stepDetail', stepDetail.value)
   caseDetail.value = undefined
-  selectedHistoryCaseId.value = String(parentCase?.id || '')
+  selectedHistoryCaseId.value = String(parentCaseId || '')
 }
 
 const clearCaseSelection = () => {
@@ -1054,7 +1289,7 @@ const openChromeRecording = (options?: RecordingOpenOptions) => {
     Message.warning('当前为只读模式，无法开始录制')
     return
   }
-  if (!uiStore.activeId) {
+  if (!activeSceneId.value) {
     Message.warning('请先保存基础信息，再开始 Chrome 录制')
     activeKey.value = '1'
     return
@@ -1084,7 +1319,8 @@ const openChromeRecordingFromNode = (data: { mode: RecordingMode, node: any }) =
 }
 
 const handleRecordingFinished = async () => {
-  if (!uiStore.activeId) return
+  if (!activeSceneId.value) return
+  invalidateAutomationUiDefinition(activeSceneId.value)
   await getSceneInfo()
   caseDetail.value = undefined
   stepDetail.value = undefined
@@ -1096,13 +1332,57 @@ const addCase = () => {
     Message.warning('当前为只读模式，无法新增用例')
     return
   }
-  if (!uiStore.activeId) {
+  if (!activeSceneId.value) {
     Message.warning('请先保存基础信息，再添加场景用例')
     activeKey.value = '1'
   } else {
-    caseListRef.value?.onMenuClick({ mode: 'add', node: { type: '' } })
+    const controller = sceneDefinitionMode.value === 'projected'
+      ? projectedCaseControllerRef.value
+      : caseListRef.value
+    void controller?.onMenuClick({ mode: 'add', node: { type: '' } })
   }
 }
+
+const handleProjectedTreeAction = (data: { mode: string, node: any }) => {
+  if (data.mode.startsWith('recording:')) {
+    openChromeRecordingFromNode({ mode: data.mode.slice('recording:'.length), node: data.node })
+    return
+  }
+  void projectedCaseControllerRef.value?.onMenuClick({ mode: data.mode, node: data.node })
+}
+
+watch(
+  () => `${props.paneActive}:${activeSceneId.value}:${props.refreshVersion}`,
+  () => {
+    if (props.paneActive && activeSceneId.value) void getSceneInfo()
+    else sceneInfoController?.abort()
+  },
+  { immediate: true },
+)
+
+watch(activeSceneId, () => {
+  sceneExecutionPage.value = 1
+})
+
+watch(
+  () => `${props.paneActive}:${detailActiveKey.value}:${activeSceneId.value}`,
+  () => {
+    if (props.paneActive && detailActiveKey.value === '5' && activeSceneId.value) {
+      void loadSceneExecutionHistory()
+    } else {
+      sceneExecutionController?.abort()
+    }
+  },
+)
+
+onUnmounted(() => {
+  sceneInfoController?.abort()
+  sceneExecutionController?.abort()
+  caseList.value = []
+  stepList.value = []
+  sceneExecutionBatches.value = []
+  sceneDetail.value = undefined
+})
 
 defineExpose({
   getSceneInfo,

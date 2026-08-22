@@ -76,12 +76,12 @@
             </div>
             <code
               :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
-              :title="operationInputValue(input.configured)"
-            >{{ operationInputValue(input.configured) }}</code>
+              :title="operationInputDisplayValue(input, input.configured)"
+            >{{ operationInputDisplayValue(input, input.configured) }}</code>
             <code
               :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
-              :title="operationInputValue(operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-')"
-            >{{ operationInputValue(operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-') }}</code>
+              :title="operationInputDisplayValue(input, operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-')"
+            >{{ operationInputDisplayValue(input, operationInputEffectiveValue(input), input.configured ? '执行器未返回' : '-') }}</code>
             <code
               v-if="operationInputHasActualColumn"
               :class="{ 'step-diagnostic__human-value': input.role === 'expected' }"
@@ -524,8 +524,8 @@ const infrastructureActionTypes = new Set([
   'global_variable_property',
 ])
 const isInfrastructureStep = computed(() => infrastructureActionTypes.has(String(props.step.actionType).toLowerCase()))
-const isDatabaseSqlStep = computed(() => String(props.step.actionType).toLowerCase() === 'database_sql')
-const isServerCommandStep = computed(() => String(props.step.actionType).toLowerCase() === 'server_command')
+const isDatabaseSqlStep = computed(() => ['database_sql', 'infra-database-sql'].includes(String(props.step.actionType).toLowerCase()))
+const isServerCommandStep = computed(() => ['server_command', 'infra-server-command'].includes(String(props.step.actionType).toLowerCase()))
 const isDefinitionStatementStep = computed(() => isDatabaseSqlStep.value || isServerCommandStep.value)
 const showLocatorSection = computed(() => !isInfrastructureStep.value && (
   props.step.configuredLocators.length > 0 || props.step.hasActualLocator || locatorDiagnostics.value != null || locatorError.value != null
@@ -957,6 +957,16 @@ function operationInputValue(value: Record<string, any> | null | undefined, miss
   if (value.value_state === 'restricted') return '需通过定义快照查看'
   if (value.value_state === 'unavailable') return '执行器未返回'
   return value.preview == null || value.preview === '' ? '-' : String(value.preview)
+}
+
+function operationInputDisplayValue(input: Record<string, any>, value: Record<string, any> | null | undefined, missingLabel = '-') {
+  const inputKey = String(input.key || '').trim().toLowerCase()
+  const isDefinitionStatementInput = (isDatabaseSqlStep.value && inputKey === 'sql')
+    || (isServerCommandStep.value && inputKey === 'command')
+  if (isDefinitionStatementInput && definitionStatementContent.value) {
+    return definitionStatementContent.value
+  }
+  return operationInputValue(value, missingLabel)
 }
 
 function operationInputEffectiveValue(input: Record<string, any>) {

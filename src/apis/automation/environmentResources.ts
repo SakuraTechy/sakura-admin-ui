@@ -12,6 +12,9 @@ export interface EnvironmentResource {
   required: boolean
   resourceId?: string
   resourceLabel?: string
+  databaseIp?: string
+  databasePort?: number
+  databaseName?: string
   fileName?: string
   fileSize?: number
   sha256?: string
@@ -19,8 +22,16 @@ export interface EnvironmentResource {
   bound: boolean
 }
 
-export function listEnvironmentResourceSlots(projectId: string | number, kind?: EnvironmentResourceKind) {
-  return http.get<EnvironmentResource[]>(`${BASE_URL}/slots`, { projectId, kind })
+export function listEnvironmentResourceSlots(projectId: string | number, kind?: EnvironmentResourceKind, environmentId?: string | number) {
+  return http.get<EnvironmentResource[]>(`${BASE_URL}/slots`, { projectId, kind, environmentId })
+}
+
+export function createCustomDatabaseSlot(projectId: string | number) {
+  return http.post<EnvironmentResource>(`${BASE_URL}/slots/custom-database`, undefined, { params: { projectId } })
+}
+
+export function deleteCustomDatabaseSlot(slotId: string | number) {
+  return http.del(`${BASE_URL}/slots/${slotId}`)
 }
 
 export function listEnvironmentResources(environmentId: string | number) {

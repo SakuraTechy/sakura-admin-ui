@@ -151,9 +151,14 @@
                 <a-select
                   v-model="form.targetCaseId"
                   :options="caseOptions"
+                  :loading="loadingTargetCases"
+                  :filter-option="isProjectedTargetScene ? false : true"
                   placeholder="请选择目标用例"
                   allow-clear
+                  allow-search
                   @change="handleTargetCaseChange"
+                  @search="handleTargetCaseSearch"
+                  @dropdown-reach-bottom="loadNextTargetCasePage"
                 />
               </a-form-item>
             </a-col>
@@ -261,7 +266,7 @@
           </a-col>
           <a-col v-if="form.mode === 'appendCase'" :span="12">
             <a-form-item label="追加位置" field="appendPosition">
-              <a-select v-model="form.appendPosition" :options="appendPositionOptions" @change="syncRecordingStartUrl" />
+              <a-select v-model="form.appendPosition" :options="appendPositionOptions" @change="handleAppendPositionChange" />
             </a-form-item>
           </a-col>
           <a-col v-if="form.mode === 'appendStep'" :span="24">
@@ -439,7 +444,15 @@
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import { Message, Modal } from '@arco-design/web-vue'
-import { getAutomationUiScene, type AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
+import type { AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
+import {
+  invalidateAutomationUiDefinition,
+  loadAutomationUiDefinitionCase,
+  loadAutomationUiDefinitionCases,
+  loadAutomationUiDefinitionSteps,
+  loadAutomationUiExecutionSelectionScene,
+  mapWithConcurrency,
+} from '../queryCache'
 import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } from '@/apis/project/projectEnvironmentConfig'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { getToken } from '@/utils/auth'
@@ -525,6 +538,7 @@ const liveStepCount = ref(0)
 const detectingExtension = ref(false)
 const loadingEnvironments = ref(false)
 const loadingTargetScene = ref(false)
+const loadingTargetCases = ref(false)
 const targetSceneLoaded = ref(false)
 const formRef = ref()
 const targetScene = ref<AutomationUiSceneResp | null>(null)
@@ -537,6 +551,16 @@ const advancedActiveKeys = ref<string[]>([])
 const viewMode = ref<RecordingViewMode>('cardSidebar')
 const advancedSideCollapsed = ref(false)
 const collapsedCardSections = ref<CardSectionKey[]>([])
+const projectedCaseOptions = ref<any[]>([])
+const targetCasePage = ref(0)
+const targetCaseTotal = ref(0)
+const targetSceneCaseTotal = ref(0)
+const targetCaseKeyword = ref('')
+const projectedAppendBoundaryLoaded = ref(false)
+const TARGET_CASE_PAGE_SIZE = 50
+let targetCaseSearchTimer: ReturnType<typeof setTimeout> | undefined
+let targetCaseRequestSequence = 0
+let targetSceneRequestSequence = 0
 
 const modalWidth = computed(() => {
   if (viewMode.value === 'cardSidebar') return advancedSideCollapsed.value ? '860px' : '1080px'
@@ -632,6 +656,7 @@ const modeOptions = computed(() => {
 const isTargetSceneFixed = computed(() => openContext.value.fixedTargetScene === true)
 const isTargetCaseFixed = computed(() => openContext.value.fixedTargetCase === true)
 const isTargetStepFixed = computed(() => openContext.value.fixedTargetStep === true)
+const isProjectedTargetScene = computed(() => Boolean((targetScene.value as any)?.__projectedDefinition))
 
 const caseNameModes: RecordingMode[] = ['createScene', 'appendCase', 'replaceCase']
 const targetCaseModes: RecordingMode[] = ['replaceCase', 'appendStep', 'replaceStep']
@@ -671,7 +696,8 @@ const orderedCases = computed(() => {
 })
 
 const caseOptions = computed(() => {
-  return orderedCases.value.map((item: any) => ({
+  const cases = isProjectedTargetScene.value ? projectedCaseOptions.value : orderedCases.value
+  return cases.map((item: any) => ({
       label: `${item.order ? `第 ${item.order} 项：` : ''}${item.name || item.id}`,
       value: String(item.id),
   }))
@@ -679,7 +705,9 @@ const caseOptions = computed(() => {
 
 const selectedTargetCase = computed(() => {
   const cases = Array.isArray(targetScene.value?.caseList) ? targetScene.value.caseList : []
-  return cases.find((item: any) => String(item?.id) === String(form.targetCaseId)) || null
+  return cases.find((item: any) => String(item?.id) === String(form.targetCaseId))
+    || projectedCaseOptions.value.find((item: any) => String(item?.id) === String(form.targetCaseId))
+    || null
 })
 
 const selectedTargetStepCount = computed(() => {
@@ -982,16 +1010,140 @@ const handleProjectEnvironmentChange = (value: string | number | boolean | Recor
 }
 
 const loadTargetScene = async (sceneDbId: string) => {
+  const requestSequence = ++targetSceneRequestSequence
   loadingTargetScene.value = true
   targetSceneLoaded.value = false
   try {
-    const { data } = await getAutomationUiScene(sceneDbId)
+    const data = await loadAutomationUiExecutionSelectionScene(
+      sceneDbId,
+      {},
+      undefined,
+      { projectedPage: 1, projectedPageSize: TARGET_CASE_PAGE_SIZE },
+    ) as AutomationUiSceneResp
+    if (requestSequence !== targetSceneRequestSequence) return
     targetScene.value = data
+    if ((data as any).__projectedDefinition) {
+      projectedCaseOptions.value = [...(data.caseList || [])]
+      targetCasePage.value = Number((data as any).__projectedCasePage || 1)
+      targetCaseTotal.value = Number((data as any).__caseTotal || projectedCaseOptions.value.length)
+      targetSceneCaseTotal.value = targetCaseTotal.value
+    } else {
+      projectedCaseOptions.value = []
+      targetCasePage.value = 0
+      targetCaseTotal.value = data.caseList?.length || 0
+      targetSceneCaseTotal.value = targetCaseTotal.value
+    }
+    if ((data as any).__projectedDefinition && form.targetCaseId) await loadProjectedTargetCase(form.targetCaseId, sceneDbId)
+    if (requestSequence !== targetSceneRequestSequence) return
     const targetCase = data.caseList?.find((item: any) => String(item?.id) === String(form.targetCaseId))
     if (targetCase?.name && targetCaseModes.includes(form.mode)) form.caseName = String(targetCase.name)
     targetSceneLoaded.value = true
   } finally {
-    loadingTargetScene.value = false
+    if (requestSequence === targetSceneRequestSequence) loadingTargetScene.value = false
+  }
+}
+
+const mapProjectedCaseNode = (item: any) => ({
+  ...(item?.caseBody || {}),
+  id: String(item?.caseId || item?.id || ''),
+  name: item?.caseName || item?.caseBody?.name || item?.caseId || item?.id,
+  order: Number(item?.caseIndex) + 1,
+  stepCount: Number(item?.stepCount || 0),
+  __stepCount: Number(item?.stepCount || 0),
+})
+
+const mergeProjectedCaseOptions = (items: any[], replace = false) => {
+  const source = replace ? [] : projectedCaseOptions.value
+  const byId = new Map(source.map(item => [String(item.id), item]))
+  for (const item of items) {
+    const normalized = item?.caseId ? mapProjectedCaseNode(item) : item
+    const id = String(normalized?.id || '')
+    if (id) byId.set(id, { ...byId.get(id), ...normalized })
+  }
+  projectedCaseOptions.value = [...byId.values()].sort((left, right) => {
+    const leftOrder = Number(left?.order || Number.MAX_SAFE_INTEGER)
+    const rightOrder = Number(right?.order || Number.MAX_SAFE_INTEGER)
+    return leftOrder - rightOrder || String(left?.id).localeCompare(String(right?.id))
+  })
+}
+
+const loadTargetCasePage = async (page: number, replace = false) => {
+  if (!targetScene.value?.id || !isProjectedTargetScene.value || (loadingTargetCases.value && !replace)) return
+  const sceneDbId = String(targetScene.value.id)
+  const keyword = targetCaseKeyword.value
+  const requestSequence = ++targetCaseRequestSequence
+  loadingTargetCases.value = true
+  try {
+    const response = await loadAutomationUiDefinitionCases(
+      sceneDbId,
+      page,
+      TARGET_CASE_PAGE_SIZE,
+      undefined,
+      keyword,
+    )
+    if (!response || requestSequence !== targetCaseRequestSequence || String(targetScene.value?.id || '') !== sceneDbId) return
+    mergeProjectedCaseOptions(response.items || [], replace)
+    targetCasePage.value = response.page
+    targetCaseTotal.value = response.total
+  } catch (error: any) {
+    if (requestSequence === targetCaseRequestSequence) {
+      Message.error(error?.message || '加载目标用例失败')
+    }
+  } finally {
+    if (requestSequence === targetCaseRequestSequence) loadingTargetCases.value = false
+  }
+}
+
+const loadNextTargetCasePage = async () => {
+  if (!isProjectedTargetScene.value || loadingTargetCases.value) return
+  if (projectedCaseOptions.value.length >= targetCaseTotal.value) return
+  await loadTargetCasePage(targetCasePage.value + 1)
+}
+
+const handleTargetCaseSearch = (keyword: string) => {
+  if (!isProjectedTargetScene.value) return
+  targetCaseKeyword.value = String(keyword || '').trim()
+  if (targetCaseSearchTimer) clearTimeout(targetCaseSearchTimer)
+  targetCaseSearchTimer = setTimeout(() => {
+    void loadTargetCasePage(1, true)
+  }, 250)
+}
+
+const ensureProjectedAppendBoundary = async () => {
+  if (projectedAppendBoundaryLoaded.value || !targetScene.value?.id || !isProjectedTargetScene.value || targetSceneCaseTotal.value <= 0) return
+  const sceneDbId = String(targetScene.value.id)
+  const requestSequence = targetSceneRequestSequence
+  const page = Math.max(1, Math.ceil(targetSceneCaseTotal.value / TARGET_CASE_PAGE_SIZE))
+  const response = await loadAutomationUiDefinitionCases(sceneDbId, page, TARGET_CASE_PAGE_SIZE)
+  if (requestSequence !== targetSceneRequestSequence || String(targetScene.value?.id || '') !== sceneDbId) return
+  const lastNode = response?.items?.[response.items.length - 1]
+  if (!lastNode?.caseId) return
+  mergeProjectedCaseOptions([lastNode])
+  await loadProjectedTargetCase(lastNode.caseId, sceneDbId)
+  if (requestSequence !== targetSceneRequestSequence || String(targetScene.value?.id || '') !== sceneDbId) return
+  projectedAppendBoundaryLoaded.value = true
+}
+
+const ensureProjectedAppendContext = async () => {
+  if (!isProjectedTargetScene.value || form.mode !== 'appendCase') return
+  if (form.appendPosition === APPEND_POSITION_LAST) {
+    await ensureProjectedAppendBoundary()
+    return
+  }
+  if (!form.appendPosition.startsWith(APPEND_POSITION_AFTER_PREFIX)) return
+  const anchorCaseId = form.appendPosition.slice(APPEND_POSITION_AFTER_PREFIX.length)
+  const anchorCase = orderedCases.value.find((item: any) => String(item?.id) === anchorCaseId)
+  if (!anchorCaseId || anchorCase?.__stepsLoaded === true) return
+  await loadProjectedTargetCase(anchorCaseId)
+}
+
+const handleAppendPositionChange = async () => {
+  const expectedPosition = form.appendPosition
+  try {
+    await ensureProjectedAppendContext()
+    if (form.appendPosition === expectedPosition) syncRecordingStartUrl()
+  } catch (error: any) {
+    Message.error(error?.message || '加载追加位置上下文失败')
   }
 }
 
@@ -1006,6 +1158,20 @@ const handleTargetSceneChange = async (value: string | number | boolean | Record
   form.stepAppendPosition = 'LAST'
   form.projectEnvironmentId = ''
   form.startUrl = ''
+  projectedCaseOptions.value = []
+  targetCasePage.value = 0
+  targetCaseTotal.value = 0
+  targetSceneCaseTotal.value = 0
+  targetCaseKeyword.value = ''
+  projectedAppendBoundaryLoaded.value = false
+  targetCaseRequestSequence += 1
+  targetSceneRequestSequence += 1
+  loadingTargetCases.value = false
+  loadingTargetScene.value = false
+  if (targetCaseSearchTimer) {
+    clearTimeout(targetCaseSearchTimer)
+    targetCaseSearchTimer = undefined
+  }
   targetSceneLoaded.value = false
   if (!sceneId) return
   try {
@@ -1016,14 +1182,45 @@ const handleTargetSceneChange = async (value: string | number | boolean | Record
   }
 }
 
-const handleTargetCaseChange = (value: string | number | boolean | Record<string, any> | Array<any>) => {
+const handleTargetCaseChange = async (value: string | number | boolean | Record<string, any> | Array<any>) => {
   const nextValue = Array.isArray(value) ? value[0] : value
   form.targetCaseId = nextValue == null ? '' : String(nextValue)
   form.targetStepId = ''
   const targetCase = (Array.isArray(targetScene.value?.caseList) ? targetScene.value.caseList : [])
     .find((item: any) => String(item?.id) === form.targetCaseId)
+    || projectedCaseOptions.value.find((item: any) => String(item?.id) === form.targetCaseId)
   if (targetCase?.name) form.caseName = String(targetCase.name)
+  if ((targetScene.value as any)?.__projectedDefinition && form.targetCaseId) {
+    await loadProjectedTargetCase(form.targetCaseId)
+  }
   syncRecordingStartUrl()
+}
+
+const loadProjectedTargetCase = async (caseId: string, expectedSceneDbId = String(targetScene.value?.id || '')) => {
+  if (!expectedSceneDbId || String(targetScene.value?.id || '') !== expectedSceneDbId) return
+  const detail = await loadAutomationUiDefinitionCase(expectedSceneDbId, caseId)
+  if (!detail) return
+  let steps: Array<Record<string, unknown>> = []
+  const size = 100
+  const pageCount = Math.max(1, Math.ceil(detail.stepCount / size))
+  if (pageCount > 0) {
+    const firstPage = await loadAutomationUiDefinitionSteps(expectedSceneDbId, caseId, 1, size)
+    const remainingPages = Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) => index + 2)
+    const remaining = await mapWithConcurrency(
+      remainingPages,
+      4,
+      page => loadAutomationUiDefinitionSteps(expectedSceneDbId, caseId, page, size),
+    )
+    steps = [...(firstPage?.items || []), ...remaining.flatMap(response => response?.items || [])]
+  }
+  if (String(targetScene.value?.id || '') !== expectedSceneDbId) return
+  const nextCase = { ...detail.caseBody, id: caseId, stepList: steps, __stepsLoaded: true }
+  const currentCases = Array.isArray(targetScene.value.caseList) ? targetScene.value.caseList : []
+  const index = currentCases.findIndex(item => String(item.id) === caseId)
+  targetScene.value.caseList = index >= 0
+    ? currentCases.map((item, itemIndex) => itemIndex === index ? nextCase as any : item)
+    : [...currentCases, nextCase as any]
+  mergeProjectedCaseOptions([nextCase])
 }
 
 const handleModeChange = async (value: string | number | boolean | Record<string, any> | Array<any>) => {
@@ -1039,6 +1236,19 @@ const handleModeChange = async (value: string | number | boolean | Record<string
     : 'LAST'
   syncRecordingStartUrl()
   if (form.mode === 'createScene') {
+    targetCaseRequestSequence += 1
+    targetSceneRequestSequence += 1
+    loadingTargetCases.value = false
+    loadingTargetScene.value = false
+    projectedCaseOptions.value = []
+    targetCasePage.value = 0
+    targetCaseTotal.value = 0
+    targetSceneCaseTotal.value = 0
+    projectedAppendBoundaryLoaded.value = false
+    if (targetCaseSearchTimer) {
+      clearTimeout(targetCaseSearchTimer)
+      targetCaseSearchTimer = undefined
+    }
     form.targetSceneDbId = ''
     targetScene.value = null
     targetSceneLoaded.value = false
@@ -1273,6 +1483,10 @@ const startRecording = async () => {
   try {
     submitting.value = true
     recordingLog.value = null
+    if (isProjectedTargetScene.value && form.mode === 'appendCase') {
+      await ensureProjectedAppendContext()
+      syncRecordingStartUrl()
+    }
     await formRef.value?.validate()
     if (!form.startUrl || (caseNameModes.includes(form.mode) && !form.caseName)) return false
     if (!form.projectEnvironmentId) return false
@@ -1361,6 +1575,20 @@ const resetForm = (record?: AutomationUiSceneResp | null, options: RecordingOpen
     ? `${STEP_APPEND_POSITION_AFTER_PREFIX}${options.appendAfterStepId}`
     : 'LAST'
   targetSceneLoaded.value = false
+  projectedCaseOptions.value = []
+  targetCasePage.value = 0
+  targetCaseTotal.value = 0
+  targetSceneCaseTotal.value = 0
+  targetCaseKeyword.value = ''
+  projectedAppendBoundaryLoaded.value = false
+  targetCaseRequestSequence += 1
+  targetSceneRequestSequence += 1
+  loadingTargetCases.value = false
+  loadingTargetScene.value = false
+  if (targetCaseSearchTimer) {
+    clearTimeout(targetCaseSearchTimer)
+    targetCaseSearchTimer = undefined
+  }
   form.persistScreenshots = false
   form.keepRawScreenshotInStep = false
   form.screenshotMode = 'standard'
@@ -1463,6 +1691,7 @@ const onWindowMessage = (event: MessageEvent) => {
     } else {
       Message.success('Chrome 扩展录制已保存，正在刷新场景列表')
       if (targetScene.value?.id && saveMeta.mode !== 'createScene') {
+        invalidateAutomationUiDefinition(targetScene.value.id)
         void loadTargetScene(String(targetScene.value.id)).catch((e: any) => {
           Message.error(e?.message || '刷新目标场景详情失败')
         })

@@ -18,6 +18,9 @@ export interface AutomationPlaywrightBatchCreateReq {
   sceneKey: string
   executionType: 'playwright-runner' | 'extension-cdp'
   caseIds: string[]
+  /** 超大场景由 Admin 按冻结定义解析全部用例，避免浏览器下载完整 ID 集合。 */
+  selectAllCases?: boolean
+  expectedDefinitionVersion?: number
   projectEnvironmentId: string
   /** 计划异步调度时显式透传执行人，避免后台线程丢失用户上下文。 */
   executeName?: string

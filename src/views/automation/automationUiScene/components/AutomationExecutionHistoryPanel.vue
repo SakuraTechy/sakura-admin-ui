@@ -122,6 +122,11 @@
         <AutomationExecutionBatchDetail
           :batch="record"
           :force-scene-groups="aggregatePlanBatches"
+          :load-cases="loadExecutionCases"
+          :load-steps="loadExecutionSteps"
+          :load-step-detail="loadExecutionStepDetail"
+          :auto-expand-case-id="autoExpandCaseId"
+          :auto-expand-scene-id="autoExpandSceneId"
         />
       </template>
     </GiTable>
@@ -144,7 +149,13 @@
       @refresh="emit('refresh')"
     >
       <template #expand-row="{ record }">
-        <AutomationExecutionHistoryDetail :record="record" variant="table" @open="openResult" />
+        <AutomationExecutionHistoryDetail
+          :record="record"
+          variant="table"
+          :load-steps="loadExecutionSteps"
+          :load-step-detail="loadExecutionStepDetail"
+          @open="openResult"
+        />
       </template>
     </GiTable>
 
@@ -192,7 +203,7 @@
               <a-link v-if="!record.live && record.executionType !== 'extension-cdp'" @click="openResult(record, 'video')">录屏</a-link>
             </a-space>
           </div>
-          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="compact" @open="openResult" />
+          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="compact" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" @open="openResult" />
         </div>
       </div>
 
@@ -257,7 +268,7 @@
               </a-space>
             </div>
           </div>
-          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="timeline" @open="openResult" />
+          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="timeline" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" @open="openResult" />
         </div>
       </div>
 
@@ -321,7 +332,7 @@
               </a-space>
             </div>
           </article>
-          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="cards" @open="openResult" />
+          <AutomationExecutionHistoryDetail v-if="isExpanded(record)" :record="record" variant="cards" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" @open="openResult" />
         </div>
       </div>
 
@@ -339,6 +350,7 @@ import type { TableInstance } from '@arco-design/web-vue'
 import {
   type ExecutionHistoryBatchRow,
   type ExecutionHistoryCaseRow,
+  type ExecutionHistoryStepRow,
   type ExecutionRecordSource,
   type ExecutionResultOpenOptions,
   type ExecutionType,
@@ -363,7 +375,6 @@ import AutomationExecutionBatchDetail from './AutomationExecutionBatchDetail.vue
 import AutomationExecutionHistoryDetail from './AutomationExecutionHistoryDetail.vue'
 import AutomationExecutionProgress from './AutomationExecutionProgress.vue'
 import AutomationExecutionResultDrawer from './AutomationExecutionResultDrawer.vue'
-import type { AutomationUiSceneDetailResp, AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
 import type { ColumnItem } from '@/components/GiForm'
 
 type HistoryViewMode = 'table' | 'compact' | 'timeline' | 'cards'
@@ -380,7 +391,14 @@ interface HistoryQuery {
   startedAt: string[]
 }
 
-type HistoryScene = AutomationUiSceneDetailResp | AutomationUiSceneResp
+interface HistoryScene {
+  id: string | number
+  sceneId?: string
+  name?: string
+  caseList?: unknown[]
+  debugRecord?: unknown[]
+  testRecord?: unknown[]
+}
 
 const props = withDefaults(defineProps<{
   scene?: HistoryScene
@@ -395,7 +413,20 @@ const props = withDefaults(defineProps<{
   sceneFilterOptions?: Array<{ label: string, value: string }>
   loading?: boolean
   selectedCaseId?: string
+  /** 从报告跳转时自动展开的用例；为空时由批次明细展开首个用例。 */
+  autoExpandCaseId?: string
+  autoExpandSceneId?: string
   liveExecutions?: LiveExecutionCase[]
+  /** 新分层查询返回的有界批次；传入后不再解析场景大 JSON。 */
+  executionBatches?: ExecutionHistoryBatchRow[]
+  executionPage?: number
+  executionPageSize?: number
+  executionTotal?: number
+  loadExecutionPage?: (page: number, size: number) => Promise<void>
+  loadExecutionCaseHistory?: (caseId: string, page?: number, size?: number) => Promise<{ list: ExecutionHistoryCaseRow[], total: number }>
+  loadExecutionCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
+  loadExecutionSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
+  loadExecutionStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>
 }>(), {
   scenes: () => [],
   recordSource: 'debug',
@@ -413,9 +444,15 @@ const emit = defineEmits<{
 
 const VIEW_MODE_STORAGE_KEY = 'automation-execution-history-view-mode'
 const viewMode = ref<HistoryViewMode>('table')
+const remoteBatchPagination = computed(() => Boolean(
+  props.loadExecutionPage && viewMode.value === 'table' && !props.selectedCaseId,
+))
+const remoteCasePagination = computed(() => Boolean(
+  props.loadExecutionCaseHistory && viewMode.value === 'table' && props.selectedCaseId,
+))
 const panelRef = ref<HTMLElement>()
 const expandedKeys = ref<Array<string | number>>([])
-const latestBatchKey = ref('')
+const autoExpandedTarget = ref('')
 const cancellingBatchKeys = ref(new Set<string>())
 const cancellingCaseKeys = ref(new Set<string>())
 const refreshedTerminalExecutionKeys = new Set<string>()
@@ -427,12 +464,33 @@ const pagination = reactive({
   total: 0,
   showPageSize: true,
   showTotal: true,
-  pageSizeOptions: [10, 20, 30, 50, 100],
+  pageSizeOptions: [10, 20, 30, 50],
   onChange: (page: number) => {
+    if (remoteCasePagination.value && props.loadExecutionCaseHistory && props.selectedCaseId) {
+      pagination.current = page
+      expandedKeys.value = []
+      void loadSelectedCaseHistory(page, pagination.pageSize)
+      return
+    }
+    if (remoteBatchPagination.value && props.loadExecutionPage) {
+      void props.loadExecutionPage(page, pagination.pageSize)
+      return
+    }
     pagination.current = page
     expandedKeys.value = []
   },
   onPageSizeChange: (size: number) => {
+    if (remoteCasePagination.value && props.loadExecutionCaseHistory && props.selectedCaseId) {
+      pagination.current = 1
+      pagination.pageSize = size
+      expandedKeys.value = []
+      void loadSelectedCaseHistory(1, size)
+      return
+    }
+    if (remoteBatchPagination.value && props.loadExecutionPage) {
+      void props.loadExecutionPage(1, size)
+      return
+    }
     pagination.current = 1
     pagination.pageSize = size
     expandedKeys.value = []
@@ -466,26 +524,52 @@ const effectiveLiveExecutions = computed(() => props.liveExecutions.filter((item
   && (props.recordSource !== 'test' || String(item.testPlanId || '') === String(props.testPlanId || ''))
 )))
 const allHistoryRows = computed(() => historyScenes.value.flatMap(scene => (
-  getExecutionHistoryRows(scene, props.recordSource, props.testPlanId)
-)).sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt)))
+  props.executionBatches
+    ? []
+    : getExecutionHistoryRows(scene, props.recordSource, props.testPlanId)
+)).concat(props.executionBatches?.flatMap(batch => batch.cases) || [])
+  .sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt)))
 const persistedLiveRows = computed(() => {
   const rows = new Map<string, ExecutionHistoryCaseRow>()
   allHistoryRows.value.forEach((row) => {
-    const key = executionHistoryCaseKey(row)
+    const key = executionHistoryMergeKey(row)
     if (!rows.has(key)) rows.set(key, row)
   })
   return rows
 })
 const liveHistoryRows = computed(() => effectiveLiveExecutions.value.map((item) => {
   const liveRow = normalizeLiveExecution(item)
-  const persistedRow = persistedLiveRows.value.get(executionHistoryCaseKey(liveRow))
+  const persistedRow = persistedLiveRows.value.get(executionHistoryMergeKey(liveRow))
   return hydrateCompletedLiveRow(liveRow, persistedRow)
 }))
+const selectedCaseRows = ref<ExecutionHistoryCaseRow[]>([])
+const selectedCaseTotal = ref(0)
+let selectedCaseRequest = 0
+async function loadSelectedCaseHistory(page = pagination.current, size = pagination.pageSize) {
+  if (!props.selectedCaseId || !props.loadExecutionCaseHistory) return
+  const requestId = ++selectedCaseRequest
+  const response = await props.loadExecutionCaseHistory(props.selectedCaseId, page, size)
+  if (requestId !== selectedCaseRequest) return
+  const persistedRows = response.list
+  const persistedByKey = new Map(persistedRows.map(row => [executionHistoryMergeKey(row), row]))
+  let liveRows: ExecutionHistoryCaseRow[] = []
+  if (page === 1) {
+    liveRows = effectiveLiveExecutions.value
+      .filter(item => String(item.caseId || '') === String(props.selectedCaseId))
+      .map(item => normalizeLiveExecution(item))
+      .map(row => hydrateCompletedLiveRow(row, persistedByKey.get(executionHistoryMergeKey(row))))
+  }
+  const liveKeys = new Set(liveRows.map(executionHistoryMergeKey))
+  selectedCaseRows.value = [...liveRows, ...persistedRows.filter(row => !liveKeys.has(executionHistoryMergeKey(row)))]
+  const persistedKeys = new Set(persistedRows.map(executionHistoryMergeKey))
+  selectedCaseTotal.value = response.total + liveRows.filter(row => !persistedKeys.has(executionHistoryMergeKey(row))).length
+}
 const scopedHistoryRows = computed(() => {
-  const liveExecutionIds = new Set(liveHistoryRows.value.map((item) => `${item.sceneKey}:${item.executionId}`))
+  if (remoteCasePagination.value) return selectedCaseRows.value
+  const liveExecutionIds = new Set(liveHistoryRows.value.map(executionHistoryMergeKey))
   const rows = [
     ...liveHistoryRows.value,
-    ...allHistoryRows.value.filter((item) => !liveExecutionIds.has(`${item.sceneKey}:${item.executionId}`)),
+    ...allHistoryRows.value.filter((item) => !liveExecutionIds.has(executionHistoryMergeKey(item))),
   ]
   const displayedRows = rows.map(applyPendingCaseState)
   if (props.selectedCaseId) {
@@ -591,7 +675,7 @@ const summaryCards = computed(() => {
 })
 const filteredRows = computed(() => scopedHistoryRows.value.filter((row) => matchesQuery(row, appliedQuery.value)))
 const allBatchRows = computed(() => {
-  const rows = historyScenes.value.flatMap(scene => (
+  const rows = props.executionBatches || historyScenes.value.flatMap(scene => (
     getExecutionBatchRows(scene, props.recordSource, props.testPlanId)
   ))
   const merged = aggregatePlanBatches.value ? aggregateExecutionBatchRows(rows) : rows
@@ -609,15 +693,19 @@ const filteredBatchRows = computed(() => {
   ].map(applyPendingBatchState).filter((row) => matchesBatchQuery(row, appliedQuery.value))
 })
 const pagedRows = computed(() => {
+  if (remoteCasePagination.value) return selectedCaseRows.value
   const start = (pagination.current - 1) * pagination.pageSize
   return filteredRows.value.slice(start, start + pagination.pageSize)
 })
 const pagedBatchRows = computed(() => {
+  if (remoteBatchPagination.value) return filteredBatchRows.value
   const start = (pagination.current - 1) * pagination.pageSize
   return filteredBatchRows.value.slice(start, start + pagination.pageSize)
 })
 const tableBatchMode = computed(() => viewMode.value === 'table' && !props.selectedCaseId)
-const displayTotal = computed(() => tableBatchMode.value ? filteredBatchRows.value.length : filteredRows.value.length)
+const displayTotal = computed(() => tableBatchMode.value
+  ? (remoteBatchPagination.value ? (props.executionTotal || 0) : filteredBatchRows.value.length)
+  : (remoteCasePagination.value ? selectedCaseTotal.value : filteredRows.value.length))
 const activeViewLabel = computed(() => ({
   table: '表格视图',
   compact: '紧凑视图',
@@ -648,6 +736,35 @@ watch(displayTotal, (total) => {
   }
 }, { immediate: true })
 
+watch(
+  () => `${props.autoExpandCaseId || props.autoExpandSceneId || ''}:${filteredBatchRows.value.map(item => item.rowKey).join('|')}`,
+  () => {
+    const targetId = props.autoExpandCaseId || props.autoExpandSceneId
+    if (!tableBatchMode.value || !targetId || !filteredBatchRows.value.length) return
+    const target = `${targetId}:${filteredBatchRows.value.map(item => item.rowKey).join('|')}`
+    if (autoExpandedTarget.value === target) return
+    autoExpandedTarget.value = target
+    const row = filteredBatchRows.value.find((item) => {
+      const target = String(targetId)
+      return String(item.sceneKey || item.sceneId || '') === target
+        || item.sceneSummaries?.some(scene => String(scene.key) === target || String(scene.sceneId) === target)
+    }) || filteredBatchRows.value[0]
+    expandedKeys.value = [row.rowKey]
+    scrollExpandedIntoView(row.rowKey)
+  },
+  { immediate: true },
+)
+
+watch(
+  () => `${props.executionPage || 1}:${props.executionPageSize || 10}`,
+  () => {
+    if (!remoteBatchPagination.value) return
+    pagination.current = props.executionPage || 1
+    pagination.pageSize = props.executionPageSize || 10
+  },
+  { immediate: true },
+)
+
 // 某条用例进入终态后主动拉取场景详情，确保实时行能尽快补齐后端保存的步骤明细。
 watch(
   () => props.liveExecutions
@@ -666,19 +783,22 @@ watch(
 watch(() => props.selectedCaseId, () => {
   pagination.current = 1
   expandedKeys.value = []
+  selectedCaseRows.value = []
+  selectedCaseTotal.value = 0
+  if (props.selectedCaseId && remoteCasePagination.value) void loadSelectedCaseHistory(1, pagination.pageSize)
 })
 
 watch(
-  () => `${tableBatchMode.value}:${pagination.current}:${pagedBatchRows.value.map((item) => item.rowKey).join('|')}`,
+  () => `${viewMode.value}:${props.selectedCaseId || ''}:${props.executionBatches?.map(item => `${item.executionDbId}:${item.casesLoaded}`).join('|') || ''}`,
   () => {
-    if (!tableBatchMode.value) return
-    const visibleKeys = pagedBatchRows.value.map((item) => item.rowKey)
-    const firstKey = visibleKeys[0] || ''
-    const latestChanged = firstKey !== latestBatchKey.value
-    latestBatchKey.value = firstKey
-    if (firstKey && (latestChanged || !expandedKeys.value.some((key) => visibleKeys.includes(String(key))))) {
-      expandedKeys.value = [firstKey]
-    }
+    if (!props.executionBatches || !props.loadExecutionCases) return
+    // 批次表格无需预取用例；指定用例时表格展示的是用例执行记录，必须先加载批次子项再筛选。
+    if (viewMode.value === 'table') return
+    const start = (pagination.current - 1) * pagination.pageSize
+    const visible = props.executionBatches.slice(start, start + pagination.pageSize)
+      .filter(item => !item.casesLoaded)
+    const casePageSize = props.selectedCaseId ? 50 : 20
+    void Promise.all(visible.map(item => props.loadExecutionCases?.(item, 1, casePageSize)))
   },
   { immediate: true },
 )
@@ -799,10 +919,8 @@ const batchColumns = computed<TableInstance['columns']>(() => [
     width: 100,
     align: 'center',
     render: ({ record }: any) => (
-      <div title={`批次耗时合计：${formatExecutionDuration(record.caseDurationTotal)}`}>
-        {/* <div>{formatExecutionDuration(record.duration)}</div> */}
-        {/* <small class="history-duration-subtotal">用例合计 {formatExecutionDuration(record.caseDurationTotal)}</small> */}
-        <div>{formatExecutionDuration(record.caseDurationTotal)}</div>
+      <div title={`批次墙钟耗时：${formatExecutionDuration(record.duration)}`}>
+        <div>{formatExecutionDuration(record.duration)}</div>
       </div>
     ),
   },
@@ -1173,6 +1291,13 @@ function executionHistoryCaseKey(row: Pick<ExecutionHistoryCaseRow, 'sceneKey' |
   return `${row.sceneKey || ''}:${row.batchId || ''}:${row.caseId || ''}`
 }
 
+function executionHistoryMergeKey(
+  row: Pick<ExecutionHistoryCaseRow, 'batchId' | 'caseId' | 'executionId'>,
+) {
+  // 实时行和持久化占位行的 executionId、sceneKey 可能不同，同一批次同一用例必须只显示一行。
+  return `${row.batchId || row.executionId || ''}:${row.caseId || ''}`
+}
+
 function hydrateCompletedLiveRow(
   liveRow: ExecutionHistoryCaseRow,
   persistedRow?: ExecutionHistoryCaseRow,
@@ -1208,7 +1333,7 @@ function normalizeLiveBatches(
     const sceneKey = batchItems[0]?.sceneKey || ''
     const cases = batchItems.map((item) => {
       const liveRow = normalizeLiveExecution(item)
-      return hydrateCompletedLiveRow(liveRow, persistedRows.get(executionHistoryCaseKey(liveRow)))
+      return hydrateCompletedLiveRow(liveRow, persistedRows.get(executionHistoryMergeKey(liveRow)))
     })
     const terminalCases = batchItems.filter((item) => ['passed', 'failed', 'cancelled'].includes(item.status))
     const failed = batchItems.filter((item) => item.status === 'failed').length
@@ -1276,9 +1401,10 @@ function normalizeLiveBatches(
 }
 
 function batchIdentity(row: ExecutionHistoryBatchRow) {
+  const identity = row.batchId || row.recordKey || row.executionDbId || ''
   return row.testReportId
     ? `report:${row.testReportId}`
-    : `scene:${row.sceneKey || ''}:batch:${row.batchId}`
+    : `batch:${identity}`
 }
 
 function isBatchCancellable(row: ExecutionHistoryBatchRow) {

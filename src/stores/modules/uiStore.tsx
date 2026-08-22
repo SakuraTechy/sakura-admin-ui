@@ -47,6 +47,29 @@ export const useUiStore = defineStore('ui', {
       return treeList[0]?.id ? String(treeList[0].id) : ''
     },
 
+    /** 父模块查询必须覆盖自身及全部后代模块，叶子模块只返回自身。 */
+    getSceneModuleIds(moduleId?: string) {
+      const targetId = moduleId ?? this.moduleId
+      if (!targetId) return undefined
+      const findNode = (items: TreeCateItem[]): TreeCateItem | undefined => {
+        for (const item of items) {
+          if (String(item.id) === String(targetId)) return item
+          const matched = findNode(item.children as TreeCateItem[] || [])
+          if (matched) return matched
+        }
+      }
+      const selectedNode = findNode(this.treeList)
+      if (!selectedNode) return [String(targetId)]
+      const moduleIds: string[] = []
+      const collectIds = (node: TreeCateItem) => {
+        moduleIds.push(String(node.id))
+        const children = node.children as TreeCateItem[] || []
+        children.forEach(collectIds)
+      }
+      collectIds(selectedNode)
+      return moduleIds
+    },
+
     async fetchProjects() {
       const res = await getProjectConfigList({ status: 1, sort: ['name,desc'] })
       this.projectList = res.data.map((item) => ({ label: item.name, value: `${item.id}` }))

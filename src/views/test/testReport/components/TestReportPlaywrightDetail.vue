@@ -39,9 +39,19 @@
       :multi-scene="historySceneKey === ALL_HISTORY_SCENES"
       aggregate-plan-batches
       :scene-filter-value="historySceneKey"
+      :auto-expand-case-id="autoExpandCaseId"
+      :auto-expand-scene-id="autoExpandSceneId || (historySceneKey !== ALL_HISTORY_SCENES ? historySceneKey : undefined)"
       :scene-filter-options="historySceneOptions"
       :loading="loading"
-      @scene-change="historySceneKey = $event"
+      :execution-batches="executionBatches"
+      :execution-page="executionPage"
+      :execution-page-size="executionPageSize"
+      :execution-total="executionTotal"
+      :load-execution-page="historySceneKey === ALL_HISTORY_SCENES ? undefined : loadExecutionPage"
+      :load-execution-cases="loadExecutionCases"
+      :load-execution-steps="loadExecutionSteps"
+      :load-execution-step-detail="loadExecutionStepDetail"
+      @scene-change="onSceneChange"
       @refresh="loadScenes"
       @cancel-batch="cancelReportExecution"
       @cancel-case="cancelReportCase"
@@ -53,23 +63,51 @@
 import type { TestReportDetailResp } from '@/apis/test/testReport'
 import { Message, Modal } from '@arco-design/web-vue'
 import {
-  getAutomationUiSceneList,
-  getAutomationUiSceneSelectedRevisions,
-  type AutomationUiSceneResp,
-} from '@/apis/automation/automationUiScene'
+  getAutomationUiExecutionCases,
+  getAutomationUiExecutionRevisionsBatched,
+  getAutomationUiExecutionStep,
+  getAutomationUiExecutionSteps,
+  getAutomationUiExecutions,
+  getAutomationUiSceneSummaryPage,
+  type AutomationUiSceneSummary,
+} from '@/apis/automation/automationUiQuery'
+import type { AutomationUiSceneResp } from '@/apis/automation/automationUiScene'
 import { cancelTestPlanExecution } from '@/apis/test/testPlan'
 import { cancelAutomationPlaywrightBatchCase } from '@/apis/automation/automationPlaywrightRunner'
 import AutomationExecutionHistoryPanel from '@/views/automation/automationUiScene/components/AutomationExecutionHistoryPanel.vue'
-import type { ExecutionHistoryBatchRow, ExecutionHistoryCaseRow } from '@/views/automation/automationUiScene/execution'
+import {
+  buildLayeredExecutionBatchRow,
+  buildLayeredExecutionCaseRow,
+  buildLayeredExecutionStepRow,
+  applyLayeredExecutionStepDetail,
+  type ExecutionHistoryBatchRow,
+  type ExecutionHistoryCaseRow,
+  type ExecutionHistoryStepRow,
+} from '@/views/automation/automationUiScene/execution'
+import { requestOnce } from '@/views/automation/automationUiScene/queryCache'
+import { mapScopedSceneSummary } from '@/views/automation/automationUiScene/sceneSummary'
 import { formatDuration } from '@/utils/sakura'
 
-const props = defineProps<{ detailData?: TestReportDetailResp }>()
+const props = defineProps<{ detailData?: TestReportDetailResp, autoExpandCaseId?: string, autoExpandSceneId?: string }>()
+const emit = defineEmits<{
+  (e: 'refresh-detail'): void
+}>()
 const ALL_HISTORY_SCENES = 'all'
+const TERMINAL_EXECUTION_STATUSES = new Set(['12', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed'])
 const scenes = ref<AutomationUiSceneResp[]>([])
+const sceneSummaries = ref<AutomationUiSceneSummary[]>([])
+const executionBatches = ref<ExecutionHistoryBatchRow[]>([])
 const historySceneKey = ref(ALL_HISTORY_SCENES)
+const executionPage = ref(1)
+const executionPageSize = ref(20)
+const executionTotal = ref(0)
 const loading = ref(false)
+const reportExecutionTerminal = ref(false)
 let historyPollTimer: number | undefined
 let historyRevision = ''
+let historyRefreshing = false
+let loadController: AbortController | undefined
+let loadGeneration = 0
 
 const statistic = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.ui || {})
 const playwrightArtifacts = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.playwrightArtifacts || {})
@@ -105,55 +143,210 @@ const displayScenes = computed(() => historySceneKey.value === ALL_HISTORY_SCENE
   ? scenes.value
   : scenes.value.filter((scene) => String(scene.id) === historySceneKey.value))
 
-const loadScenes = async (resetFilter = true, silent = false) => {
-  if (!props.detailData?.id || !props.detailData.testPlanId) {
-    scenes.value = []
-    return
-  }
-  if (!silent) loading.value = true
-  try {
-    if (resetFilter) historySceneKey.value = ALL_HISTORY_SCENES
-    const { data } = await getAutomationUiSceneList({
-      testPlanId: String(props.detailData.testPlanId),
-      testReportId: String(props.detailData.id),
-      executeResultType: 'report',
-      sort: ['sceneId,asc'],
-    })
-    const result = data as unknown as AutomationUiSceneResp[] | { list?: AutomationUiSceneResp[] }
-    scenes.value = Array.isArray(result) ? result : Array.isArray(result?.list) ? result.list : []
-    historyRevision = sceneRevisionFingerprint(scenes.value)
-  } finally {
-    if (!silent) loading.value = false
-  }
-}
-
-const sceneRevisionFingerprint = (items: Array<{ id: string | number, updateTime?: string, executionRevision?: number }>) => items
-  .map(item => `${String(item.id)}:${item.updateTime || ''}:${item.executionRevision ?? 0}`)
+const sceneRevisionFingerprint = (items: Array<{ sceneDbId: string | number, updateTime?: string, globalExecutionRevision?: number }>) => items
+  .map((item) => `${String(item.sceneDbId)}:${item.updateTime || ''}:${item.globalExecutionRevision ?? 0}`)
   .sort()
   .join('|')
 
-const refreshScenesWhenChanged = async () => {
-  const sceneIds = scenes.value.map(scene => scene.id)
-  if (!sceneIds.length) {
-    await loadScenes(false, true)
-    return
-  }
-  const { data } = await getAutomationUiSceneSelectedRevisions(sceneIds)
-  const nextRevision = sceneRevisionFingerprint(Array.isArray(data) ? data : [])
-  if (nextRevision !== historyRevision) await loadScenes(false, true)
-}
-
-const stopHistoryPolling = () => {
+function stopHistoryPolling() {
   if (historyPollTimer) window.clearInterval(historyPollTimer)
   historyPollTimer = undefined
 }
 
+const isReportExecutionTerminal = (summaries: AutomationUiSceneSummary[]) => {
+  const expectedSceneTotal = Number(statistic.value.sceneTotal || 0)
+  return expectedSceneTotal > 0
+    && summaries.length >= expectedSceneTotal
+    && summaries.every((scene) => TERMINAL_EXECUTION_STATUSES.has(String(scene.latestExecution?.status || '').toLowerCase()))
+}
+
+const loadScenes = async (resetFilter = true, silent = false) => {
+  if (!props.detailData?.id || !props.detailData.testPlanId) {
+    scenes.value = []
+    sceneSummaries.value = []
+    executionBatches.value = []
+    executionTotal.value = 0
+    historyRevision = ''
+    return
+  }
+  loadController?.abort()
+  const controller = new AbortController()
+  loadController = controller
+  const generation = ++loadGeneration
+  if (!silent) loading.value = true
+  try {
+    if (resetFilter) historySceneKey.value = ALL_HISTORY_SCENES
+    const summaries: AutomationUiSceneSummary[] = []
+    let page = 1
+    let total = 0
+    do {
+      const response = await getAutomationUiSceneSummaryPage({
+        recordSource: 'test',
+        scopeTestPlanId: String(props.detailData.testPlanId),
+        scopeTestReportId: String(props.detailData.id),
+        executionMatchedOnly: true,
+        page,
+        size: 50,
+        sort: ['sceneDbId,asc'],
+      }, controller.signal)
+      if (generation !== loadGeneration || controller.signal.aborted) return
+      const rows = response.data?.list || []
+      total = response.data?.total || 0
+      summaries.push(...rows)
+      if (summaries.length >= total) break
+      if (summaries.length >= 10_000) throw new Error('当前报告场景超过 10000 条，无法继续深分页')
+      page += 1
+    } while (summaries.length < total)
+    sceneSummaries.value = summaries
+    scenes.value = summaries.map(summary => mapScopedSceneSummary(summary, 'test'))
+    if (props.autoExpandSceneId) {
+      const targetScene = summaries.find(scene => (
+        String(scene.sceneDbId) === props.autoExpandSceneId || scene.sceneKey === props.autoExpandSceneId
+      ))
+      if (targetScene) historySceneKey.value = String(targetScene.sceneDbId)
+    } else if (summaries.length === 1) {
+      // 场景跳转参数缺失时，报告只有一个场景，仍自动进入该场景的执行日志。
+      historySceneKey.value = String(summaries[0].sceneDbId)
+    }
+    if (historySceneKey.value !== ALL_HISTORY_SCENES
+      && !summaries.some(scene => String(scene.sceneDbId) === historySceneKey.value)) {
+      historySceneKey.value = ALL_HISTORY_SCENES
+    }
+    const activeSummaries = historySceneKey.value === ALL_HISTORY_SCENES
+      ? summaries
+      : summaries.filter(scene => String(scene.sceneDbId) === historySceneKey.value)
+    executionTotal.value = 0
+    let batches: ExecutionHistoryBatchRow[]
+    if (historySceneKey.value === ALL_HISTORY_SCENES) {
+      // 精确报告 scope 的 latest 已随 Summary 返回，全部视图不再逐场景追加 execution 请求。
+      batches = activeSummaries.flatMap(scene => scene.latestExecution
+        ? [buildLayeredExecutionBatchRow(scene.latestExecution, scene)]
+        : [])
+      executionTotal.value = batches.length
+    } else {
+      const scene = activeSummaries[0]
+      if (!scene) {
+        batches = []
+      } else {
+        const response = await getAutomationUiExecutions({
+          sceneDbId: scene.sceneDbId,
+          recordSource: 'test',
+          testPlanId: String(props.detailData!.testPlanId),
+          testReportId: String(props.detailData!.id),
+          page: executionPage.value,
+          size: executionPageSize.value,
+          sort: ['createTime,desc'],
+        }, controller.signal)
+        executionTotal.value = response.data?.mode === 'page' ? response.data.total : response.data?.list.length || 0
+        batches = (response.data?.list || []).map(record => buildLayeredExecutionBatchRow(record, scene))
+      }
+    }
+    if (generation !== loadGeneration || controller.signal.aborted) return
+    executionBatches.value = batches.sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
+    // 完整数据与轮询必须使用同一个 revision 来源，否则场景更新时间和执行更新时间会始终比较为已变化。
+    const { data: revisions } = await getAutomationUiExecutionRevisionsBatched(summaries.map((scene) => scene.sceneDbId))
+    if (generation !== loadGeneration || controller.signal.aborted) return
+    historyRevision = sceneRevisionFingerprint(Array.isArray(revisions) ? revisions : [])
+    reportExecutionTerminal.value = isReportExecutionTerminal(summaries)
+    if (reportExecutionTerminal.value && props.detailData?.status === 'RUNNING') {
+      stopHistoryPolling()
+      emit('refresh-detail')
+    }
+  } catch (error: any) {
+    if (!controller.signal.aborted && !['CanceledError', 'AbortError'].includes(error?.name)) {
+      Message.error(error?.message || '读取报告执行历史失败')
+    }
+  } finally {
+    if (!silent && generation === loadGeneration) loading.value = false
+  }
+}
+
+const refreshScenesWhenChanged = async () => {
+  if (historyRefreshing) return
+  historyRefreshing = true
+  try {
+  // 报告执行中即使 revision 尚未递增，进行中的用例进度、步骤数和墙钟耗时也会变化。
+  // 参照 UI 自动化执行历史页的轮询节拍，持续刷新当前报告 scope 的分层数据。
+  if (props.detailData?.status === 'RUNNING' && !reportExecutionTerminal.value) {
+    await loadScenes(false, true)
+    return
+  }
+  const sceneIds = sceneSummaries.value.map(scene => scene.sceneDbId)
+  if (!sceneIds.length) {
+    await loadScenes(false, true)
+    return
+  }
+  const { data: revisions } = await getAutomationUiExecutionRevisionsBatched(sceneIds)
+  const nextRevision = sceneRevisionFingerprint(revisions)
+  if (nextRevision !== historyRevision) await loadScenes(false, true)
+  } finally {
+    historyRefreshing = false
+  }
+}
+
+const onSceneChange = async (sceneId: string) => {
+  historySceneKey.value = sceneId || ALL_HISTORY_SCENES
+  executionPage.value = 1
+  await loadScenes(false, true)
+}
+
+const loadExecutionPage = async (page: number, size: number) => {
+  if (historySceneKey.value === ALL_HISTORY_SCENES) return
+  executionPage.value = page
+  executionPageSize.value = Math.min(50, Math.max(1, size))
+  await loadScenes(false, true)
+}
+
+const loadExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 50) => {
+  if (!batch.executionDbId) return
+  const response = await requestOnce(
+    `execution-cases:${batch.executionDbId}:${page}:${size}`,
+    () => getAutomationUiExecutionCases(batch.executionDbId!, page, size),
+  )
+  const current = executionBatches.value.find(item => item.executionDbId === batch.executionDbId)
+  if (!current || !response.data) return
+  current.cases = response.data.list.map(record => buildLayeredExecutionCaseRow(record, current))
+  current.casesLoaded = true
+  current.casePage = page
+  current.casePageSize = size
+  current.casePageTotal = response.data.total
+}
+
+const loadExecutionSteps = async (record: ExecutionHistoryCaseRow, page = 1, size = 50) => {
+  if (!record.caseExecutionDbId) return
+  const response = await requestOnce(
+    `execution-steps:${record.caseExecutionDbId}:${page}:${size}`,
+    () => getAutomationUiExecutionSteps(record.caseExecutionDbId!, page, size),
+  )
+  if (!response.data) return
+  record.steps = response.data.list.map(buildLayeredExecutionStepRow)
+  record.stepsLoaded = true
+  record.stepPage = page
+  record.stepPageSize = size
+  record.stepPageTotal = response.data.total
+}
+
+const loadExecutionStepDetail = async (step: ExecutionHistoryStepRow) => {
+  if (!step.stepExecutionDbId || step.detailLoaded) return
+  const response = await requestOnce(
+    `execution-step:${step.stepExecutionDbId}`,
+    () => getAutomationUiExecutionStep(step.stepExecutionDbId!),
+  )
+  if (!response.data) return
+  applyLayeredExecutionStepDetail(step, response.data)
+}
+
+const historyTime = (value: unknown) => {
+  const timestamp = value ? new Date(value as string | number).getTime() : 0
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
 const startHistoryPolling = () => {
   stopHistoryPolling()
-  if (props.detailData?.status !== 'RUNNING') return
+  if (props.detailData?.status !== 'RUNNING' || reportExecutionTerminal.value) return
   historyPollTimer = window.setInterval(() => {
     void refreshScenesWhenChanged()
-  }, 1500)
+  }, 3000)
 }
 
 const cancelReportExecution = (batch: ExecutionHistoryBatchRow, markCancelling?: () => void) => {
@@ -192,13 +385,17 @@ const cancelReportCase = (row: ExecutionHistoryCaseRow, markCancelling?: () => v
 watch(
   () => `${props.detailData?.id || ''}:${props.detailData?.status || ''}`,
   async () => {
+    reportExecutionTerminal.value = false
     await loadScenes()
     startHistoryPolling()
   },
   { immediate: true },
 )
 
-onUnmounted(stopHistoryPolling)
+onUnmounted(() => {
+  stopHistoryPolling()
+  loadController?.abort()
+})
 </script>
 
 <style scoped lang="scss">
@@ -208,12 +405,25 @@ onUnmounted(stopHistoryPolling)
   min-height: 0;
   flex-direction: column;
   gap: 12px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .report-history {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
+}
+
+// 报告页使用外层单一滚动，展开批次和用例日志后不再被固定高度截断。
+.report-history :deep(.batch-detail) {
+  max-height: none;
+  overflow-y: visible;
+}
+
+.report-history :deep(.arco-table-body),
+.report-history :deep(.arco-table-body table),
+.report-history :deep(.gi-table__body) {
+  max-height: none !important;
+  overflow: visible !important;
 }
 </style>

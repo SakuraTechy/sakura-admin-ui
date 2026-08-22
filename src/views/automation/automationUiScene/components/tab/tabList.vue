@@ -141,7 +141,6 @@ watch(() => uiStore.activeKey, (val) => {
       break
     }
   }
-  reload()
 })
 
 watch(() => uiStore.projectId, (val) => {

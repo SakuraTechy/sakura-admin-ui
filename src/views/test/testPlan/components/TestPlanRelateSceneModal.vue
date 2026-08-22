@@ -102,7 +102,7 @@
           </template>
 
           <template #toolbar-left>
-            <a-button type="primary" @click="onRelateAll">
+            <a-button type="primary" :loading="relateAllLoading" @click="onRelateAll">
               关联所有场景
             </a-button>
           </template>
@@ -144,11 +144,10 @@ import { Message, type TableInstance } from '@arco-design/web-vue'
 import type { TestPlanResp } from '@/apis/test/testPlan'
 import { getTestPlan, relateTestPlanScenes } from '@/apis/test/testPlan'
 import {
-  getAutomationUiSceneList,
-  listAutomationUiScene,
   type AutomationUiSceneQuery,
-  type AutomationUiSceneResp,
 } from '@/apis/automation/automationUiScene'
+import { getAutomationUiSceneSummaryPage, postAutomationUiSceneSummaryPage } from '@/apis/automation/automationUiQuery'
+import { mapDebugSceneSummary } from '@/views/automation/automationUiScene/sceneSummary'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
 import { useResetReactive, useTable } from '@/hooks'
@@ -190,6 +189,7 @@ const treeList = ref<TreeCateItem[]>([])
 const treeKeyword = ref('')
 const treeLoading = ref(false)
 const submitting = ref(false)
+const relateAllLoading = ref(false)
 const selectedProjectId = ref('')
 const versionIdStr = ref('')
 const excludeSceneIds = ref<string[]>([])
@@ -216,10 +216,15 @@ const buildSceneQuery = (page?: Record<string, unknown>) => ({
   ...queryForm,
   projectId: selectedProjectId.value || queryForm.projectId,
   versionId: queryForm.versionId || uiStore.versionId,
-  executeResultType: 'debug',
+  recordSource: 'debug' as const,
   ...(excludeSceneIds.value.length ? { excludeIds: excludeSceneIds.value } : {}),
   ...page,
 })
+
+const querySummaryPage = (query: AutomationUiSceneQuery, signal?: AbortSignal) =>
+  query.excludeIds?.length
+    ? postAutomationUiSceneSummaryPage(query, signal)
+    : getAutomationUiSceneSummaryPage(query, signal)
 
 const projectOptions = computed(() =>
   buildProjectSelectOptions(
@@ -276,7 +281,12 @@ const {
     if (!sceneListEnabled.value) {
       return Promise.resolve({ data: { list: [], total: 0 } } as any)
     }
-    return listAutomationUiScene(buildSceneQuery(page))
+    return querySummaryPage(buildSceneQuery(page)).then(response => ({
+      data: {
+        list: (response.data?.list || []).map(mapDebugSceneSummary),
+        total: response.data?.total || 0,
+      },
+    }) as any)
   },
   { immediate: false },
 )
@@ -496,9 +506,29 @@ const handleOk = async () => {
 }
 
 const onRelateAll = async () => {
-  const { data } = await getAutomationUiSceneList(buildSceneQuery() as any)
-  const list = Array.isArray(data) ? data : []
-  await relateByIds(list.map((row: AutomationUiSceneResp) => toIdString(row.id)))
+  relateAllLoading.value = true
+  try {
+    const ids: string[] = []
+    const size = 50
+    let page = 1
+    let total = 0
+    do {
+      const response = await querySummaryPage(buildSceneQuery({ page, size }))
+      const rows = response.data?.list || []
+      total = response.data?.total || 0
+      ids.push(...rows.map(row => toIdString(row.sceneDbId)))
+      if (ids.length >= total) break
+      if (ids.length >= 10_000) {
+        throw new Error('当前筛选结果超过 10000 条，请缩小范围后关联')
+      }
+      page += 1
+    } while (ids.length < total)
+    await relateByIds(ids)
+  } catch (error: any) {
+    Message.error(error?.message || '读取可关联场景失败，请重试')
+  } finally {
+    relateAllLoading.value = false
+  }
 }
 
 const handleClose = () => {

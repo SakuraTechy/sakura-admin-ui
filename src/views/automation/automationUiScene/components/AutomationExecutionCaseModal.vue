@@ -9,7 +9,7 @@
     <a-spin :loading="loading" style="width: 100%">
       <div class="execute-modal">
         <a-alert type="info" show-icon>
-          已选择 {{ selectedCaseKeys.length }} 个用例。请确认产品环境和执行参数，开始后请在执行历史中查看实时状态。
+          已选择 {{ executionCaseCount }} 个用例。请确认产品环境和执行参数，开始后请在执行历史中查看实时状态。
         </a-alert>
 
         <a-descriptions :column="2" bordered size="medium">
@@ -17,6 +17,7 @@
           <a-descriptions-item label="所属版本">{{ versionName }}</a-descriptions-item>
           <a-descriptions-item label="执行用例" :span="2">
             <a-space wrap>
+              <a-tag v-if="selectAllCases" color="arcoblue">当前定义的全部 {{ executionCaseCount }} 个可执行用例</a-tag>
               <a-tag v-for="item in selectedCaseRows" :key="item.caseId" color="arcoblue">
                 {{ item.name }}
               </a-tag>
@@ -363,7 +364,6 @@ import {
   startExtensionCdpPlayback,
   stopExtensionCdpPlayback,
 } from '../extensionPlayback'
-import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import {
   type AutomationCdpPlaybackOptions,
   type AutomationPlaywrightRunnerJobResp,
@@ -380,6 +380,7 @@ import {
   getAutomationPlaywrightRunnerJob,
   updateAutomationPlaywrightBatchCase,
 } from '@/apis/automation/automationPlaywrightRunner'
+import { loadAutomationUiExecutionSelectionScene } from '../queryCache'
 import { getProjectConfig } from '@/apis/project/projectConfig'
 import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } from '@/apis/project/projectEnvironmentConfig'
 import { getProjectVersionConfig } from '@/apis/project/projectVersionConfig'
@@ -461,6 +462,8 @@ const executionContext = ref<ExecutionContext>({})
 const planExecutionMode = ref(false)
 const executionType = ref<Exclude<ExecutionType, 'jenkins'>>('extension-cdp')
 const selectedCaseKeys = ref<Array<string | number>>([])
+const selectAllCases = ref(false)
+const expectedDefinitionVersion = ref<number>()
 const caseRows = ref<PlaybackCaseRow[]>([])
 const projectName = ref('-')
 const versionName = ref('-')
@@ -562,6 +565,9 @@ const selectedCaseRows = computed(() => {
   const selectedIds = new Set(selectedCaseKeys.value.map(String))
   return caseRows.value.filter((item) => selectedIds.has(item.caseId))
 })
+const executionCaseCount = computed(() => selectAllCases.value
+  ? Number(scene.value?.__caseTotal || caseRows.value.length)
+  : selectedCaseKeys.value.length)
 const cdpConfigValid = computed(() => (
   cdpConfig.windowSizeMode !== 'custom' || (
     cdpConfig.viewportWidth >= 320 && cdpConfig.viewportWidth <= 10000
@@ -583,7 +589,7 @@ const baseConfigValid = computed(() => Boolean(
   && !running.value
   && (executionType.value === 'extension-cdp' ? cdpConfigValid.value : runnerConfigValid.value),
 ))
-const canStartSelected = computed(() => baseConfigValid.value && selectedCaseKeys.value.length > 0)
+const canStartSelected = computed(() => baseConfigValid.value && executionCaseCount.value > 0)
 
 const resetRunnerConfig = () => {
   Object.assign(runnerConfig, {
@@ -776,6 +782,8 @@ const onOpen = async (
   }
   planExecutionMode.value = Boolean(options.planExecution)
   selectedCaseKeys.value = []
+  selectAllCases.value = Boolean(options.selectAllCases)
+  expectedDefinitionVersion.value = options.expectedDefinitionVersion
   caseRows.value = []
   form.projectEnvironmentId = ''
   projectEnvironmentOptions.value = []
@@ -810,14 +818,28 @@ const onOpen = async (
       }
       resetCdpConfig()
     }
+    const loadedCaseIds = new Set((Array.isArray(record?.caseList) ? record.caseList : [])
+      .map((item: any) => String(item?.id || '')))
+    const needsProjectedSelection = Boolean(
+      record?.__projectedDefinition
+      && !selectAllCases.value
+      && options.caseIds?.some(caseId => !loadedCaseIds.has(String(caseId))),
+    )
     const data = options.planExecution && record?.__planAggregate
       ? record
-      : (await getAutomationUiScene(String(record.id))).data
+      : record?.__definitionLoaded && !needsProjectedSelection
+        ? record
+        : await loadAutomationUiExecutionSelectionScene(String(record.id), record, undefined, {
+            projectedCaseIds: options.caseIds,
+          })
     scene.value = data
+    if (expectedDefinitionVersion.value == null) {
+      expectedDefinitionVersion.value = Number(data.definitionVersion || 0) || undefined
+    }
     const selectedIds = new Set((options.caseIds || []).map(String))
     const cases = (Array.isArray(data.caseList) ? data.caseList : []).filter(isExecutableCase)
     caseRows.value = cases
-      .filter((item: any) => selectedIds.has(String(item.id)))
+      .filter((item: any) => selectAllCases.value || selectedIds.has(String(item.id)))
       .map((item: any) => ({
         caseId: String(item.id),
         executionId: '',
@@ -892,7 +914,7 @@ const startSelectedCases = async () => {
     return
   }
   try {
-    await startBatch(selectedCaseKeys.value.map(String))
+    await startBatch(selectAllCases.value ? [] : selectedCaseKeys.value.map(String))
   } catch (error: any) {
     Message.error(error?.message || '创建执行批次失败，请稍后重试')
   }
@@ -909,7 +931,7 @@ function backToCaseSelection() {
 }
 
 async function startBatch(caseIds: string[]) {
-  if (!caseIds.length) throw new Error('当前场景没有可执行用例')
+  if (!selectAllCases.value && !caseIds.length) throw new Error('当前场景没有可执行用例')
   if (running.value) throw new Error('当前已有批次正在执行')
   try {
     await refreshSelectedEnvironmentStatus()
@@ -927,6 +949,8 @@ async function startBatch(caseIds: string[]) {
     sceneKey: playbackSceneKey.value,
     executionType: executionType.value,
     caseIds,
+    selectAllCases: selectAllCases.value || undefined,
+    expectedDefinitionVersion: expectedDefinitionVersion.value,
     projectEnvironmentId: form.projectEnvironmentId,
     executeName: userStore.userInfo.nickname || userStore.userInfo.username || undefined,
     executeEmail: userStore.userInfo.email || undefined,
@@ -939,6 +963,25 @@ async function startBatch(caseIds: string[]) {
   })
   const batchCases = new Map(createdBatch.cases.map((item) => [String(item.caseId), item]))
   const createdCaseIds = createdBatch.cases.map((item) => String(item.caseId))
+  createdBatch.cases.forEach((item) => {
+    if (caseRows.value.some(row => row.caseId === String(item.caseId))) return
+    caseRows.value.push({
+      caseId: String(item.caseId),
+      executionId: item.executionId || '',
+      jobId: '',
+      name: item.caseName || String(item.caseId),
+      stepTotal: item.stepTotal || 0,
+      stepCompleted: 0,
+      stepPass: 0,
+      stepFail: 0,
+      stepSkip: 0,
+      status: 'idle',
+      error: '',
+      liveLogs: [],
+      lastEventSequence: 0,
+      effectiveExecutionConfig: item.effectiveExecutionConfig,
+    })
+  })
   const requestedCdpBatch = executionType.value === 'extension-cdp'
   const appliedSessionConfig = createdBatch.sessionConfig
   if (requestedCdpBatch && appliedSessionConfig?.browserSessionSource !== cdpConfig.browserSessionSource) {
@@ -1301,13 +1344,8 @@ const cancelActiveCase = async () => {
 
 async function refreshSceneAfterCase() {
   if (!scene.value?.id) return
-  try {
-    const { data } = await getAutomationUiScene(String(scene.value.id))
-    scene.value = data
-    emit('success')
-  } catch {
-    // 执行结果已经由 Runner/CDP 回传；刷新失败不应中断后续用例。
-  }
+  // 执行结果只影响 execution revision，不应重新下载 Definition。
+  emit('success')
 }
 
 function markWaitingCasesCancelled() {

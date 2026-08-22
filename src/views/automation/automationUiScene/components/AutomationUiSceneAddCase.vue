@@ -1,5 +1,6 @@
 <template>
   <GiTree
+    v-if="!controllerOnly"
     ref="giTreeRef"
     title="场景用例"
     style="flex-direction: column"
@@ -182,7 +183,6 @@ import GiMenu from '@/components/GiMenu/index.vue'
 import { type AutomationUiCase, type AutomationUiStepEditReq, type AutomationUiTreeNodeRef, addCase, addStep, copyCaseTree, deleteCaseTree, getAutomationUiCaseDetail, getAutomationUiStepDetail, moveCaseTree, updateAutomationUiCaseDetail, updateAutomationUiStepDetail } from '@/apis/automation/automationUiScene'
 import { createAutomationOperationDefaultConfig, getAutomationOperationCatalog, mergeAutomationOperationDefaults, normalizeAutomationOperationConfig, validateAutomationOperationConfig } from '@/apis/automation/automationOperationCatalog'
 import type { AutomationOperationCatalog, AutomationOperationMethod, AutomationOperationType } from '@/apis/automation/automationOperationCatalog'
-import { useUiStore } from '@/stores/modules/uiStore'
 import { GiForm } from '@/components/GiForm'
 import type { ColumnItem } from '@/components/GiForm'
 import { useDict } from '@/hooks/app'
@@ -192,6 +192,9 @@ import KeyValuePairForm from '@/components/KeyValuePairForm'
 defineOptions({ name: 'AutomationUiSceneAddCase' })
 
 const props = defineProps<{
+  // 场景树的所有新增、移动、详情和目录请求都依赖数据库场景 ID，禁止无 ID 渲染组件。
+  sceneDbId: string | number
+  controllerOnly?: boolean
   caseList: AutomationUiCase[]
   definitionVersion: number
   projectId?: string | number
@@ -215,8 +218,8 @@ const { status_type } = useDict('status_type')
 // v2 关闭时显式回到旧表单；这些字典不会参与 v2 的目录协议。
 const { operation_type, operation_method } = useDict('operation_type', 'operation_method')
 
-const uiStore = useUiStore()
 const router = useRouter()
+const sceneDbId = computed(() => String(props.sceneDbId || ''))
 
 const selectedKeys = ref<string[]>([])
 const selectionInitialized = ref(false)
@@ -284,7 +287,7 @@ const normalizeOperationCatalog = (source: any): AutomationOperationCatalog => (
 })
 
 const loadOperationCatalog = async () => {
-  const sceneId = uiStore.activeId
+  const sceneId = sceneDbId.value
   if (!sceneId) {
     operationCatalog.value = undefined
     operationCatalogUnavailable.value = false
@@ -320,7 +323,7 @@ const loadOperationCatalog = async () => {
   }
 }
 
-watch(() => uiStore.activeId, () => {
+watch(() => sceneDbId.value, () => {
   void loadOperationCatalog()
 }, { immediate: true })
 
@@ -579,6 +582,7 @@ const modalConfig = reactive({
     id: '',
     name: '',
     remark: '',
+    continueOnFailure: false,
     order: 1,
     operationType: '',
     operationName: '',
@@ -920,7 +924,7 @@ const modalConfig = reactive({
           'confirmReset': modalConfig.title === '修改步骤',
           'workbench': useStepWorkbenchLayout.value,
           'contextLabel': workbenchMethodContext.value,
-          'sceneDbId': uiStore.activeId,
+          'sceneDbId': sceneDbId.value,
           'projectId': props.projectId,
           'onUpdate:modelValue': (val: any) => {
             modalConfig.form.configList = val
@@ -975,6 +979,7 @@ const modalConfig = reactive({
           'methodCode': getSelectedCatalogMethod(modalConfig.form)?.method_code,
           'methodVersion': getSelectedCatalogMethod(modalConfig.form)?.method_version,
           'projectId': props.projectId,
+          'environmentId': props.projectEnvironmentId,
           'onGoTargetConfig': goInfrastructureTargetConfig,
         }),
       },
@@ -1015,6 +1020,21 @@ const modalConfig = reactive({
         onChange: (value: any) => {
           // GiFormModal 使用本地表单副本，状态必须同步到父表单，避免深度监听恢复旧值。
           modalConfig.form.status = normalizeAutomationNodeStatus(value)
+        },
+      },
+    },
+    {
+      label: '失败后继续',
+      field: 'continueOnFailure',
+      span: 24,
+      type: 'switch',
+      props: {
+        checkedValue: true,
+        uncheckedValue: false,
+        checkedText: '启用',
+        uncheckedText: '禁用',
+        onChange: (value: boolean) => {
+          modalConfig.form.continueOnFailure = value === true
         },
       },
     },
@@ -1181,6 +1201,7 @@ const buildStepEditFields = (stepData: any): Omit<AutomationUiStepEditReq, 'pid'
     operationType: stepData.operationType,
     operationName: stepData.operationName,
     operationValue: stepData.operationValue,
+    continueOnFailure: stepData.continueOnFailure === true,
     methodCode: methodCode || undefined,
     methodVersion: Number(getStepConfig(stepData, 'method_version')) || undefined,
     methodConfig: parsed,
@@ -1243,7 +1264,7 @@ const handleSave = async (data: any) => {
       const currentCaseData = { ...data, ...modalConfig.form }
       if (!validateCaseExecutionConfig(currentCaseData)) return false
       const { startUrl, windowSizeMode, viewportWidth, viewportHeight, screenshotMode, pageErrorCheckEnabled, ...caseData } = currentCaseData
-      const response = await addCase({ ...caseData, type: 'case', executionConfig: buildCaseExecutionConfig({ startUrl, windowSizeMode, viewportWidth, viewportHeight, screenshotMode, pageErrorCheckEnabled }), expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      const response = await addCase({ ...caseData, type: 'case', executionConfig: buildCaseExecutionConfig({ startUrl, windowSizeMode, viewportWidth, viewportHeight, screenshotMode, pageErrorCheckEnabled }), expectedDefinitionVersion: props.definitionVersion }, sceneDbId.value)
       currentCaseData.id = response.data || currentCaseData.id
       selection = { type: 'CASE', caseId: String(currentCaseData.id) }
       Message.success('新增成功')
@@ -1251,7 +1272,7 @@ const handleSave = async (data: any) => {
       const source = nodeRefOf(modalData.value)
       const currentCaseData = { ...data, ...modalConfig.form }
       if (!validateCaseExecutionConfig(currentCaseData)) return false
-      await updateAutomationUiCaseDetail(uiStore.activeId, source.caseId, {
+      await updateAutomationUiCaseDetail(sceneDbId.value, source.caseId, {
         name: currentCaseData.name,
         remark: currentCaseData.remark,
         status: currentCaseData.status,
@@ -1262,7 +1283,7 @@ const handleSave = async (data: any) => {
       Message.success('修改成功')
     } else if (modalConfig.title === '复制用例') {
       const source = nodeRefOf(modalData.value)
-      const response = await copyCaseTree({ source, name: data.name, remark: data.remark, position: source.type === 'CASE' ? 'LAST' : 'INSIDE_LAST', anchor: source.type === 'STEP' ? { type: 'CASE', caseId: source.caseId } : undefined, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+      const response = await copyCaseTree({ source, name: data.name, remark: data.remark, position: source.type === 'CASE' ? 'LAST' : 'INSIDE_LAST', anchor: source.type === 'STEP' ? { type: 'CASE', caseId: source.caseId } : undefined, expectedDefinitionVersion: props.definitionVersion }, sceneDbId.value)
       if (response.data?.changed) {
         selection = response.data.selectedNode || undefined
         Message.success('复制成功')
@@ -1282,7 +1303,7 @@ const handleSave = async (data: any) => {
         expectedDefinitionVersion: props.definitionVersion,
         // operationType: automation_operation_type.value.find((item: any) => item.value === data.operationType)?.label,
         type: 'step',
-      }, uiStore.activeId)
+      }, sceneDbId.value)
       data.id = getCreatedNodeId(res.data)
       // GiFormModal 会复制表单对象；保存时优先取提交数据，缺失时回退到打开菜单时的父节点。
       const caseId = String(data.pid || modalData.value?.caseId || '')
@@ -1302,7 +1323,7 @@ const handleSave = async (data: any) => {
       }
       if (!validateCatalogMethodForSave(stepData)) return false
       if (!validateInfrastructureTargetForSave(stepData)) return false
-      await updateAutomationUiStepDetail(uiStore.activeId, source.caseId, source.stepId, {
+      await updateAutomationUiStepDetail(sceneDbId.value, source.caseId, source.stepId, {
         ...stepEditFields,
         expectedDefinitionVersion: props.definitionVersion,
       })
@@ -1333,12 +1354,13 @@ const handleSave = async (data: any) => {
           operationType: stepEditFields.operationType,
           operationName: stepEditFields.operationName,
           operationValue: stepEditFields.operationValue,
+          continueOnFailure: stepEditFields.continueOnFailure,
           configList: stepEditFields.configList,
         },
         position: 'INSIDE_LAST',
         anchor: { type: 'CASE', caseId: source.caseId },
         expectedDefinitionVersion: props.definitionVersion,
-      }, uiStore.activeId)
+      }, sceneDbId.value)
       if (response.data?.changed) {
         selection = response.data.selectedNode || undefined
         Message.success('复制成功')
@@ -1395,7 +1417,7 @@ const onNodeDrop = async (data?: any) => {
   if (!position || !canDrop(data.dragNode, data.dropNode, data.dropPosition)) return false
   try {
     mutationLoading.value = true
-    const response = await moveCaseTree({ source: nodeRefOf(data.dragNode), target: nodeRefOf(data.dropNode), position, expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+    const response = await moveCaseTree({ source: nodeRefOf(data.dragNode), target: nodeRefOf(data.dropNode), position, expectedDefinitionVersion: props.definitionVersion }, sceneDbId.value)
     if (response.data?.changed) {
       await refreshTree(response.data.selectedNode || undefined)
       Message.success('移动成功')
@@ -1513,13 +1535,13 @@ const onMenuClick = async (data?: any) => {
           let detail = findNodeDetail(props.caseList, nodeRefOf(data.node)) as any
           if (data.node?.type === 'case') {
             try {
-              detail = (await getAutomationUiCaseDetail(uiStore.activeId, data.node.caseId)).data || detail
+              detail = (await getAutomationUiCaseDetail(sceneDbId.value, data.node.caseId)).data || detail
             } catch (error) {
               console.warn('获取用例统一详情失败，使用树节点数据', error)
             }
           } else {
             try {
-              detail = (await getAutomationUiStepDetail(uiStore.activeId, data.node.caseId, data.node.stepId)).data || detail
+              detail = (await getAutomationUiStepDetail(sceneDbId.value, data.node.caseId, data.node.stepId)).data || detail
             } catch (error) {
               console.warn('获取步骤统一详情失败，使用树节点数据', error)
             }
@@ -1544,7 +1566,7 @@ const onMenuClick = async (data?: any) => {
           let detail = findNodeDetail(props.caseList, nodeRefOf(data.node)) as any
           if (data.node?.type === 'step') {
             try {
-              detail = (await getAutomationUiStepDetail(uiStore.activeId, data.node.caseId, data.node.stepId)).data || detail
+              detail = (await getAutomationUiStepDetail(sceneDbId.value, data.node.caseId, data.node.stepId)).data || detail
             } catch (error) {
               console.warn('获取步骤统一详情失败，使用树节点数据', error)
             }
@@ -1569,7 +1591,7 @@ const onMenuClick = async (data?: any) => {
           ? checkedKeys.value.map(key => treeList.value.flatMap(item => [item, ...(item.children || [])]).find(item => item.treeKey === key)).filter(Boolean)
           : Array.isArray(data.node) ? data.node : [data.node]
         mutationLoading.value = true
-        const response = await deleteCaseTree({ nodes: nodes.map((item: TreeCateItem) => nodeRefOf(item)), expectedDefinitionVersion: props.definitionVersion }, uiStore.activeId)
+        const response = await deleteCaseTree({ nodes: nodes.map((item: TreeCateItem) => nodeRefOf(item)), expectedDefinitionVersion: props.definitionVersion }, sceneDbId.value)
         if (response.data?.changed) {
           const selected = response.data.selectedNode
           await refreshTree(selected || undefined)
@@ -1610,6 +1632,14 @@ const onTreeNodeClick = (data?: any) => {
   }
   onNodeDrop({ ...data, dropPosition })
 }
+
+watch(
+  () => props.caseList,
+  () => {
+    if (props.controllerOnly) void getTreeCaseList()
+  },
+  { immediate: true },
+)
 
 defineExpose({
   onMenuClick,

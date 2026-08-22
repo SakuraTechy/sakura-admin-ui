@@ -117,6 +117,9 @@
           <TestReportPlaywrightDetail
             v-else-if="tab.type === 'playwright'"
             :detail-data="tab.detailData"
+            :auto-expand-case-id="tab.autoExpandCaseId"
+            :auto-expand-scene-id="tab.autoExpandSceneId"
+            @refresh-detail="refreshPlaywrightDetail(tab)"
           />
       </a-tab-pane>
     </a-tabs>
@@ -428,6 +431,8 @@ interface DetailTab {
   type: 'func' | 'ui' | 'playwright'
   reportId: string
   detailData?: TestReportDetailResp
+  autoExpandCaseId?: string
+  autoExpandSceneId?: string
 }
 
 const detailTabs = ref<DetailTab[]>([])
@@ -464,17 +469,24 @@ const openUiDetail = async (record: TestReportResp) => {
   activeTab.value = key
 }
 
-const openPlaywrightDetail = async (record: TestReportResp) => {
+const openPlaywrightDetail = async (record: TestReportResp, autoExpandCaseId?: string, autoExpandSceneId?: string) => {
   const key = `playwright-${record.id}`
   let tab = detailTabs.value.find(item => item.key === key)
   const { data } = await getTestReport(record.id)
   if (!tab) {
-    tab = { key, title: `${record.name}`, type: 'playwright', reportId: record.id, detailData: data }
+    tab = { key, title: `${record.name}`, type: 'playwright', reportId: record.id, detailData: data, autoExpandCaseId, autoExpandSceneId }
     detailTabs.value.push(tab)
   } else {
     tab.detailData = data
+    tab.autoExpandCaseId = autoExpandCaseId || tab.autoExpandCaseId
+    tab.autoExpandSceneId = autoExpandSceneId || tab.autoExpandSceneId
   }
   activeTab.value = key
+}
+
+const refreshPlaywrightDetail = async (tab: DetailTab) => {
+  const { data } = await getTestReport(tab.reportId)
+  tab.detailData = data
 }
 
 const openReportDetailById = async (value: unknown) => {
@@ -485,7 +497,11 @@ const openReportDetailById = async (value: unknown) => {
     if (!data) return
     const fromPlanHistory = String(route.query.returnView || '') === 'scene-history'
     if (fromPlanHistory || data.reportType === 'PLAYWRIGHT_RUNNER' || data.reportType === 'CHROME_DEVTOOLS_PROTOCOL') {
-      await openPlaywrightDetail(data)
+      await openPlaywrightDetail(
+        data,
+        toIdString(route.query.caseId as string | undefined),
+        toIdString(route.query.sceneId as string | undefined),
+      )
     } else {
       await openUiDetail(data)
     }

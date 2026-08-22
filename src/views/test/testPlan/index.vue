@@ -508,7 +508,7 @@ import {
   type AutomationCdpPlaybackOptions,
   type AutomationPlaywrightRunnerOptions,
 } from '@/apis/automation/automationPlaywrightRunner'
-import { getAutomationUiSceneSelected } from '@/apis/automation/automationUiScene'
+import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '@/views/automation/automationUiScene/queryCache'
 import { getExtensionCdpCapabilities } from '@/views/automation/automationUiScene/extensionPlayback'
 import { getUser, listAllUser, listSystemUser, type UserResp } from '@/apis/system/user'
 import { useTable } from '@/hooks'
@@ -1004,6 +1004,7 @@ const fillCurrentExecutor = () => {
 
 const execScopeMode = ref<'plan' | 'selected' | 'all'>('plan')
 const execSceneIds = ref<string[]>([])
+const execCaseIds = ref<string[]>([])
 const execConfigLoading = ref(false)
 
 interface ExecProjectEnvironmentOption {
@@ -1371,6 +1372,7 @@ const openExecModal = (record: TestPlanResp) => {
   currentRecord.value = record
   execScopeMode.value = 'plan'
   execSceneIds.value = []
+  execCaseIds.value = []
   execState.executionEngine = 'SELENIUM'
   execState.projectEnvironmentId = undefined
   execState.automationEnvironmentId = undefined
@@ -1415,6 +1417,50 @@ const executionCaseModalRef = ref<{
   ) => Promise<void>
 }>()
 const liveExecutions = ref<LiveExecutionCase[]>([])
+const PLAN_PROGRESS_POLL_INTERVAL_MS = 3000
+let planProgressPollTimer: number | undefined
+let planProgressRefreshPending = false
+
+const syncVisiblePlanRecords = () => {
+  const latestById = new Map(dataList.value.map(item => [String(item.id), item]))
+  sceneTabs.value = sceneTabs.value.map(tab => ({
+    ...tab,
+    record: latestById.get(String(tab.record.id)) || tab.record,
+  }))
+  if (currentRecord.value) {
+    currentRecord.value = latestById.get(String(currentRecord.value.id)) || currentRecord.value
+  }
+  if (detailRecord.value) {
+    detailRecord.value = latestById.get(String(detailRecord.value.id)) || detailRecord.value
+  }
+}
+
+const refreshRunningPlanProgress = async () => {
+  if (document.hidden || loading.value || planProgressRefreshPending) return
+  planProgressRefreshPending = true
+  try {
+    await search()
+    syncVisiblePlanRecords()
+  } finally {
+    planProgressRefreshPending = false
+  }
+}
+
+const stopPlanProgressPolling = () => {
+  if (planProgressPollTimer) window.clearInterval(planProgressPollTimer)
+  planProgressPollTimer = undefined
+}
+
+watch(
+  () => dataList.value.some(item => String(item.status || '').toUpperCase() === 'RUNNING'),
+  (running) => {
+    stopPlanProgressPolling()
+    if (running) {
+      planProgressPollTimer = window.setInterval(() => void refreshRunningPlanProgress(), PLAN_PROGRESS_POLL_INTERVAL_MS)
+    }
+  },
+  { immediate: true },
+)
 const activeExecutionTabKey = ref('')
 const pendingHistorySceneId = ref('')
 const cdpPlanDispatch = ref<{
@@ -1451,6 +1497,7 @@ const buildPlanExecutionScene = (scenes: any[]) => {
     __planAggregate: true,
     // 保留场景边界，选择弹窗必须按场景读取历史，避免重复用例 ID 串场。
     __planScenes: scenes,
+    __caseTotal: scenes.reduce((total, scene) => total + Number(scene?.__caseTotal || scene?.caseList?.length || 0), 0),
     caseList: scenes.flatMap((scene) => Array.isArray(scene?.caseList) ? scene.caseList : []),
   }
 }
@@ -1466,6 +1513,24 @@ const openNextPlanCaseSelection = () => {
   return true
 }
 
+const loadExecutionSelectionScenes = async (
+  sceneIds: Array<string | number>,
+  fallbackRows: any[] = [],
+  caseIdsByScene?: Map<string, string[]>,
+) => {
+  const fallbackMap = new Map(fallbackRows.map(row => [toIdString(row.id), row]))
+  return mapWithConcurrency(sceneIds.map(toIdString), 6, sceneId => (
+    loadAutomationUiExecutionSelectionScene(
+      sceneId,
+      fallbackMap.get(sceneId) || {},
+      undefined,
+      caseIdsByScene?.has(sceneId)
+        ? { projectedCaseIds: caseIdsByScene.get(sceneId) }
+        : { projectedPage: 1, projectedPageSize: 20 },
+    )
+  ))
+}
+
 const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: ExecutionType) => {
   if (!rows.length) {
     Message.warning('请选择场景')
@@ -1477,8 +1542,7 @@ const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: Ex
   if (executionType !== 'jenkins') {
     const testPlanId = toIdString(tab.record.id)
     const sceneIds = rows.map((scene) => toIdString(scene.id))
-    const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
-    const scenes = Array.isArray(sceneData) && sceneData.length ? sceneData : rows
+    const scenes = await loadExecutionSelectionScenes(sceneIds, rows)
     const aggregateScene = buildPlanExecutionScene(scenes)
     if (!aggregateScene) {
       Message.warning('当前测试计划关联场景不存在，请刷新后重试')
@@ -1508,8 +1572,7 @@ const onExecuteAllScene = async (tab: SceneTab, executionType: ExecutionType) =>
       Message.warning('当前测试计划未关联 UI 自动化场景')
       return
     }
-    const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
-    const scenes = Array.isArray(sceneData) ? sceneData : []
+    const scenes = await loadExecutionSelectionScenes(sceneIds)
     if (!scenes.length) {
       Message.warning('当前测试计划关联场景不存在，请刷新后重试')
       return
@@ -1533,8 +1596,7 @@ const onExecuteAllScene = async (tab: SceneTab, executionType: ExecutionType) =>
     Message.warning('当前测试计划未关联 UI 自动化场景')
     return
   }
-  const { data: sceneData } = await getAutomationUiSceneSelected(sceneIds)
-  const scenes = Array.isArray(sceneData) ? sceneData : []
+  const scenes = await loadExecutionSelectionScenes(sceneIds)
   if (!scenes.length) {
     Message.warning('当前测试计划关联场景不存在，请刷新后重试')
     return
@@ -1554,8 +1616,8 @@ const onExecuteOneScene = async (tab: SceneTab, row: any, executionType: Executi
   const sceneId = toIdString(row.id)
   pendingHistorySceneId.value = sceneId
   planCaseExecutionQueue.value = []
-  planCaseExecutionMode.value = false
-  planCaseExecutionSceneIds.value = []
+  planCaseExecutionMode.value = executionType !== 'jenkins'
+  planCaseExecutionSceneIds.value = executionType !== 'jenkins' ? [sceneId] : []
   const testPlanId = toIdString(tab.record.id)
   if (executionType === 'jenkins') {
     executeSceneModalRef.value?.onOpen([row], { source: 'plan', testPlanId })
@@ -1621,6 +1683,7 @@ const onPlanExecutionStart = async (payload: {
   fillCurrentExecutor()
   execScopeMode.value = 'selected'
   execSceneIds.value = [...planCaseExecutionSceneIds.value]
+  execCaseIds.value = planCaseExecutionSceneIds.value.length === 1 ? [...payload.caseIds] : []
   execState.executionEngine = payload.executionType === 'playwright-runner'
     ? 'PLAYWRIGHT_RUNNER'
     : 'CHROME_DEVTOOLS_PROTOCOL'
@@ -1876,6 +1939,9 @@ const submitExecute = async (): Promise<boolean> => {
         ? automationEnvironmentId || undefined
         : undefined,
       sceneIds: execScopeMode.value === 'selected' ? execSceneIds.value : undefined,
+      caseIds: execScopeMode.value === 'selected' && execSceneIds.value.length === 1 && execCaseIds.value.length
+        ? execCaseIds.value
+        : undefined,
       runnerOptions: execState.executionEngine === 'PLAYWRIGHT_RUNNER'
         ? { ...execRunnerConfig }
         : undefined,
@@ -1905,8 +1971,8 @@ const submitExecute = async (): Promise<boolean> => {
     }
     let scenes: any[] = []
     try {
-      const { data } = await getAutomationUiSceneSelected(executable.map(item => item.sceneKey))
-      scenes = Array.isArray(data) ? data : []
+      const caseIdsByScene = new Map(executable.map(item => [String(item.sceneKey), item.caseIds.map(String)]))
+      scenes = await loadExecutionSelectionScenes(executable.map(item => item.sceneKey), [], caseIdsByScene)
     } catch {
       await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
       Message.error('加载 CDP 执行场景失败，本次执行已终止')
@@ -1954,6 +2020,7 @@ const submitExecute = async (): Promise<boolean> => {
 }
 
 onUnmounted(() => {
+  stopPlanProgressPolling()
   const active = cdpPlanDispatch.value
   if (active) void cancelTestPlanExecution(active.plan.id, active.reportId)
 })
@@ -2010,7 +2077,7 @@ const resolvePlanExecuteResult = (record: TestPlanResp) => {
   if (status === 'NOT_STARTED') return 'NOT_EXECUTED'
   const executedCount = Number(record.executedCount || 0)
   const passedCount = Number(record.passedCount || 0)
-  if (!executedCount) return 'NOT_EXECUTED'
+  if (!executedCount) return record.actualStartTime ? 'FAILED' : 'NOT_EXECUTED'
   return passedCount >= executedCount ? 'PASSED' : 'FAILED'
 }
 </script>

@@ -217,6 +217,7 @@
 </template>
 
 <script setup lang="tsx">
+import { onMounted } from 'vue'
 import { Message, type TableInstance } from '@arco-design/web-vue'
 import AutomationUiSceneAddModal from './AutomationUiSceneAddModal.vue'
 import ChromeRecordingModal from './ChromeRecordingModal.vue'
@@ -231,10 +232,13 @@ import {
   exportAllAutomationUiSceneXml,
   exportAutomationUiScene,
   exportAutomationUiSceneXml,
-  getAutomationUiSceneList,
-  getAutomationUiSceneSelected,
-  listAutomationUiScene,
 } from '@/apis/automation/automationUiScene'
+import {
+  type AutomationUiSceneSummaryQuery,
+  getAutomationUiSceneSummaryPage,
+} from '@/apis/automation/automationUiQuery'
+import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
+import { mapDebugSceneSummary } from '../sceneSummary'
 import { useResetReactive, useTable } from '@/hooks'
 import { useDict } from '@/hooks/app'
 import { isMobile } from '@/utils'
@@ -277,6 +281,7 @@ const [queryForm, resetForm] = useResetReactive<AutomationUiSceneQuery>({
   projectId: undefined,
   versionId: undefined,
   moduleId: undefined,
+  moduleIds: undefined,
   level: undefined,
   executeStatus: undefined,
   executeResult: undefined,
@@ -286,6 +291,20 @@ const [queryForm, resetForm] = useResetReactive<AutomationUiSceneQuery>({
   createTime: [],
   sort: ['createTime,asc'],
 })
+
+const loadSceneSummaryPage = async (page: { page: number, size: number }) => {
+  const response = await getAutomationUiSceneSummaryPage({
+    ...queryForm,
+    ...page,
+    recordSource: 'debug',
+  })
+  return {
+    data: {
+      list: (response.data?.list || []).map(mapDebugSceneSummary),
+      total: response.data?.total || 0,
+    },
+  } as ApiRes<PageRes<AutomationUiSceneResp[]>>
+}
 
 const {
   tableData,
@@ -297,7 +316,7 @@ const {
   selectedKeys,
   handleDelete,
   handleExport,
-} = useTable((page) => listAutomationUiScene({ ...queryForm, ...page, executeResultType: 'debug' }))
+} = useTable<AutomationUiSceneResp>(loadSceneSummaryPage, { immediate: false })
 
 const queryGridProps = { cols: 24, colGap: 16, rowGap: 0 }
 const queryFieldSpan = { xs: 24, sm: 8, xxl: 8 }
@@ -412,7 +431,7 @@ const columns: TableInstance['columns'] = [
     title: '通过率',
     dataIndex: 'debugRecord[0].scenePassRate',
     slotName: 'scenePassRate',
-    width: 80,
+    width: 90,
     align: 'center',
     render: ({ record }) => {
       const latest = Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0] : {}
@@ -473,9 +492,14 @@ watch(() => queryForm.versionId, async (newVersionId, oldVersionId) => {
 })
 
 watch(() => uiStore.moduleId, async (newModuleId) => {
-  if (newModuleId) {
-    queryForm.moduleId = newModuleId
-  }
+  queryForm.moduleId = undefined
+  queryForm.moduleIds = uiStore.getSceneModuleIds(newModuleId)
+  search()
+})
+
+// useTable 的自动请求早于上面的 immediate watch，首次请求必须等版本条件同步后再发起。
+onMounted(() => {
+  search()
 })
 
 const onDelete = (record?: AutomationUiSceneResp) => {
@@ -525,13 +549,37 @@ const resolveExecutionType = (value: string | number | Record<string, any> | und
 }
 
 const onBatchExecute = async (executionType: ExecutionType) => {
-  const { data } = await getAutomationUiSceneSelected(selectedKeys.value)
-  const records = Array.isArray(data) ? data : []
+  const selected = new Set(selectedKeys.value.map(String))
+  const records = tableData.value.filter(record => selected.has(String(record.id)))
   if (executionType === 'jenkins') {
     emit('execute-scenes', records, executionType)
     return
   }
   void beginQueuedCaseExecution(records, executionType)
+}
+
+const loadSummaryRows = async (query: AutomationUiSceneSummaryQuery, loadAll: boolean) => {
+  const records: AutomationUiSceneResp[] = []
+  let page = 1
+  const size = loadAll ? 50 : 1
+  let total = 0
+  do {
+    const response = await getAutomationUiSceneSummaryPage({
+      ...query,
+      page,
+      size,
+      recordSource: 'debug',
+    })
+    const pageRows = (response.data?.list || []).map(mapDebugSceneSummary)
+    total = response.data?.total || 0
+    records.push(...pageRows)
+    if (!loadAll || records.length >= total) break
+    if (records.length >= 10_000) {
+      throw new Error('当前筛选结果超过 10000 条，请缩小范围后执行')
+    }
+    page += 1
+  } while (records.length < total)
+  return records
 }
 
 const onExecuteAll = async (executionType: ExecutionType) => {
@@ -540,13 +588,21 @@ const onExecuteAll = async (executionType: ExecutionType) => {
     projectId: uiStore.projectId,
     versionId: queryForm.versionId || uiStore.versionId,
   }
-  const { data } = await getAutomationUiSceneList(targetQuery as any)
-  const records = Array.isArray(data) ? data : []
-  if (executionType === 'jenkins') {
-    emit('execute-all-scenes', records, targetQuery, executionType)
-    return
+  try {
+    // Jenkins 全部执行由服务端按查询条件选场景，前端只读取首条摘要用于环境配置展示。
+    const records = await loadSummaryRows(targetQuery, executionType !== 'jenkins')
+    if (!records.length) {
+      Message.warning('当前范围内没有可执行场景')
+      return
+    }
+    if (executionType === 'jenkins') {
+      emit('execute-all-scenes', records, targetQuery, executionType)
+      return
+    }
+    void beginQueuedCaseExecution(records, executionType)
+  } catch (error: any) {
+    Message.error(error?.message || '读取场景摘要失败，请缩小范围后重试')
   }
-  void beginQueuedCaseExecution(records, executionType)
 }
 
 const onBatchExecutionSelect = (value: string | number | Record<string, any> | undefined) => {
@@ -639,6 +695,8 @@ const executionQueue = ref<Array<{
   scene: AutomationUiSceneResp
   executionType: Exclude<ExecutionType, 'jenkins'>
   caseIds: string[]
+  selectAllCases?: boolean
+  expectedDefinitionVersion?: number
 }>>([])
 const queuedSceneIds = ref<string[]>([])
 
@@ -650,14 +708,17 @@ const beginQueuedCaseExecution = async (
     Message.warning('当前范围内没有可执行场景')
     return
   }
-  // 全部执行的列表接口是轻量数据，场景选择和执行配置必须使用完整 caseList。
   let executionScenes: AutomationUiSceneResp[]
   try {
-    const { data } = await getAutomationUiSceneSelected(records.map(record => record.id))
-    if (!Array.isArray(data) || !data.length) throw new Error('未读取到可执行场景')
-    executionScenes = data
+    executionScenes = await mapWithConcurrency(records, 6, record => (
+      loadAutomationUiExecutionSelectionScene(record.id, record, undefined, {
+        projectedPage: 1,
+        projectedPageSize: 20,
+      }) as Promise<AutomationUiSceneResp>
+    ))
+    if (!executionScenes.length) throw new Error('未读取到可执行场景')
   } catch (error: any) {
-    Message.error(error?.message || '读取完整场景数据失败，请刷新后重试')
+    Message.error(error?.message || '读取场景 Definition 失败，请刷新后重试')
     return
   }
   executionCaseSelectModalRef.value?.onOpen(buildSceneSelectionRecord(executionScenes), executionType, {
@@ -687,9 +748,13 @@ const queueSelectedScenes = (payload: ExecutionCaseSelection) => {
   executionQueue.value = selectedScenes.map(scene => ({
     scene,
     executionType: payload.executionType,
-    caseIds: (Array.isArray(scene.caseList) ? scene.caseList : [])
-      .filter(isExecutableCase)
-      .map(caseItem => String(caseItem.id)),
+    caseIds: (scene as any).__projectedDefinition
+      ? []
+      : (Array.isArray(scene.caseList) ? scene.caseList : [])
+          .filter(isExecutableCase)
+          .map(caseItem => String(caseItem.id)),
+    selectAllCases: Boolean((scene as any).__projectedDefinition),
+    expectedDefinitionVersion: Number((scene as any).definitionVersion || 0) || undefined,
   }))
   openNextQueuedCaseExecution()
 }
@@ -697,7 +762,11 @@ const queueSelectedScenes = (payload: ExecutionCaseSelection) => {
 const openNextQueuedCaseExecution = () => {
   const next = executionQueue.value.shift()
   if (!next) return
-  executionCaseModalRef.value?.onOpen(next.scene, next.executionType, { caseIds: next.caseIds })
+  executionCaseModalRef.value?.onOpen(next.scene, next.executionType, {
+    caseIds: next.caseIds,
+    selectAllCases: next.selectAllCases,
+    expectedDefinitionVersion: next.expectedDefinitionVersion,
+  })
 }
 
 const onCaseExecutionStarted = () => {
@@ -744,6 +813,7 @@ const onChromeRecord = (record?: AutomationUiSceneResp) => {
 
 defineExpose({
   reset,
+  search,
 })
 </script>
 

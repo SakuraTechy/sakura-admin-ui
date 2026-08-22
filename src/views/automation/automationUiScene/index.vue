@@ -49,6 +49,7 @@
     >
       <template #table>
         <AutomationUiScene
+          v-if="uiReady"
           :key="sceneKey"
           ref="automationUiSceneRef"
           @update-scene="addTab"
@@ -63,8 +64,18 @@
       <template #history>
         <AutomationUiSceneHistoryWorkspace ref="historyWorkspaceRef" :live-executions="liveExecutions" />
       </template>
-      <template #content>
-        <AddOrEditForm ref="addOrEditFormRef" @add-tab="addTab" @remove-tab="removeTab" @update-tab="updateTab" />
+      <template #content="{ content }">
+        <AddOrEditForm
+          :scene-db-id="content.id"
+          :pane-active="content.key === uiStore.activeKey"
+          :readonly="content.readonly"
+          :copy="content.copy"
+          :refresh-version="formRefreshVersion"
+          @add-tab="addTab"
+          @remove-tab="removeTab"
+          @update-tab="updateTab"
+          @save-success="refreshSceneList"
+        />
       </template>
     </TabList>
     <ExecuteSceneModal ref="executeSceneModalRef" @started="openExecutionHistory" @success="refresh" />
@@ -257,17 +268,19 @@ const onTreeFocus = () => {
 }
 
 const sceneKey = ref(0)
+// 首次查询必须等待项目、版本和模块树完成初始化，避免持久化的旧版本触发首屏请求。
+const uiReady = ref(false)
 const automationUiSceneRef = ref()
-const addOrEditFormRef = ref()
+const formRefreshVersion = ref(0)
 const refresh = async () => {
-  // sceneKey.value++ // 改变 key 强制刷新组件
-  await nextTick()
   if (uiStore.activeId) {
-    await addOrEditFormRef.value?.getSceneInfo()
-    // await addOrEditFormRef.value?.getCaseList()
+    formRefreshVersion.value += 1
   } else {
     automationUiSceneRef.value?.reset()
   }
+}
+const refreshSceneList = async () => {
+  await automationUiSceneRef.value?.search()
 }
 const addTab = async (record?: any) => {
   tabListRef.value?.addTab(record)
@@ -306,10 +319,6 @@ const executeAllScenes = (records: any[], query: any, executionType: string) => 
   executeSceneModalRef.value?.onOpen(records, { mode: 'all', query, source: 'ui' })
 }
 
-watch(() => uiStore.activeKey, (activeKey) => {
-  if (activeKey === 'history') void historyWorkspaceRef.value?.openHistory()
-})
-
 // const updateScene = async (record: any) => {
 //   tabListRef.value?.addTab(record)
 // }
@@ -341,6 +350,7 @@ onMounted(async () => {
   await uiStore.fetchUsers()
   // }
   uiStore.activeKey = '0'
+  uiReady.value = true
 })
 </script>
 

@@ -1,4 +1,11 @@
 import type { ExecutionType, ExecutionViewType } from '@/apis/automation/automationUiScene'
+import type {
+  AutomationUiExecutionCaseHistory,
+  AutomationUiExecutionCase,
+  AutomationUiExecutionStep,
+  AutomationUiExecutionSummary,
+  AutomationUiSceneSummary,
+} from '@/apis/automation/automationUiQuery'
 
 export type { ExecutionType, ExecutionViewType } from '@/apis/automation/automationUiScene'
 
@@ -13,6 +20,9 @@ export interface ExecutionContext {
 
 export interface ExecutionCaseOpenOptions extends ExecutionContext {
   caseIds?: string[]
+  /** 按服务端冻结定义执行全部用例，不依赖浏览器枚举 caseIds。 */
+  selectAllCases?: boolean
+  expectedDefinitionVersion?: number
   /** 批量场景执行先选择场景，再进入产品环境和执行参数配置。 */
   sceneSelection?: boolean
   /** 场景范围已由入口确定时，展示当前执行范围的说明文案。 */
@@ -27,6 +37,7 @@ export interface ExecutionCaseOpenOptions extends ExecutionContext {
 }
 
 export interface ExecutionRecordTarget {
+  executionDbId?: number
   recordKey?: string
   executionId?: string
   buildNumber?: string | number
@@ -41,6 +52,8 @@ export interface ExecutionResultOpenOptions {
 }
 
 export interface ExecutionHistoryStepRow {
+  stepExecutionDbId?: number
+  detailLoaded?: boolean
   rowKey: string
   stepIndex: string | number
   stepNumber: number
@@ -67,6 +80,11 @@ export interface ExecutionHistoryStepRow {
 }
 
 export interface ExecutionHistoryCaseRow {
+  caseExecutionDbId?: number
+  stepsLoaded?: boolean
+  stepPage?: number
+  stepPageSize?: number
+  stepPageTotal?: number
   rowKey: string
   recordKey: string
   recordTarget: ExecutionRecordTarget
@@ -149,6 +167,11 @@ export interface ExecutionHistorySceneSummary {
 }
 
 export interface ExecutionHistoryBatchRow {
+  executionDbId?: number
+  casesLoaded?: boolean
+  casePage?: number
+  casePageSize?: number
+  casePageTotal?: number
   rowKey: string
   recordKey: string
   recordTarget: ExecutionRecordTarget
@@ -376,6 +399,269 @@ export const getExecutionBatchRows = (
     ...attachSceneIdentity(row, scene, source),
     cases: row.cases.map((item) => attachSceneIdentity(item, scene, source)),
   }))
+}
+
+/** 将新分层查询 DTO 转成历史视图行；子节点保持未加载状态。 */
+export function buildLayeredExecutionBatchRow(
+  record: AutomationUiExecutionSummary,
+  scene: AutomationUiSceneSummary,
+): ExecutionHistoryBatchRow {
+  const sceneKey = String(scene.sceneDbId)
+  const caseTotal = numericValue(record.caseTotal)
+  const casePass = numericValue(record.casePass)
+  const caseFail = numericValue(record.caseFail)
+  const caseSkip = numericValue(record.caseSkip)
+  const caseCancelled = numericValue(record.caseCancelled)
+  const caseCompleted = Math.min(caseTotal, casePass + caseFail + caseSkip + caseCancelled)
+  const batchId = String(record.batchId || record.executionKey || record.executionDbId)
+  const progress = caseTotal > 0 ? Math.round(caseCompleted * 10000 / caseTotal) / 100 : null
+  const executionType = layeredExecutionType(record.executionEngine)
+  const row: ExecutionHistoryBatchRow = {
+    executionDbId: record.executionDbId,
+    casesLoaded: false,
+    rowKey: `execution-${record.executionDbId}`,
+    recordKey: String(record.executionKey || record.executionDbId),
+    recordTarget: {
+      executionDbId: record.executionDbId,
+      recordKey: String(record.executionKey || record.executionDbId),
+      executionId: String(record.executionKey || record.executionDbId),
+      buildNumber: record.buildNumber,
+    },
+    batchId,
+    executionType,
+    caseTotal,
+    caseCompleted,
+    casePass,
+    caseFail,
+    caseCancelled,
+    caseBlocked: 0,
+    caseSkip,
+    progress,
+    progressIndeterminate: progress == null,
+    executeStatus: record.status || 'not_started',
+    executeResult: record.result || 'not_executed',
+    executeName: record.executeName || record.executeUsername || '-',
+    startedAt: record.startedAt || record.createTime,
+    finishedAt: record.finishedAt,
+    duration: executionDurationMs(record.startedAt || record.createTime, record.finishedAt, record.durationMs),
+    projectEnvironmentId: record.projectEnvironmentId == null ? '-' : String(record.projectEnvironmentId),
+    projectEnvironmentName: record.projectEnvironmentName || '-',
+    cases: [],
+    testReportId: record.testReportId == null ? undefined : String(record.testReportId),
+    sceneCount: 1,
+    sceneIds: [scene.sceneKey || sceneKey],
+    sceneNames: [scene.name || '-'],
+    sceneKey,
+    sceneId: scene.sceneKey || sceneKey,
+    sceneName: scene.name || '-',
+    recordSource: record.recordSource,
+  }
+  row.sceneSummaries = [buildSceneSummary(row, sceneKey, row.sceneId || sceneKey, row.sceneName || '-')]
+  return row
+}
+
+export function buildLayeredExecutionCaseRow(
+  record: AutomationUiExecutionCase,
+  batch: ExecutionHistoryBatchRow,
+): ExecutionHistoryCaseRow {
+  const caseId = record.definitionCaseId || record.caseKey || String(record.caseExecutionDbId)
+  const stepTotal = numericValue(record.stepTotal)
+  const stepPass = numericValue(record.stepPass)
+  const stepFail = numericValue(record.stepFail)
+  const stepSkip = numericValue(record.stepSkip)
+  const completed = stepPass + stepFail + stepSkip
+  return {
+    caseExecutionDbId: record.caseExecutionDbId,
+    stepsLoaded: false,
+    rowKey: `case-execution-${record.caseExecutionDbId}`,
+    recordKey: batch.recordKey,
+    recordTarget: { ...batch.recordTarget, executionDbId: batch.executionDbId, caseId },
+    executionType: batch.executionType,
+    executionId: record.caseExecutionKey || batch.recordTarget.executionId || String(batch.executionDbId || ''),
+    jobId: record.jobId || '',
+    startedAt: record.startedAt || record.createTime,
+    finishedAt: record.finishedAt,
+    caseId,
+    caseName: record.caseName || caseId,
+    executeStatus: record.executeStatus || record.status || 'not_started',
+    executeResult: record.executeResult || record.result || 'not_executed',
+    duration: executionDurationMs(record.startedAt || record.createTime, record.finishedAt,
+      record.wallClockDurationMs ?? record.durationMs),
+    executeName: batch.executeName,
+    buildNumber: String(batch.recordTarget.buildNumber ?? '-'),
+    stepPassRate: stepTotal > 0 ? `${Math.round(stepPass * 10000 / stepTotal) / 100}%` : '0%',
+    stepTotal,
+    stepPass,
+    stepFail,
+    stepSkip,
+    projectEnvironmentId: batch.projectEnvironmentId,
+    projectEnvironmentName: batch.projectEnvironmentName,
+    browser: '-',
+    liveFrameQuality: '',
+    sessionMode: '',
+    appliedSessionMode: '',
+    browserSessionSource: '-',
+    sessionReset: false,
+    sessionResetCount: 0,
+    sessionResetReason: '-',
+    sessionNavigationDecision: '-',
+    headed: '-',
+    startUrl: '-',
+    windowSizeMode: '-',
+    viewport: '-',
+    failedStepIndex: '-',
+    errorCode: record.errorCode || '-',
+    error: record.errorMessage || '-',
+    artifactTrace: '-',
+    artifactVideo: '-',
+    artifactReport: '-',
+    artifactReportUrl: '',
+    artifactTraceUrl: '',
+    artifactScreenshotUrl: '',
+    artifactVideoUrl: '',
+    executionLogArtifactUrl: '',
+    artifactScreenshot: '-',
+    artifactUploadError: '-',
+    playwrightCaseKey: record.caseKey || caseId,
+    steps: [],
+    summaryOnly: false,
+    batchId: batch.batchId,
+    progress: stepTotal > 0 ? Math.min(100, Math.round(completed * 10000 / stepTotal) / 100) : null,
+    progressIndeterminate: stepTotal <= 0,
+    testReportId: batch.testReportId,
+    sceneKey: batch.sceneKey,
+    sceneId: batch.sceneId,
+    sceneName: batch.sceneName,
+    recordSource: batch.recordSource,
+  }
+}
+
+/** 单用例历史接口已携带父级上下文，直接构造成现有历史行，避免先请求批次再请求用例。 */
+export function buildLayeredExecutionCaseHistoryRow(
+  record: AutomationUiExecutionCaseHistory,
+  scene: AutomationUiSceneSummary,
+): ExecutionHistoryCaseRow {
+  const batch: ExecutionHistoryBatchRow = buildLayeredExecutionBatchRow({
+    executionDbId: record.executionDbId,
+    executionKey: record.executionKey || record.caseExecutionKey || String(record.executionDbId),
+    sceneDbId: record.sceneDbId || scene.sceneDbId,
+    sceneKey: record.sceneKey || scene.sceneKey,
+    batchId: record.batchId,
+    recordSource: record.recordSource || 'debug',
+    testPlanId: record.testPlanId,
+    testReportId: record.testReportId,
+    buildNumber: record.buildNumber,
+    executionEngine: record.executionEngine,
+    status: record.status,
+    result: record.result,
+    executeUsername: record.executeUsername,
+    executeName: record.executeName,
+    projectEnvironmentId: record.projectEnvironmentId,
+    projectEnvironmentName: record.projectEnvironmentName,
+    caseTotal: 1,
+    casePass: record.stepPass,
+    caseFail: record.stepFail,
+    caseSkip: record.stepSkip,
+    startedAt: record.startedAt,
+    finishedAt: record.finishedAt,
+    durationMs: record.durationMs,
+    createTime: record.createTime,
+  }, scene)
+  return buildLayeredExecutionCaseRow(record, batch)
+}
+
+/** 后端 duration 为空或旧数据为 0 时，以开始/结束时间补齐墙钟耗时。 */
+function executionDurationMs(startedAt: unknown, finishedAt: unknown, duration: unknown) {
+  const stored = Number(duration)
+  if (Number.isFinite(stored) && stored > 0) return stored
+  const start = new Date(startedAt as string | number).getTime()
+  const finish = new Date(finishedAt as string | number).getTime()
+  if (!Number.isFinite(start)) return 0
+  // 执行中记录通常还没有 finishedAt，使用当前时间显示实时墙钟耗时。
+  const end = Number.isFinite(finish) && finish >= start ? finish : Date.now()
+  return Math.max(0, end - start)
+}
+
+/** 将受控 diagnostics 展开为报告组件需要的定位事实和候选策略。 */
+export function applyLayeredExecutionStepDetail(
+  step: ExecutionHistoryStepRow,
+  detail: { locatorValue?: string, diagnostics?: unknown },
+) {
+  const diagnosticEnvelope = parseObjectValue(detail.diagnostics)
+  // 分层接口返回完整步骤诊断包，operation 等类型化详情仍位于原始 details 中。
+  // 合并时保留外层定位候选和执行事实，避免两类诊断只能显示其中一类。
+  const diagnostics = {
+    ...diagnosticEnvelope,
+    ...parseObjectValue(diagnosticEnvelope.details),
+  }
+  const locatorDiagnostics = objectValue(diagnostics.locator_diagnostics || diagnostics.locatorDiagnostics)
+  const selected = objectValue(locatorDiagnostics.selected)
+  const attempts = Array.isArray(locatorDiagnostics.attempts) ? locatorDiagnostics.attempts : []
+  const candidates = Array.isArray(diagnostics.configured_locators)
+    ? diagnostics.configured_locators
+    : Array.isArray(diagnostics.configuredLocators)
+      ? diagnostics.configuredLocators
+      : Array.isArray(diagnostics.locator_meta?.candidates)
+        ? diagnostics.locator_meta.candidates
+        : Array.isArray(locatorDiagnostics.meta?.candidates)
+          ? locatorDiagnostics.meta.candidates
+        : []
+  const configuredLocators = candidates.map((item: any) => ({
+    type: stringValue(item?.type || item?.locator_type || item?.locatorType),
+    value: stringValue(item?.value || item?.locator_value || item?.locatorValue),
+  })).filter(item => item.type && item.value)
+  step.locatorValue = detail.locatorValue || stringValue(selected.effective_target || selected.value) || step.locatorValue || '-'
+  step.matchedCount = valueOrDash(diagnostics.matched_count ?? diagnostics.matchedCount
+    ?? selected.matched_count ?? selected.matchedCount ?? attempts[0]?.matched_count)
+  step.visibleCount = valueOrDash(diagnostics.visible_count ?? diagnostics.visibleCount
+    ?? selected.visible_count ?? selected.visibleCount ?? attempts[0]?.visible_count)
+  step.infrastructureTaskId = step.infrastructureTaskId
+    || stringValue(diagnostics.infrastructure_task_id || diagnostics.infrastructureTaskId)
+    || stringValue(diagnosticEnvelope.infrastructure_task_id || diagnosticEnvelope.infrastructureTaskId)
+    || stringValue(diagnosticEnvelope.details?.infrastructure_task_id || diagnosticEnvelope.details?.infrastructureTaskId)
+  step.configuredLocators = configuredLocators.length ? configuredLocators : step.configuredLocators
+  step.hasActualLocator = step.hasActualLocator || Boolean(step.locatorValue && step.locatorValue !== '-')
+  step.details = diagnostics
+  step.detailLoaded = true
+}
+
+export function buildLayeredExecutionStepRow(record: AutomationUiExecutionStep): ExecutionHistoryStepRow {
+  const stepIndex = record.stepIndex ?? 0
+  const stepId = record.definitionStepId || record.sourceStepId || String(record.stepExecutionDbId)
+  return {
+    stepExecutionDbId: record.stepExecutionDbId,
+    detailLoaded: false,
+    rowKey: `step-execution-${record.stepExecutionDbId}`,
+    stepIndex,
+    stepNumber: stepIndex + 1,
+    stepId,
+    stepName: record.stepName || record.description || stepId,
+    actionType: record.actionType || '-',
+    description: record.description || '',
+    status: record.status || 'not_executed',
+    duration: record.durationMs || 0,
+    error: record.errorMessage || '-',
+    errorCode: record.errorCode || '-',
+    locatorSource: record.locatorSource || '-',
+    locatorType: record.locatorType || '-',
+    locatorValue: '-',
+    matchedCount: '-',
+    visibleCount: '-',
+    configuredLocators: [],
+    hasActualLocator: Boolean(record.locatorSource || record.locatorType),
+    valueMasked: false,
+    targetSelector: '-',
+    targetXpath: '-',
+    infrastructureTaskId: '',
+    details: undefined,
+  }
+}
+
+function layeredExecutionType(value?: string): ExecutionType {
+  const normalized = String(value || '').toLowerCase()
+  if (normalized.includes('playwright')) return 'playwright-runner'
+  if (normalized.includes('cdp') || normalized.includes('extension')) return 'extension-cdp'
+  return 'jenkins'
 }
 
 /**
@@ -1091,7 +1377,7 @@ function normalizeHistoryStepDetails(step: any) {
   return Object.keys(details).length ? details : step.details
 }
 
-/** 用例结果必须以步骤结果为准，只有全部步骤通过才算用例通过。 */
+/** 用例结果优先遵循执行器最终结果；失败后继续的 skipped 步骤不阻断用例通过。 */
 function deriveCaseExecutionResult(
   steps: ExecutionHistoryStepRow[],
   stepTotal: unknown,
@@ -1118,6 +1404,9 @@ function deriveCaseExecutionResult(
   const blocked = steps.filter(step => isBlockedLeafResult(step.status)).length
   const fail = steps.length ? steps.filter(step => isFailedLeafResult(step.status)).length : numericValue(stepFail)
   const skip = steps.length ? steps.filter(step => isSkippedLeafResult(step.status)).length : numericValue(stepSkip)
+  if ((explicitResult === '通过' || statusResult === '通过') && cancelled === 0 && blocked === 0 && fail === 0) {
+    return 'passed'
+  }
   if (cancelled > 0) return 'cancelled'
   if (blocked > 0) return 'blocked'
   if (total > 0 && pass >= total) return 'passed'
@@ -1389,7 +1678,7 @@ export const isExecutableStep = (step: any) => isEnabledDefinitionNode(step)
 
 export const executableStepCount = (caseItem: any) => Array.isArray(caseItem?.stepList)
   ? caseItem.stepList.filter(isExecutableStep).length
-  : 0
+  : Math.max(0, Number(caseItem?.stepCount ?? caseItem?.__stepCount) || 0)
 
 export const isExecutableCase = (caseItem: any) => isEnabledDefinitionNode(caseItem)
   && executableStepCount(caseItem) > 0

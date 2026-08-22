@@ -70,6 +70,28 @@ const cloneConfigValue = <T>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+interface CatalogCacheEntry {
+  etag?: string
+  catalog: AutomationOperationCatalog
+}
+
+const catalogCache = new Map<string, CatalogCacheEntry>()
+const catalogRequests = new Map<string, Promise<ApiRes<AutomationOperationCatalog>>>()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('session-cache-clear', () => {
+    catalogCache.clear()
+    catalogRequests.clear()
+  })
+}
+
+const catalogRequestKey = (
+  sceneId?: string | number,
+  projectEnvironmentId?: string | number,
+  executorInstanceId?: string,
+  sessionId?: string,
+) => [sceneId, projectEnvironmentId, executorInstanceId, sessionId].map(value => String(value ?? '')).join(':')
+
 export const isAutomationOperationValueEmpty = (value: unknown) => value == null
   || (typeof value === 'string' && value.trim() === '')
   || (Array.isArray(value) && value.length === 0)
@@ -139,10 +161,30 @@ export const validateAutomationOperationConfig = (method: AutomationOperationMet
 
 /** 获取当前场景可用的手工步骤操作目录。 */
 export function getAutomationOperationCatalog(sceneId?: string | number, projectEnvironmentId?: string | number, executorInstanceId?: string, sessionId?: string) {
-  return http.get<AutomationOperationCatalog>('/automation/operation-catalog', {
-    sceneId,
-    projectEnvironmentId,
-    executorInstanceId,
-    sessionId,
+  const key = catalogRequestKey(sceneId, projectEnvironmentId, executorInstanceId, sessionId)
+  const running = catalogRequests.get(key)
+  if (running) return running
+  const cached = catalogCache.get(key)
+  const request = http.requestNative<ApiRes<AutomationOperationCatalog>>({
+    method: 'get',
+    url: '/automation/operation-catalog',
+    params: { sceneId, projectEnvironmentId, executorInstanceId, sessionId },
+    headers: cached?.etag ? { 'If-None-Match': cached.etag } : undefined,
+    rawResponse: true,
+    silentError: true,
+    validateStatus: status => (status >= 200 && status < 300) || status === 304,
+  }).then((response) => {
+    if (response.status === 304 && cached) {
+      return { success: true, data: cloneConfigValue(cached.catalog) } as ApiRes<AutomationOperationCatalog>
+    }
+    const payload = response.data
+    if (!payload?.success || !payload.data) throw new Error(payload?.msg || '操作目录响应无效')
+    const catalog = cloneConfigValue(payload.data)
+    catalogCache.set(key, { etag: response.headers?.etag, catalog })
+    return { ...payload, data: cloneConfigValue(catalog) }
+  }).finally(() => {
+    if (catalogRequests.get(key) === request) catalogRequests.delete(key)
   })
+  catalogRequests.set(key, request)
+  return request
 }

@@ -38,7 +38,9 @@
           <a-option value="已取消">已取消</a-option>
         </a-select>
         <a-space v-if="!selectionDisabled">
-          <a-button :disabled="filteredRows.length === 0" @click="selectFilteredCases">全选当前结果</a-button>
+          <a-button :disabled="filteredRows.length === 0" @click="selectFilteredCases">
+            {{ isRemoteProjectedCases ? '全选当前页结果' : '全选当前结果' }}
+          </a-button>
           <a-button :disabled="selectedCaseKeys.length === 0" @click="selectedCaseKeys = []">清空</a-button>
         </a-space>
       </div>
@@ -47,7 +49,7 @@
         v-model:selected-keys="selectedCaseKeys"
         :data="filteredRows"
         :loading="loading"
-        :pagination="{ pageSize: 10, showTotal: true, showPageSize: true }"
+        :pagination="caseTablePagination"
         :row-selection="selectionDisabled ? undefined : { type: 'checkbox', showCheckedAll: true }"
         row-key="rowKey"
         size="small"
@@ -99,10 +101,10 @@
           </template>
         </template>
         <template v-else-if="selectionDisabled">
-          本次将执行测试计划指定的 <strong>{{ cases.length }}</strong> 个用例
+          本次将执行测试计划指定的 <strong>{{ selectedCaseCount }}</strong> 个用例
         </template>
         <template v-else>
-          已选择 <strong>{{ selectedCaseKeys.length }}</strong> 个用例，共 {{ cases.length }} 个可执行用例
+          已选择 <strong>{{ selectedCaseKeys.length }}</strong> 个用例，共 {{ caseTotal }} 个可执行用例
         </template>
       </div>
     </div>
@@ -138,7 +140,7 @@ import {
   getExecutionHistoryRows,
   isExecutableCase,
 } from '../execution'
-import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
+import { loadAutomationUiExecutionSelectionScene } from '../queryCache'
 
 interface SelectableCase {
   rowKey: string
@@ -162,6 +164,8 @@ interface SelectableScene {
   sceneName: string
   caseTotal: number
   caseIds: string[]
+  selectAllCases: boolean
+  definitionVersion?: number
   executeStatus: unknown
   lastResult: unknown
   duration: unknown
@@ -198,6 +202,31 @@ const selectionDisabled = ref(false)
 const sceneSelection = ref(false)
 const sceneSelectionSummary = ref('')
 const isSceneSelection = computed(() => sceneSelection.value)
+const caseRowsByKey = new Map<string, SelectableCase>()
+const projectedPagination = reactive({ current: 1, pageSize: 20, total: 0 })
+const isRemoteProjectedCases = computed(() => Boolean(
+  !isSceneSelection.value
+  && scene.value?.__projectedDefinition
+  && !scene.value?.__projectedSelectionScoped
+  && !scene.value?.__planAggregate
+  && !scene.value?.__sceneAggregate,
+))
+const caseTotal = computed(() => isRemoteProjectedCases.value ? projectedPagination.total : cases.value.length)
+const selectedCaseCount = computed(() => selectionDisabled.value && Number(scene.value?.__caseTotal || 0) > 0
+  ? Number(scene.value.__caseTotal)
+  : selectedCaseKeys.value.length)
+const caseTablePagination = computed(() => isRemoteProjectedCases.value
+  ? {
+      current: projectedPagination.current,
+      pageSize: projectedPagination.pageSize,
+      total: projectedPagination.total,
+      showTotal: true,
+      showPageSize: true,
+      pageSizeOptions: [10, 20, 50, 100],
+      onChange: (page: number) => void loadProjectedCasePage(page, projectedPagination.pageSize),
+      onPageSizeChange: (size: number) => void loadProjectedCasePage(1, size),
+    }
+  : { pageSize: 10, showTotal: true, showPageSize: true })
 
 const casesWithLiveStatus = computed(() => {
   const recordSource = executionContext.value.recordSource || 'debug'
@@ -271,6 +300,10 @@ async function onOpen(
   statusFilter.value = ''
   resultFilter.value = ''
   selectedCaseKeys.value = []
+  caseRowsByKey.clear()
+  projectedPagination.current = 1
+  projectedPagination.pageSize = 20
+  projectedPagination.total = 0
   cases.value = []
   sceneRows.value = []
   selectionDisabled.value = Boolean(options.selectionDisabled)
@@ -279,11 +312,32 @@ async function onOpen(
   visible.value = true
   loading.value = true
   try {
+    const existingCases = Array.isArray(record?.caseList) ? record.caseList : []
     const detail = record?.__planAggregate || record?.__sceneAggregate
       ? record
-      : record?.id ? (await getAutomationUiScene(String(record.id))).data : record
+      : record?.__definitionLoaded && !record?.__projectedDefinition
+        ? record
+        : record?.id
+          ? await loadAutomationUiExecutionSelectionScene(String(record.id), record, undefined, (
+              options.selectionDisabled && options.caseIds?.length
+                ? { projectedCaseIds: options.caseIds }
+                : { projectedPage: 1, projectedPageSize: projectedPagination.pageSize }
+            ))
+          : record
     scene.value = detail || record
+    if (scene.value?.__projectedDefinition) {
+      existingCases.forEach((item: any) => rememberProjectedCase(scene.value, item))
+      projectedPagination.current = Number(scene.value.__projectedCasePage || 1)
+      projectedPagination.pageSize = Number(scene.value.__projectedCasePageSize || projectedPagination.pageSize)
+      projectedPagination.total = Number(scene.value.__caseTotal || 0)
+    }
     loadSelectionRows(scene.value, options.caseIds || [])
+    if (scene.value?.__projectedDefinition && !selectionDisabled.value && options.caseIds?.length) {
+      const sceneKey = getSceneKey(scene.value)
+      selectedCaseKeys.value = options.caseIds
+        .map(caseId => `${sceneKey}:${String(caseId)}`)
+        .filter(key => caseRowsByKey.has(key))
+    }
   } catch (error: any) {
     scene.value = record
     loadSelectionRows(record, options.caseIds || [])
@@ -312,6 +366,7 @@ function loadScenes(record: any) {
     const caseIds = (Array.isArray(sourceScene?.caseList) ? sourceScene.caseList : [])
       .filter(isExecutableCase)
       .map((item: any) => String(item.id))
+    const selectAllCases = Boolean(sourceScene?.__projectedDefinition)
     const latest = getExecutionBatchRows(
       sourceScene,
       executionContext.value.recordSource || 'debug',
@@ -322,19 +377,21 @@ function loadScenes(record: any) {
       sceneKey,
       sceneId,
       sceneName,
-      caseTotal: caseIds.length,
+      caseTotal: selectAllCases ? Number(sourceScene?.__caseTotal || caseIds.length) : caseIds.length,
       caseIds,
+      selectAllCases,
+      definitionVersion: sourceScene?.definitionVersion,
       executeStatus: latest?.executeStatus || sourceScene?.executeStatus || 'not_started',
       lastResult: latest?.executeResult || sourceScene?.executeResult || '',
       duration: latest?.duration ?? sourceScene?.duration,
       // 场景级执行编号使用批次号，避免把某一个用例的编号误当作场景编号。
       executionId: latest?.batchId || sourceScene?.executionId || '-',
     }
-  }).filter((item) => item.caseIds.length > 0)
+  }).filter((item) => item.selectAllCases || item.caseIds.length > 0)
   selectedCaseKeys.value = sceneRows.value.map((item) => item.rowKey)
 }
 
-function loadCases(record: any, preferredCaseIds: string[]) {
+function loadCases(record: any, preferredCaseIds: string[], preserveSelection = false) {
   const sourceScenes = Array.isArray(record?.__planScenes) && record.__planScenes.length
     ? record.__planScenes
     : [record]
@@ -359,7 +416,7 @@ function loadCases(record: any, preferredCaseIds: string[]) {
     const sceneName = String(sourceScene?.name || sourceScene?.sceneName || sceneId)
     const executableCases = (Array.isArray(sourceScene?.caseList) ? sourceScene.caseList : [])
       .filter(isExecutableCase)
-    return executableCases
+    const rows = executableCases
       .filter((item: any) => !selectionDisabled.value || !preferredIds.size || preferredIds.has(String(item.id)))
       .map((item: any) => {
         const caseId = String(item.id)
@@ -369,7 +426,7 @@ function loadCases(record: any, preferredCaseIds: string[]) {
           sceneKey,
           sceneId,
           sceneName,
-          sceneCaseTotal: executableCases.length,
+          sceneCaseTotal: Number(sourceScene?.__caseTotal || executableCases.length),
           caseId,
           name: item.name || caseId,
           stepTotal: executableStepCount(item),
@@ -379,10 +436,60 @@ function loadCases(record: any, preferredCaseIds: string[]) {
           executionId: latest?.executionId || '-',
         }
       })
+    rows.forEach((row) => {
+      caseRowsByKey.set(row.rowKey, row)
+      if (sourceScene?.__projectedDefinition) rememberProjectedCase(sourceScene, executableCases
+        .find((item: any) => String(item.id) === row.caseId))
+    })
+    return rows
   })
-  selectedCaseKeys.value = selectionDisabled.value
-    ? cases.value.map((item) => item.rowKey)
-    : cases.value.filter((item) => preferredIds.has(item.caseId)).map((item) => item.rowKey)
+  if (!preserveSelection) {
+    selectedCaseKeys.value = selectionDisabled.value
+      ? cases.value.map((item) => item.rowKey)
+      : cases.value.filter((item) => preferredIds.has(item.caseId)).map((item) => item.rowKey)
+  }
+}
+
+function rememberProjectedCase(sourceScene: any, item: any) {
+  if (!item?.id) return
+  const sceneKey = getSceneKey(sourceScene)
+  const rowKey = `${sceneKey}:${String(item.id)}`
+  if (!caseRowsByKey.has(rowKey)) {
+    caseRowsByKey.set(rowKey, {
+      rowKey,
+      sceneKey,
+      sceneId: String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-'),
+      sceneName: String(sourceScene?.name || sourceScene?.sceneName || sceneKey || '-'),
+      sceneCaseTotal: Number(sourceScene?.__caseTotal || 0),
+      caseId: String(item.id),
+      name: item.name || String(item.id),
+      stepTotal: executableStepCount(item),
+      executeStatus: 'not_started',
+      lastResult: '',
+      duration: undefined,
+      executionId: '-',
+    })
+  }
+}
+
+async function loadProjectedCasePage(page: number, size: number) {
+  if (!scene.value?.id || loading.value) return
+  loading.value = true
+  try {
+    const next = await loadAutomationUiExecutionSelectionScene(String(scene.value.id), scene.value, undefined, {
+      projectedPage: page,
+      projectedPageSize: size,
+    })
+    scene.value = next
+    projectedPagination.current = Number(next.__projectedCasePage || page)
+    projectedPagination.pageSize = Number(next.__projectedCasePageSize || size)
+    projectedPagination.total = Number(next.__caseTotal || 0)
+    loadCases(next, [], true)
+  } catch (error: any) {
+    Message.error(error?.message || '读取用例分页失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 function selectFilteredCases() {
@@ -393,16 +500,26 @@ function selectFilteredCases() {
 
 function nextStep() {
   const selectedRows = selectedCaseKeys.value.map(String)
+  const selectedCaseIds = selectedRows
+    .map(key => caseRowsByKey.get(key)?.caseId)
+    .filter((caseId): caseId is string => Boolean(caseId))
+  const payloadScene = scene.value?.__projectedDefinition && !isSceneSelection.value
+    ? {
+        ...scene.value,
+        caseList: selectedRows
+          .map(key => caseRowsByKey.get(key))
+          .filter((item): item is SelectableCase => Boolean(item))
+          .map(item => ({ id: item.caseId, name: item.name, stepCount: item.stepTotal, __stepCount: item.stepTotal })),
+      }
+    : scene.value
   emit('next', {
-    scene: scene.value,
+    scene: payloadScene,
     executionType: executionType.value,
     caseIds: isSceneSelection.value
       ? sceneRows.value
         .filter((item) => selectedRows.includes(item.rowKey))
         .flatMap((item) => item.caseIds)
-      : selectedRows
-        .map((key) => cases.value.find((item) => item.rowKey === key)?.caseId)
-        .filter((caseId): caseId is string => Boolean(caseId)),
+      : selectedCaseIds,
     sceneIds: isSceneSelection.value
       ? sceneRows.value
         .filter((item) => selectedRows.includes(item.rowKey))

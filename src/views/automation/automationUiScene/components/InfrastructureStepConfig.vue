@@ -34,6 +34,10 @@
                 <span class="summary-label">角色编码</span>
                 <span class="summary-value">{{ selectedTarget.code }}</span>
               </div>
+              <div v-if="kind === 'database'" class="summary-item">
+                <span class="summary-label">数据库信息</span>
+                <span class="summary-value">{{ selectedTarget.resourceLabel || '未绑定' }}</span>
+              </div>
               <div class="summary-item">
                 <span class="summary-label">启用状态</span>
                 <a-tag size="small" color="green">启用</a-tag>
@@ -131,7 +135,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { type AutomationUiStepConfig } from '@/apis/automation/automationUiScene'
+import type { AutomationUiStepConfig } from '@/apis/automation/automationUiScene'
 import { listEnvironmentResourceSlots } from '@/apis/automation/environmentResources'
 
 type InfrastructureActionType = 'server_command' | 'database_sql' | 'database_native'
@@ -140,6 +144,10 @@ interface TargetConfigOption {
   value: string
   label: string
   code: string
+  databaseIp?: string
+  databasePort?: number
+  databaseName?: string
+  resourceLabel?: string
 }
 
 const props = defineProps<{
@@ -149,6 +157,7 @@ const props = defineProps<{
   methodCode?: string
   methodVersion?: number
   projectId?: string | number
+  environmentId?: string | number
 }>()
 
 const emit = defineEmits<{
@@ -302,12 +311,16 @@ const loadTargetConfigOptions = async () => {
   }
   targetConfigLoading.value = true
   try {
-    const { data } = await listEnvironmentResourceSlots(projectId, kind.value === 'server' ? 'SERVER' : 'DATABASE')
+    const { data } = await listEnvironmentResourceSlots(projectId, kind.value === 'server' ? 'SERVER' : 'DATABASE', props.environmentId)
     if (requestSequence !== targetConfigRequestSequence) return
     targetConfigOptions.value = (data || []).map((item) => ({
       label: item.resourceName,
       value: String(item.slotId),
       code: item.resourceCode,
+      databaseIp: item.databaseIp,
+      databasePort: item.databasePort,
+      databaseName: item.databaseName,
+      resourceLabel: item.resourceLabel,
     }))
   } finally {
     if (requestSequence === targetConfigRequestSequence) targetConfigLoading.value = false

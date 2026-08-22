@@ -1,6 +1,8 @@
 <template>
   <div ref="detailRef" :data-history-expand="batch.rowKey" class="batch-detail">
-    <div class="batch-scene-list">
+    <a-spin v-if="loadingCases" class="batch-loading" />
+    <a-alert v-else-if="loadError" type="error" class="batch-load-error">{{ loadError }}</a-alert>
+    <div v-else class="batch-scene-list">
       <section
         v-for="group in sceneGroups"
         :key="group.key"
@@ -39,8 +41,7 @@
               </span>
               <span>状态 <a-tag :color="executionStatusColor(group.summary?.executeStatus)">{{ executionStatusLabel(group.summary?.executeStatus) }}</a-tag></span>
               <span>结果 <a-tag :color="executionDisplayResultColor(group.summary?.executeResult, group.summary?.executeStatus)">{{ executionDisplayResultLabel(group.summary?.executeResult, group.summary?.executeStatus) }}</a-tag></span>
-              <!-- <span>批次耗时 <strong>{{ formatExecutionDuration(group.summary?.duration) }}</strong></span> -->
-              <span>批次耗时 <strong>{{ formatExecutionDuration(caseDurationTotal(group.cases)) }}</strong></span>
+              <span>批次耗时 <strong>{{ formatExecutionDuration(displayBatchDuration()) }}</strong></span>
             </span>
           </div>
         </button>
@@ -83,7 +84,7 @@
                         :indeterminate="record.progressIndeterminate"
                       />
                     </span>
-                    <span class="batch-case-duration">耗时：<strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
+                    <span class="batch-case-duration">耗时：<strong>{{ formatExecutionDuration(displayCaseDuration(record)) }}</strong></span>
                   </span>
                 </span> 
               </button>
@@ -101,7 +102,7 @@
                     <span class="danger">失败 <strong>{{ record.stepFail }}</strong></span>
                     <span>跳过 <strong>{{ record.stepSkip }}</strong></span>
                     <span>失败步骤 <strong>{{ record.failedStepIndex }}</strong></span>
-                    <span class="batch-case-duration">耗时 <strong>{{ formatExecutionDuration(record.duration) }}</strong></span>
+                    <span class="batch-case-duration">耗时 <strong>{{ formatExecutionDuration(displayCaseDuration(record)) }}</strong></span>
                   </span>
               </div> -->
               <div style="display: flex; align-items: center; gap: 10px;">
@@ -152,7 +153,13 @@
                     :screenshot-url="record.artifactScreenshotUrl"
                     :video-url="record.artifactVideoUrl"
                   /> -->
-                  <AutomationExecutionHistoryDetail :record="record" variant="table" embedded />
+                  <AutomationExecutionHistoryDetail
+                    :record="record"
+                    variant="table"
+                    embedded
+                    :load-steps="loadSteps"
+                    :load-step-detail="loadStepDetail"
+                  />
                 </div>
               </div>
             </Transition>
@@ -160,11 +167,24 @@
         </div>
       </section>
     </div>
+    <a-pagination
+      v-if="!loadingCases && !loadError && caseTotal > casePageSize"
+      v-model:current="casePage"
+      v-model:page-size="casePageSize"
+      class="batch-case-pagination"
+      size="small"
+      :total="caseTotal"
+      :page-size-options="[20, 50, 100]"
+      show-page-size
+      show-total
+      @change="changeCasePage"
+      @page-size-change="changeCasePageSize"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ExecutionHistoryBatchRow, ExecutionHistoryCaseRow, ExecutionHistorySceneSummary } from '../execution'
+import type { ExecutionHistoryBatchRow, ExecutionHistoryCaseRow, ExecutionHistorySceneSummary, ExecutionHistoryStepRow } from '../execution'
 import {
   executionAggregateResultLabel,
   executionDisplayResultColor,
@@ -183,6 +203,12 @@ const props = withDefaults(defineProps<{
   batch: ExecutionHistoryBatchRow
   /** 聚合视图即使只有一个场景，也需保留场景分组层。 */
   forceSceneGroups?: boolean
+  loadCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
+  loadSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
+  loadStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>
+  /** 报告页定位用例；未指定时自动打开批次首个用例日志。 */
+  autoExpandCaseId?: string
+  autoExpandSceneId?: string
 }>(), {
   forceSceneGroups: false,
 })
@@ -191,6 +217,59 @@ const expandedKey = ref('')
 const expandedSceneKeys = ref<string[]>([])
 const activeTab = ref<'log' | 'live' | 'report'>('log')
 const pendingAutoScrollKey = ref('')
+const loadingCases = ref(false)
+const loadError = ref('')
+const loadingLogStepKeys = new Set<string>()
+const observedCaseStatuses = new Map<string, string>()
+const durationTick = ref(Date.now())
+let durationTimer: number | undefined
+const casePage = ref(props.batch.casePage || 1)
+const casePageSize = ref(props.batch.casePageSize || 20)
+const caseTotal = computed(() => props.batch.casePageTotal ?? props.batch.caseTotal)
+
+onMounted(() => {
+  durationTimer = window.setInterval(() => {
+    durationTick.value = Date.now()
+  }, 1000)
+})
+
+onUnmounted(() => {
+  if (durationTimer) window.clearInterval(durationTimer)
+  durationTimer = undefined
+})
+
+async function fetchCases() {
+  if (!props.loadCases) return
+  loadingCases.value = true
+  loadError.value = ''
+  try {
+    await props.loadCases(props.batch, casePage.value, casePageSize.value)
+  } catch (error) {
+    loadError.value = error instanceof Error ? error.message : '执行用例加载失败'
+  } finally {
+    loadingCases.value = false
+  }
+}
+
+watch(
+  () => `${props.batch.executionDbId || ''}:${props.batch.casesLoaded === true}`,
+  async () => {
+    if (!props.loadCases || props.batch.casesLoaded) return
+    await fetchCases()
+  },
+  { immediate: true },
+)
+
+function changeCasePage(page: number) {
+  casePage.value = page
+  void fetchCases()
+}
+
+function changeCasePageSize(size: number) {
+  casePageSize.value = size
+  casePage.value = 1
+  void fetchCases()
+}
 
 const sceneGroups = computed(() => {
   const groups = new Map<string, {
@@ -226,7 +305,30 @@ const showSceneGroups = computed(() => (
   || (props.batch.sceneCount || 0) > 1)
 
 function caseDurationTotal(cases: ExecutionHistoryCaseRow[]) {
-  return cases.reduce((total, record) => total + Math.max(0, Number(record.duration) || 0), 0)
+  return cases.reduce((total, record) => total + displayCaseDuration(record), 0)
+}
+
+function displayCaseDuration(record: ExecutionHistoryCaseRow) {
+  durationTick.value
+  const stored = Math.max(0, Number(record.duration) || 0)
+  if (record.finishedAt || isTerminalCase(record)) return stored
+  const started = new Date(record.startedAt as string | number).getTime()
+  return Number.isFinite(started) ? Math.max(stored, Date.now() - started) : stored
+}
+
+function displayBatchDuration() {
+  durationTick.value
+  const stored = Math.max(0, Number(props.batch.duration) || 0)
+  if (props.batch.finishedAt || isTerminalBatch()) return stored
+  const started = new Date(props.batch.startedAt as string | number).getTime()
+  return Number.isFinite(started) ? Math.max(stored, Date.now() - started) : stored
+}
+
+function isTerminalBatch() {
+  const status = String(props.batch.executeStatus || '').toLowerCase()
+  const result = String(props.batch.executeResult || '').toLowerCase()
+  return ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '已完成', '已取消'].includes(status)
+    || ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '通过', '不通过', '已取消', '阻塞', '跳过'].includes(result)
 }
 
 function sessionModeLabel(value: string) {
@@ -235,9 +337,9 @@ function sessionModeLabel(value: string) {
 }
 
 watch(() => props.batch.rowKey, () => {
-  const failed = props.batch.cases.find((record) => executionAggregateResultLabel(record.executeResult) === '不通过')
-  expandedKey.value = failed?.rowKey || props.batch.cases[0]?.rowKey || ''
-  expandedSceneKeys.value = sceneGroups.value.map(group => group.key)
+  // 普通翻页只展示批次，不自动打开首条用例；实时执行有日志时由自动预览逻辑负责展开。
+  expandedKey.value = ''
+  expandedSceneKeys.value = []
   activeTab.value = 'log'
   pendingAutoScrollKey.value = ''
 }, { immediate: true })
@@ -249,6 +351,20 @@ watch(sceneGroups, (groups) => {
 }, { immediate: true })
 
 watch(
+  () => `${props.batch.casesLoaded === true}:${props.batch.cases.map(record => record.rowKey).join('|')}:${props.autoExpandCaseId || props.autoExpandSceneId || ''}`,
+  () => {
+    if (!props.batch.casesLoaded || expandedKey.value || !props.batch.cases.length) return
+    const target = props.autoExpandCaseId
+      ? props.batch.cases.find(record => record.caseId === props.autoExpandCaseId)
+      : props.autoExpandSceneId
+        ? props.batch.cases.find(record => record.sceneId === props.autoExpandSceneId || record.sceneKey === props.autoExpandSceneId)
+      : props.batch.cases.find(record => !isTerminalCase(record)) || props.batch.cases[0]
+    if (target) selectContent(target, 'log')
+  },
+  { immediate: true, flush: 'post' },
+)
+
+watch(
   () => props.batch.cases
     .map((record) => (
       `${record.rowKey}:${record.executeStatus}:${record.executeResult || ''}:${record.liveLogs?.length || 0}`
@@ -256,6 +372,34 @@ watch(
     .join('|'),
   () => autoSelectNextRunningCase(),
   { immediate: true, flush: 'post' },
+)
+
+watch(
+  () => props.batch.cases.map(record => `${record.rowKey}:${record.executeStatus}:${record.executeResult || ''}`).join('|'),
+  () => {
+    // 报告页也要在当前用例完成后继续跟随下一条用例；首次加载只建立状态快照，避免直接跳过首条。
+    const statusChangedToTerminal = props.batch.cases.some((record) => {
+      const current = caseStatus(record)
+      const previous = observedCaseStatuses.get(record.rowKey)
+      observedCaseStatuses.set(record.rowKey, current)
+      return previous !== undefined && previous !== current && isTerminalCase(record)
+        && record.rowKey === expandedKey.value
+    })
+    if (statusChangedToTerminal) advanceToNextCase()
+  },
+  { immediate: true, flush: 'post' },
+)
+
+watch(
+  () => `${expandedKey.value}:${activeTab.value}:${props.batch.cases.map((record) => `${record.rowKey}:${record.stepsLoaded === true}`).join('|')}`,
+  () => {
+    if (activeTab.value !== 'log' || !expandedKey.value || !props.loadSteps) return
+    const record = props.batch.cases.find((item) => item.rowKey === expandedKey.value)
+    if (!record || record.stepsLoaded || !record.caseExecutionDbId || loadingLogStepKeys.has(record.rowKey)) return
+    loadingLogStepKeys.add(record.rowKey)
+    void props.loadSteps(record, 1, 50).finally(() => loadingLogStepKeys.delete(record.rowKey))
+  },
+  { immediate: true },
 )
 
 function toggleSceneGroup(key: string) {
@@ -310,12 +454,39 @@ function autoSelectNextRunningCase() {
   scrollBatchDetailToBottom(next.rowKey)
 }
 
+function caseStatus(record: ExecutionHistoryCaseRow) {
+  return `${String(record.executeStatus || '').toLowerCase()}:${String(record.executeResult || '').toLowerCase()}`
+}
+
+function isTerminalCase(record: ExecutionHistoryCaseRow) {
+  const status = String(record.executeStatus || '').toLowerCase()
+  const result = String(record.executeResult || '').toLowerCase()
+  return ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '已完成', '已取消'].includes(status)
+    || ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '通过', '不通过', '已取消', '阻塞', '跳过'].includes(result)
+}
+
+function advanceToNextCase() {
+  if (!props.autoExpandCaseId && !props.autoExpandSceneId) return
+  const currentIndex = props.batch.cases.findIndex(record => record.rowKey === expandedKey.value)
+  const next = props.batch.cases
+    .slice(Math.max(0, currentIndex + 1))
+    .find(record => !isTerminalCase(record))
+    || props.batch.cases.slice(Math.max(0, currentIndex + 1))[0]
+  if (!next) return
+  const group = sceneGroups.value.find(item => item.cases.some(record => record.rowKey === next.rowKey))
+  if (group && !expandedSceneKeys.value.includes(group.key)) {
+    expandedSceneKeys.value = [...expandedSceneKeys.value, group.key]
+  }
+  selectContent(next, 'log')
+}
+
 function isRunningCase(record: ExecutionHistoryCaseRow) {
   return ['waiting', 'starting', 'queued', 'running'].includes(String(record.executeStatus || '').toLowerCase())
 }
 
 function isCaseReadyForAutoPreview(record: ExecutionHistoryCaseRow) {
-  return isRunningCase(record) && Boolean(record.liveLogs?.length)
+  // 只有执行弹窗推送的实时行才允许自动跟随；普通历史翻页中的排队/运行状态不应抢占展开态。
+  return record.live === true && isRunningCase(record) && Boolean(record.liveLogs?.length)
 }
 
 function findCaseSummary(rowKey: string) {
@@ -431,6 +602,22 @@ function numericValue(value: unknown) {
   animation: batch-expand 200ms ease-out;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.batch-loading {
+  display: block;
+  min-height: 120px;
+  padding-top: 48px;
+  text-align: center;
+}
+
+.batch-load-error {
+  margin: 8px;
+}
+
+.batch-case-pagination {
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
 .batch-case-list {

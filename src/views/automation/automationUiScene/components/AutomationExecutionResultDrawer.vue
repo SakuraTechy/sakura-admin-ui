@@ -148,6 +148,13 @@ import {
 import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
 import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
+import {
+  AUTOMATION_UI_EXECUTION_CHILD_PAGE_SIZE_LIMIT,
+  getAutomationUiExecution,
+  getAutomationUiExecutionCases,
+  getAutomationUiExecutionSteps,
+  type AutomationUiExecutionStep,
+} from '@/apis/automation/automationUiQuery'
 import { getToken } from '@/utils/auth'
 
 const { width } = useWindowSize()
@@ -345,6 +352,12 @@ const onOpen = async (
   visible.value = true
   loading.value = true
   try {
+    if (options.target?.executionDbId) {
+      scene.value = await loadLayeredExecutionRecord(sceneId, options)
+      const availableRecords = getExecutionRecords(scene.value, type, recordScope.value, testPlanId.value)
+      selectedRecordKey.value = availableRecords[0]?.__key || ''
+      return
+    }
     const { data } = await getAutomationUiScene(sceneId)
     scene.value = data
     const availableRecords = getExecutionRecords(data, type, recordScope.value, testPlanId.value)
@@ -352,6 +365,106 @@ const onOpen = async (
     selectedRecordKey.value = targetRecord?.__key || availableRecords[0]?.__key || ''
   } finally {
     loading.value = false
+  }
+}
+
+// 结果抽屉只按需读取一个 case，但目标可能位于后续页，不能把第一页误当成完整结果。
+const findExecutionCase = async (executionDbId: string | number, targetCaseId?: string) => {
+  let page = 1
+  while (true) {
+    const response = await getAutomationUiExecutionCases(
+      executionDbId,
+      page,
+      AUTOMATION_UI_EXECUTION_CHILD_PAGE_SIZE_LIMIT,
+    )
+    const data = response.data
+    if (!data) return undefined
+    const matched = targetCaseId
+      ? data.list.find((item) => String(item.definitionCaseId || item.caseKey || '') === String(targetCaseId))
+      : data.list[0]
+    if (matched || data.list.length === 0 || page * AUTOMATION_UI_EXECUTION_CHILD_PAGE_SIZE_LIMIT >= data.total) {
+      return matched
+    }
+    page += 1
+  }
+}
+
+// 兼容旧抽屉需要完整步骤列表，按服务端页大小逐页合并，避免超过 50 条时静默截断。
+const loadAllExecutionSteps = async (caseExecutionDbId: string | number): Promise<AutomationUiExecutionStep[]> => {
+  const steps: AutomationUiExecutionStep[] = []
+  let page = 1
+  while (true) {
+    const response = await getAutomationUiExecutionSteps(
+      caseExecutionDbId,
+      page,
+      AUTOMATION_UI_EXECUTION_CHILD_PAGE_SIZE_LIMIT,
+    )
+    const data = response.data
+    if (!data) return steps
+    steps.push(...data.list)
+    if (data.list.length === 0 || steps.length >= data.total) return steps
+    page += 1
+  }
+}
+
+const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionResultOpenOptions) => {
+  const executionDbId = options.target?.executionDbId
+  if (!executionDbId) return undefined
+  const [detailResponse, executionCase] = await Promise.all([
+    getAutomationUiExecution(executionDbId),
+    findExecutionCase(executionDbId, options.target?.caseId),
+  ])
+  if (!detailResponse.data) throw new Error('执行记录已过期或无权访问')
+  const detail = detailResponse.data
+  const executionSteps = executionCase?.caseExecutionDbId
+    ? await loadAllExecutionSteps(executionCase.caseExecutionDbId)
+    : []
+  const steps = executionSteps.map((step) => ({
+    step_index: step.stepIndex,
+    step_id: step.definitionStepId || step.sourceStepId,
+    action_type: step.actionType,
+    description: step.description || step.stepName,
+    status: step.status,
+    duration_ms: step.durationMs,
+    error: step.errorMessage,
+  }))
+  const caseResult = executionCase ? {
+    case_id: executionCase.definitionCaseId || executionCase.caseKey,
+    case_name: executionCase.caseName,
+    execution_id: executionCase.caseExecutionKey || detail.executionKey,
+    job_id: executionCase.jobId,
+    status: executionCase.executeResult || executionCase.result || executionCase.status,
+    duration_ms: executionCase.durationMs,
+    wall_clock_duration_ms: executionCase.wallClockDurationMs,
+    step_total: executionCase.stepTotal,
+    step_pass: executionCase.stepPass,
+    step_fail: executionCase.stepFail,
+    step_skip: executionCase.stepSkip,
+    steps,
+  } : undefined
+  const record = {
+    __key: `execution:${detail.executionDbId}`,
+    executionId: detail.executionKey,
+    batchId: detail.batchId,
+    buildNumber: detail.buildNumber,
+    executeStatus: detail.status,
+    executeResult: detail.result,
+    executeName: detail.executeName || detail.executeUsername,
+    startedAt: detail.startedAt,
+    finishedAt: detail.finishedAt,
+    duration: detail.durationMs,
+    consoleUrl: detail.consoleUrl,
+    testReportUrl: detail.testReportUrl,
+    caseName: executionCase?.caseName,
+    caseId: executionCase?.definitionCaseId || executionCase?.caseKey,
+    caseResults: caseResult ? [caseResult] : [],
+  }
+  return {
+    id: sceneId,
+    sceneId: detail.sceneKey || sceneId,
+    name: detail.sceneKey || sceneId,
+    debugRecord: detail.recordSource === 'debug' ? [record] : [],
+    testRecord: detail.recordSource === 'test' ? [record] : [],
   }
 }
 

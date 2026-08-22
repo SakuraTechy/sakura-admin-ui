@@ -26,6 +26,8 @@ export interface TestPlanResp {
   /** 计划开始/结束（后端 LocalDateTime，多为 `yyyy-MM-dd HH:mm:ss` 或带 T 的字符串） */
   plannedStartTime?: string | null
   plannedEndTime?: string | null
+  actualStartTime?: string | null
+  actualEndTime?: string | null
   createTime: string
   updateTime: string
 }
@@ -61,6 +63,8 @@ export interface TestPlanExecuteReq {
   automationEnvironmentId?: string
   /** 缺省表示执行计划全部关联场景，传值表示按计划关联顺序执行指定子集。 */
   sceneIds?: string[]
+  /** 仅单场景执行可传，缺省表示执行场景内全部可执行用例。 */
+  caseIds?: string[]
   executionEngine?: TestExecutionEngine
   runnerOptions?: Record<string, unknown>
   cdpOptions?: AutomationCdpPlaybackOptions
