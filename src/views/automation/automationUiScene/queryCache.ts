@@ -17,6 +17,7 @@ const MAX_DEFINITION_SCENES = 10
 const MAX_DEFINITION_BYTES = 20 * 1024 * 1024
 // 与后端 definition/cases 的硬上限保持一致，避免兼容全量分页或外部调用传入 100 后被拒绝。
 const MAX_PROJECTED_CASE_PAGE_SIZE = 50
+const NODE_CACHE_TTL_MS = 30_000
 
 interface DefinitionCacheEntry {
   key: string
@@ -176,6 +177,11 @@ async function loadDefinitionNode<T>(
   signal?: AbortSignal,
 ) {
   const cached = latestNode<T>(requestKey)
+  // 节点详情在短时间内直接复用本地结果，避免每次点击都产生 304 请求和服务端查询。
+  if (cached && Date.now() - cached.accessedAt < NODE_CACHE_TTL_MS) {
+    cached.accessedAt = Date.now()
+    return cached.value
+  }
   const response = await requestOnce(
     `${requestKey}:${cached?.etag || 'initial'}:${signalKey(signal)}`,
     () => loader(cached?.etag),

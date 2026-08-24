@@ -74,6 +74,8 @@
             v-if="activeSceneId && sceneDefinitionMode === 'projected'"
             :scene-db-id="activeSceneId"
             :definition-version="sceneDetail?.definitionVersion ?? 0"
+            :selected-node="projectedSelectedNode"
+            default-expand-all
             :readonly="isReadonly"
             @get-case="getCase"
             @get-step="getStep"
@@ -1201,12 +1203,10 @@ const getSceneInfo = async (data1?: any) => {
     // 等待 caseList/definitionVersion 传入子树后再恢复节点，避免用旧 props 重建树。
     await nextTick()
     await caseListRef.value?.getTreeCaseList(data1)
-    console.log('caseList', caseList.value)
     // stepTotal.value = data.caseList.reduce((total: number, item: any) => total + item.stepList.length, 0)
     stepList.value = caseList.value.reduce((list: any, item: any) => {
       return list.concat(item.stepList || [])
     }, [])
-    console.log('stepList', stepList.value)
   } catch (error: any) {
     if (!isRequestCancelled(error) && requestSequence === sceneInfoRequestSequence && props.paneActive) {
       Message.error(error?.message || '读取场景定义失败，请稍后重试')
@@ -1218,9 +1218,36 @@ const getSceneInfo = async (data1?: any) => {
 
 const caseListRef = ref()
 const projectedCaseControllerRef = ref<{ onMenuClick: (data?: any) => Promise<boolean> }>()
+const projectedSelectedNode = ref<{ type: 'CASE' | 'STEP', caseId: string, stepId?: string } | null>(null)
 const refreshSceneAfterMutation = async (selection?: any) => {
   if (!activeSceneId.value) return
   invalidateAutomationUiDefinition(activeSceneId.value)
+  if (sceneDefinitionMode.value === 'projected') {
+    try {
+      const definition = await loadAutomationUiDefinition(activeSceneId.value)
+      if (definition && 'mode' in definition && definition.mode === 'projected') {
+        if (sceneDetail.value) {
+          sceneDetail.value = {
+            ...sceneDetail.value,
+            definitionVersion: definition.definitionVersion,
+          }
+        }
+        projectedCaseNodes.value = []
+        const selected = selection?.type === 'STEP'
+          ? { type: 'STEP' as const, caseId: String(selection.caseId), stepId: String(selection.stepId) }
+          : selection?.type === 'CASE'
+            ? { type: 'CASE' as const, caseId: String(selection.caseId) }
+            : null
+        projectedSelectedNode.value = selected
+        caseDetail.value = undefined
+        stepDetail.value = undefined
+        selectedHistoryCaseId.value = selected?.caseId || ''
+        return
+      }
+    } catch {
+      // 节点局部刷新失败时回退到既有完整读取，不能保留可能已过期的树版本。
+    }
+  }
   await getSceneInfo(selection)
 }
 const getCaseList = async () => {
@@ -1234,14 +1261,16 @@ const stepDetail = ref()
 const selectedHistoryCaseId = ref('')
 const getCase = async (id: string | { node?: { id?: string, caseId?: string }, caseData?: Record<string, unknown> }) => {
   const caseId = typeof id === 'object' ? String(id.node?.caseId || id.node?.id || '') : String(id)
-  console.log('getCase', caseId)
+  if (sceneDefinitionMode.value === 'projected' && caseId) {
+    projectedSelectedNode.value = { type: 'CASE', caseId }
+  }
   const localCase = caseList.value.find((item: any) => String(item.id) === caseId)
   caseDetail.value = typeof id === 'object' && id.caseData ? id.caseData : localCase
   if (sceneDefinitionMode.value === 'projected' && typeof id === 'object' && id.caseData) {
     const projectedCase = projectedCaseNodes.value.find(item => String(item.id) === caseId)
     if (projectedCase) projectedCase.stepList = Array.isArray(id.caseData.stepList) ? id.caseData.stepList : []
   }
-  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && caseId) {
+  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && caseId && !localCase) {
     try {
       const { data } = await getAutomationUiCaseDetail(activeSceneId.value, caseId)
       // DTO 使用 steps 命名，详情面板保留现有 stepList 只读视图兼容层。
@@ -1255,13 +1284,15 @@ const getCase = async (id: string | { node?: { id?: string, caseId?: string }, c
 }
 
 const getStep = async (data: any) => {
-  console.log('getStep', data)
   const parentCaseId = data.node?.caseId || data.dropNode?.caseId || data.dropNode?.id || data?.pid || data.node?.pid || data.dragNode?.pid
   const stepId = data.node?.stepId || data.dropNode?.stepId || data?.id || data.node?.id
+  if (sceneDefinitionMode.value === 'projected' && parentCaseId && stepId) {
+    projectedSelectedNode.value = { type: 'STEP', caseId: String(parentCaseId), stepId: String(stepId) }
+  }
   const parentCase = caseList.value.find((item: any) => String(item.id) === String(parentCaseId))
   stepDetail.value = data.node?.stepData
     || parentCase?.stepList?.find((item: any) => String(item.id) === String(stepId))
-  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && parentCaseId && stepId) {
+  if (sceneDefinitionMode.value === 'inline' && activeSceneId.value && parentCaseId && stepId && !stepDetail.value) {
     try {
       const { data } = await getAutomationUiStepDetail(activeSceneId.value, String(parentCase.id), String(stepId))
       stepDetail.value = data
@@ -1275,6 +1306,7 @@ const getStep = async (data: any) => {
 }
 
 const clearCaseSelection = () => {
+  projectedSelectedNode.value = null
   caseDetail.value = undefined
   stepDetail.value = undefined
   selectedHistoryCaseId.value = ''

@@ -1,34 +1,39 @@
 <template>
   <div class="projected-scene-tree">
     <a-spin :loading="loading" class="projected-scene-tree__content">
-      <a-tree
-        :data="treeData"
-        :show-line="true"
-        :block-node="true"
-        :draggable="!props.readonly"
-        @select="onSelect"
-        @expand="onExpand"
-        @drop="onDrop"
-      >
-        <template #title="{ node }">
-          <span class="projected-scene-tree__title">{{ node.title }}</span>
-          <a-dropdown v-if="!props.readonly" @select="mode => emit('action', { mode, node })">
-            <a-button size="mini" type="text" class="projected-scene-tree__action" @click.stop>
-              <icon-more />
-            </a-button>
-            <template #content>
-              <a-doption value="add">新增</a-doption>
-              <a-doption value="edit">编辑</a-doption>
-              <a-doption value="copy">复制</a-doption>
-              <a-doption value="delete">删除</a-doption>
-              <a-doption v-if="node.type === 'case'" value="recording:appendCase">追加录制</a-doption>
-              <a-doption v-if="node.type === 'case'" value="recording:replaceCase">替换录制</a-doption>
-              <a-doption v-if="node.type === 'step'" value="recording:appendStep">追加步骤</a-doption>
-              <a-doption v-if="node.type === 'step'" value="recording:replaceStep">替换步骤</a-doption>
-            </template>
-          </a-dropdown>
-        </template>
-      </a-tree>
+      <div class="projected-scene-tree__scroll">
+        <a-tree
+          v-model:expanded-keys="expandedKeys"
+          :selected-keys="selectedKeys"
+          size="mini"
+          :data="treeData"
+          :show-line="true"
+          :block-node="true"
+          :draggable="!props.readonly"
+          @select="onSelect"
+          @expand="onExpand"
+          @drop="onDrop"
+        >
+          <template #title="{ node }">
+            <span class="projected-scene-tree__title">{{ node.title }}</span>
+            <a-dropdown v-if="!props.readonly" @select="mode => emit('action', { mode, node })">
+              <a-button size="mini" type="text" class="projected-scene-tree__action" @click.stop>
+                <icon-more />
+              </a-button>
+              <template #content>
+                <a-doption value="add">新增</a-doption>
+                <a-doption value="edit">编辑</a-doption>
+                <a-doption value="copy">复制</a-doption>
+                <a-doption value="delete">删除</a-doption>
+                <a-doption v-if="node.type === 'case'" value="recording:appendCase">追加录制</a-doption>
+                <a-doption v-if="node.type === 'case'" value="recording:replaceCase">替换录制</a-doption>
+                <a-doption v-if="node.type === 'step'" value="recording:appendStep">追加步骤</a-doption>
+                <a-doption v-if="node.type === 'step'" value="recording:replaceStep">替换步骤</a-doption>
+              </template>
+            </a-dropdown>
+          </template>
+        </a-tree>
+      </div>
       <a-pagination v-if="total > pageSize" v-model:current="page" size="small" :total="total" :page-size="pageSize" show-total @change="loadCases" />
     </a-spin>
     <a-alert v-if="errorMessage" type="error" class="projected-scene-tree__error">{{ errorMessage }}</a-alert>
@@ -40,6 +45,7 @@ import {
   loadAutomationUiDefinitionCase,
   loadAutomationUiDefinitionCases,
   loadAutomationUiDefinitionSteps,
+  mapWithConcurrency,
 } from '../queryCache'
 import { moveCaseTree } from '@/apis/automation/automationUiScene'
 import { canDropCaseTreeNode, nodeRefOf, toMovePosition } from '../caseTree'
@@ -55,10 +61,15 @@ interface TreeNode {
   children?: TreeNode[]
   stepCount?: number
   loaded?: boolean
-  body?: Record<string, unknown>
 }
 
-const props = defineProps<{ sceneDbId: string | number, definitionVersion: number, readonly?: boolean }>()
+const props = defineProps<{
+  sceneDbId: string | number
+  definitionVersion: number
+  selectedNode?: { type: 'CASE' | 'STEP', caseId: string, stepId?: string } | null
+  defaultExpandAll?: boolean
+  readonly?: boolean
+}>()
 const emit = defineEmits<{
   (e: 'get-case', data: { node: { type: 'case', id: string, caseId: string }, caseData?: Record<string, unknown> }): void
   (e: 'get-step', data: { node: { type: 'step', id: string, stepId: string, caseId: string, pid: string, stepData?: Record<string, unknown> } }): void
@@ -74,6 +85,16 @@ const total = ref(0)
 const loading = ref(false)
 const errorMessage = ref('')
 const inFlight = new Map<string, Promise<Array<Record<string, unknown>>>>()
+const stepCache = new Map<string, Array<Record<string, unknown>>>()
+const stepDetails = new Map<string, Record<string, unknown>>()
+const expandedKeys = ref<Array<string | number>>([])
+const selectedKeys = computed(() => {
+  const node = props.selectedNode
+  if (!node) return []
+  return [node.type === 'CASE' ? `case:${node.caseId}` : `step:${node.caseId}:${node.stepId}`]
+})
+let loadedSceneId = ''
+const expandedPages = new Set<number>()
 
 const loadCases = async (nextPage = page.value) => {
   page.value = nextPage
@@ -92,8 +113,14 @@ const loadCases = async (nextPage = page.value) => {
       stepCount: item.stepCount || 0,
       isLeaf: !item.stepCount,
       children: [],
-      body: item.caseBody,
     }))
+    if (props.defaultExpandAll && !expandedPages.has(page.value)) {
+      const pageKeys = treeData.value.filter(node => node.stepCount).map(node => node.key)
+      expandedKeys.value = [...new Set([...expandedKeys.value, ...pageKeys])]
+      expandedPages.add(page.value)
+    }
+    // 定义版本刷新后节点对象会重建；只恢复用户当前页已经展开的用例，避免整场景预加载。
+    await loadExpandedCases(expandedKeys.value)
     emit('nodes-change', response.items.map(item => ({ id: item.caseId, name: item.caseName || item.caseId, stepList: [] })))
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '投影用例读取失败'
@@ -103,10 +130,14 @@ const loadCases = async (nextPage = page.value) => {
 }
 
 const onExpand = async (keys: Array<string | number>) => {
+  await loadExpandedCases(keys)
+}
+
+async function loadExpandedCases(keys: Array<string | number>) {
   const expanded = new Set(keys.map(String))
-  for (const node of treeData.value) {
-    if (!expanded.has(node.key) || node.loaded || !node.stepCount) continue
-    const requestKey = `steps:${props.sceneDbId}:${node.caseId}`
+  const nodes = treeData.value.filter(node => expanded.has(node.key) && !node.loaded && node.stepCount)
+  await mapWithConcurrency(nodes, 3, async (node) => {
+    const requestKey = `steps:${props.sceneDbId}:${props.definitionVersion}:${node.caseId}`
     let request = inFlight.get(requestKey)
     if (!request) {
       request = loadCaseSteps(node.caseId, node.stepCount)
@@ -124,21 +155,30 @@ const onExpand = async (keys: Array<string | number>) => {
         caseId: node.caseId,
         stepId,
         isLeaf: true,
-        body: step,
       } as TreeNode
     })
     node.loaded = true
-  }
+    return undefined
+  })
 }
 
-const loadCaseSteps = async (caseId: string, stepCount: number) => {
+async function loadCaseSteps(caseId: string, stepCount: number) {
+  const cacheKey = `${props.sceneDbId}:${props.definitionVersion}:${caseId}`
+  const cached = stepCache.get(cacheKey)
+  if (cached) return cached
   const size = 100
   const pages = Math.max(1, Math.ceil(stepCount / size))
-  const items: Array<Record<string, unknown>> = []
-  for (let current = 1; current <= pages; current += 1) {
-    const response = await loadAutomationUiDefinitionSteps(props.sceneDbId, caseId, current, size)
-    items.push(...(response?.items || []))
-  }
+  const responses = await mapWithConcurrency(
+    Array.from({ length: pages }, (_, index) => index + 1),
+    3,
+    current => loadAutomationUiDefinitionSteps(props.sceneDbId, caseId, current, size),
+  )
+  const items = responses.flatMap(response => response?.items || [])
+  stepCache.set(cacheKey, items)
+  items.forEach((step: any) => {
+    const stepId = String(step.id || step.stepId || step.sourceStepId || '')
+    if (stepId) stepDetails.set(`${caseId}:${stepId}`, step)
+  })
   return items
 }
 
@@ -152,7 +192,7 @@ const onSelect = async (_keys: Array<string | number>, data: { node?: TreeNode }
     ])
     emit('get-case', {
       node: { type: 'case', id: node.caseId, caseId: node.caseId },
-      caseData: { ...(caseResponse?.caseBody || node.body || {}), id: node.caseId, stepList: steps },
+      caseData: { ...(caseResponse?.caseBody || {}), id: node.caseId, stepList: steps },
     })
   } else {
     emit('get-step', {
@@ -162,7 +202,7 @@ const onSelect = async (_keys: Array<string | number>, data: { node?: TreeNode }
         stepId: node.stepId || '',
         caseId: node.caseId,
         pid: node.caseId,
-        stepData: node.body,
+        stepData: stepDetails.get(`${node.caseId}:${node.stepId || ''}`),
       },
     })
   }
@@ -186,12 +226,21 @@ const onDrop = async (data: { dragNode?: TreeNode, dropNode?: TreeNode, dropPosi
   }
 }
 
-watch(() => `${props.sceneDbId}:${props.definitionVersion}`, () => void loadCases(1), { immediate: true })
+watch(() => `${props.sceneDbId}:${props.definitionVersion}`, () => {
+  const sceneChanged = loadedSceneId !== String(props.sceneDbId)
+  loadedSceneId = String(props.sceneDbId)
+  stepCache.clear()
+  stepDetails.clear()
+  if (sceneChanged) expandedKeys.value = []
+  if (sceneChanged) expandedPages.clear()
+  void loadCases(sceneChanged ? 1 : page.value)
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">
-.projected-scene-tree { min-height: 240px; padding: 8px; }
-.projected-scene-tree__content { display: block; }
+.projected-scene-tree { height: 100%; min-height: 240px; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; }
+.projected-scene-tree__content { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.projected-scene-tree__scroll { flex: 1; min-height: 0; overflow: auto; }
 .projected-scene-tree :deep(.arco-pagination) { justify-content: flex-end; margin-top: 10px; }
 .projected-scene-tree__error { margin-top: 8px; }
 .projected-scene-tree__title { display: inline-flex; align-items: center; min-width: 0; }

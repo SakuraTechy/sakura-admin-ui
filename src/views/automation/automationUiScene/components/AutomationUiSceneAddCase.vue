@@ -13,6 +13,7 @@
     :allow-node-drop="canDrop"
     :selected-keys="selectedKeys"
     :checked-keys="checkedKeys"
+    default-expand-all
     allow-deselect
     :multiple="selectionMode === 'batch-delete'"
     :check-strictly="false"

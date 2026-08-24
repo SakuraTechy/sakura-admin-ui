@@ -6,9 +6,13 @@
       </a-input>
     </div>
     <div class="gi-tree__tree">
-      <a-scrollbar style="height: 100%; overflow: auto" outer-style="height: 100%">
+      <a-scrollbar
+        :style="{ height: '100%', overflow: virtualListEnabled ? 'hidden' : 'auto' }"
+        outer-style="height: 100%; overflow: hidden"
+      >
         <a-tree
           ref="treeRef"
+          :class="{ 'gi-tree__virtual': virtualListEnabled }"
           v-model:selected-keys="selectedKeys"
           v-model:checked-keys="checkedKeys"
           :size="size"
@@ -17,12 +21,15 @@
           :disabled="disabled || loading"
           :block-node="blockNode"
           :show-line="showLine"
+          :virtual-list-props="virtualListProps"
+          :expanded-keys="expandedKeys"
           :data="filteredData"
           :field-names="fieldNames"
           :multiple="multiple"
           :checkable="multiple"
           :check-strictly="checkStrictly"
           @select="onSelect"
+          @expand="onExpand"
           @drop="onDrop"
           @drag-start="onDragStart"
           @drag-end="onDragEnd"
@@ -62,13 +69,15 @@
                 @blur="onBlur"
               />
               <template #content>
-                <slot name="right-menu" :node="node" :tree-data="filteredData" :on-menu-item-click="onMenuItemClick" :on-tree-node-click="onTreeNodeClick">
-                  <GiMenu
-                    :tree-data="filteredData"
-                    @on-menu-item-click="(mode) => onMenuItemClick(mode, node)"
-                    @on-tree-node-click="onTreeNodeClick"
-                  />
-                </slot>
+                <template v-if="isContextmenuVisible(node)">
+                  <slot name="right-menu" :node="node" :tree-data="filteredData" :on-menu-item-click="onMenuItemClick" :on-tree-node-click="onTreeNodeClick">
+                    <GiMenu
+                      :tree-data="filteredData"
+                      @on-menu-item-click="(mode) => onMenuItemClick(mode, node)"
+                      @on-tree-node-click="onTreeNodeClick"
+                    />
+                  </slot>
+                </template>
               </template>
             </a-trigger>
           </template>
@@ -115,6 +124,8 @@ const props = defineProps({
   allowDeselect: { type: Boolean, default: false },
   checkStrictly: { type: Boolean, default: false },
   checkedKeys: { type: Array, default: () => [] },
+  expandedKeys: { type: Array, default: undefined },
+  defaultExpandAll: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   searchable: { type: Boolean, default: true },
   placeholder: { type: String, default: '请输入关键词' },
@@ -128,6 +139,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   blockNode: { type: Boolean, default: true },
   showLine: { type: Boolean, default: true },
+  virtualListProps: { type: Object, default: undefined },
   onSave: Function,
   editMethod: { type: String, default: '弹窗编辑' },
 })
@@ -135,6 +147,7 @@ const props = defineProps({
 const emit = defineEmits([
   'update:selectedKeys',
   'update:checkedKeys',
+  'update:expandedKeys',
   'node-click',
   'node-drop',
   'menu-click',
@@ -288,10 +301,14 @@ class GlobalKeydownManager {
 
 const selectedKeys = ref<any[]>(props.selectedKeys as any[])
 const checkedKeys = ref<any[]>(props.checkedKeys as any[])
+const expandedKeys = ref<any[]>(props.expandedKeys as any[] || [])
+let defaultExpansionInitialized = false
 const hasFocusWithin = ref(false)
 const multiple = computed(() => props.multiple)
 const currentDragNode = ref<any>(null)
 const inputValue = ref('')
+const filterKeyword = ref('')
+let filterTimer: number | undefined
 const treeContainerRef = ref<HTMLElement>()
 const treeRef = ref()
 const inputNodeRef = ref()
@@ -300,12 +317,18 @@ const contextmenuNode = ref<any>(null)
 const contextmenuNodeKey = ref('')
 // const localSelectedKeys = ref(props.selectedKeys)
 
-watch(() => props.treeData, (val) => {
-  nextTick(() => {
-    treeRef.value?.expandAll()
-    // localSelectedKeys.value = []
-  })
+const collectExpandableKeys = (nodes: any[]): any[] => nodes.flatMap((node) => {
+  const children = node?.[props.fieldNames.children]
+  if (!Array.isArray(children) || !children.length) return []
+  return [node[props.fieldNames.key], ...collectExpandableKeys(children)]
 })
+
+watch(() => props.treeData, (data) => {
+  if (!props.defaultExpandAll || props.expandedKeys || defaultExpansionInitialized || !Array.isArray(data) || !data.length) return
+  defaultExpansionInitialized = true
+  expandedKeys.value = collectExpandableKeys(data)
+  emit('update:expandedKeys', expandedKeys.value)
+}, { immediate: true })
 
 watch(() => props.selectedKeys, (val) => {
   // console.log('props.selectedKeys', val)
@@ -316,6 +339,21 @@ watch(() => props.checkedKeys, (val) => {
   checkedKeys.value = Array.isArray(val) ? val : []
 })
 
+watch(() => props.expandedKeys, (val) => {
+  if (Array.isArray(val)) expandedKeys.value = val
+})
+
+watch(inputValue, (value) => {
+  if (filterTimer) window.clearTimeout(filterTimer)
+  filterTimer = window.setTimeout(() => {
+    filterKeyword.value = value.trim().toLowerCase()
+  }, 150)
+})
+
+onBeforeUnmount(() => {
+  if (filterTimer) window.clearTimeout(filterTimer)
+})
+
 // watch(() => selectedKeys.value, (val) => {
 //   console.log('selectedKeys.value', val)
 // })
@@ -323,11 +361,11 @@ watch(() => props.checkedKeys, (val) => {
 // 过滤节点树
 const filteredData = computed(() => {
   // console.log('treeData', props.treeData)
-  if (!inputValue.value) return props.treeData
+  if (!filterKeyword.value) return props.treeData
   const loop = (data: any[]) => {
     const result: any[] = []
     data.forEach((item) => {
-      if (item[props.fieldNames.title]?.toLowerCase().includes(inputValue.value.toLowerCase())) {
+      if (item[props.fieldNames.title]?.toLowerCase().includes(filterKeyword.value)) {
         result.push({ ...item })
       } else if (item[props.fieldNames.children]) {
         const filterData = loop(item[props.fieldNames.children])
@@ -342,6 +380,19 @@ const filteredData = computed(() => {
     return result
   }
   return loop(props.treeData)
+})
+
+const treeNodeCount = computed(() => {
+  const count = (nodes: any[]): number => nodes.reduce((total, node) => {
+    const children = node?.[props.fieldNames.children]
+    return total + 1 + (Array.isArray(children) ? count(children) : 0)
+  }, 0)
+  return count(filteredData.value as any[])
+})
+
+const virtualListEnabled = computed(() => {
+  const threshold = Number(props.virtualListProps?.threshold ?? 0)
+  return Boolean(props.virtualListProps && treeNodeCount.value > threshold)
 })
 
 // 选中节点
@@ -363,6 +414,11 @@ const onSelect = (keys: any[], data: any) => {
   selectedKeys.value = keys
   emit('update:selectedKeys', keys)
   if (!multiple.value) emit('node-click', { ...data, selected: true })
+}
+
+const onExpand = (keys: any[]) => {
+  expandedKeys.value = keys
+  emit('update:expandedKeys', keys)
 }
 
 // 拖动节点
@@ -441,7 +497,6 @@ const onPopupVisibleChange = (node: any, visible: boolean) => {
 
 // 节点双击操作
 const onNodeDblClick = (node: any) => {
-  console.log('onNodeDblClick', node)
   if (props.editMethod === '弹窗编辑') {
     emit('menu-click', { mode: 'edit', node })
   } else if (props.editMethod === '原地编辑') {
@@ -457,22 +512,16 @@ const onNodeDblClick = (node: any) => {
   }
 }
 
-const onInput = () => {
-  console.log('实时输入:', inputNodeRef.value.modelValue)
-}
+const onInput = () => undefined
 
-const onChange = () => {
-  console.log('change 事件:', inputNodeRef)
-}
+const onChange = () => undefined
 
-const onEnter = (value?: any) => {
-  console.log('按下了回车:', value)
+const onEnter = () => {
   inputNodeRef.value?.blur()
 }
 
 // 输入框脱焦
 const onBlur = (e: any) => {
-  console.log('失去焦点:', e)
   Modal.warning({
     title: '温馨提示',
     content: `是否需要保存「${e.target.value}」？`,
@@ -688,11 +737,20 @@ export default {}
       }
     }
 
-    &__tree {
+  &__tree {
       flex: 1;
       overflow: hidden;
       background-color: var(--color-bg-1);
       position: relative;
+    }
+
+    &__virtual {
+      height: 100%;
+
+      :deep(.arco-tree-node-title) {
+        height: 24px;
+        box-sizing: border-box;
+      }
     }
   }
   :deep(.arco-tree-node-title-text) {
