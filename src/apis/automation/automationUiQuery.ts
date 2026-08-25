@@ -488,6 +488,10 @@ export function getAutomationUiExecutionCaseHistory(
   )
 }
 
+export function getAutomationUiExecutionArtifactContentUrl(executionDbId: string | number, artifactDbId: string | number) {
+  return `${EXECUTION_URL}/${encodeURIComponent(String(executionDbId))}/artifacts/${encodeURIComponent(String(artifactDbId))}/content`
+}
+
 export function getAutomationUiExecutionArtifacts(executionDbId: string | number, page = 1, size = 50, signal?: AbortSignal) {
   return rawGet<AutomationUiPage<AutomationUiExecutionArtifact>>(
     `${EXECUTION_URL}/${executionDbId}/artifacts`,

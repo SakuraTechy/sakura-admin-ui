@@ -15,7 +15,7 @@
         <div class="log-actions">
           <div class="log-format">
             <span>日志格式：</span>
-            <a-radio-group v-model="format" type="button" size="mini">
+            <a-radio-group :model-value="format" type="button" size="mini" @change="setLogFormat">
               <a-radio value="compact">📊 简洁</a-radio>
               <a-radio value="detailed">📋 详细</a-radio>
             </a-radio-group>
@@ -70,11 +70,17 @@
 import { onKeyStroke, useFullscreen, useResizeObserver } from '@vueuse/core'
 import type { LiveExecutionLog } from '../execution'
 import type { AutomationPlaywrightRunnerLog } from '@/apis/automation/automationPlaywrightRunner'
+import {
+  getAutomationUiExecutionArtifactContentUrl,
+  getAutomationUiExecutionArtifacts,
+} from '@/apis/automation/automationUiQuery'
 import { getAutomationPlaywrightRunnerJob } from '@/apis/automation/automationPlaywrightRunner'
 import { getToken } from '@/utils/auth'
 
 const props = defineProps<{
   jobId?: string
+  executionDbId?: string | number
+  caseExecutionDbId?: string | number
   status?: string
   artifactUrl?: string
   fallbackContent?: string
@@ -103,6 +109,7 @@ let loadSequence = 0
 let artifactController: AbortController | undefined
 let artifactTimeoutTimer: number | undefined
 let pollFailures = 0
+let resolvedArtifactUrl = ''
 
 const running = computed(() => ['queued', 'running'].includes(status.value))
 const statusText = computed(() => ({
@@ -121,7 +128,15 @@ onKeyStroke('Escape', () => {
 useResizeObserver(immersiveContainer, updateImmersiveBounds)
 
 watch(
-  () => [props.jobId, props.status, props.artifactUrl, props.fallbackContent, props.liveLogs],
+  () => [
+    props.jobId,
+    props.executionDbId,
+    props.caseExecutionDbId,
+    props.status,
+    props.artifactUrl,
+    props.fallbackContent,
+    props.liveLogs,
+  ],
   () => resetAndLoad(),
   { immediate: true },
 )
@@ -143,6 +158,7 @@ async function resetAndLoad() {
     return
   }
   cleanupRequests()
+  resolvedArtifactUrl = ''
   logs.value = []
   status.value = ''
   error.value = ''
@@ -156,15 +172,16 @@ async function resetAndLoad() {
       status.value = props.status || 'running'
       return
     }
+    resolvedArtifactUrl = props.artifactUrl || await loadExecutionLogArtifactUrl(sequence)
     // 终态历史只能以持久化 artifact 为准，避免重启或节点切换后无意义地查询内存 Job。
     if (isTerminalStatus(props.status)) {
-      if (props.artifactUrl && await loadArtifact(sequence)) return
+      if (resolvedArtifactUrl && await loadArtifact(sequence, resolvedArtifactUrl)) return
       useFallback()
       return
     }
     const jobResult = props.jobId ? await loadJob(sequence) : 'missing'
     if (jobResult === 'loaded') return
-    if (props.artifactUrl && await loadArtifact(sequence)) return
+    if (resolvedArtifactUrl && await loadArtifact(sequence, resolvedArtifactUrl)) return
     useFallback()
   } finally {
     if (sequence === loadSequence) loading.value = false
@@ -177,7 +194,9 @@ async function loadJob(sequence: number): Promise<'loaded' | 'missing' | 'failed
     const { data } = await getAutomationPlaywrightRunnerJob(props.jobId!, { silentError: true }, lastSequence)
     if (sequence !== loadSequence) return 'loaded'
     status.value = data.status
-    const incoming = data.logs || normalizeOutputTail(data.outputTail || [])
+    const incoming = data.logs
+      ? data.logs.map(normalizeLog).filter((item): item is AutomationPlaywrightRunnerLog => Boolean(item))
+      : normalizeOutputTail(data.outputTail || [])
     replaceLogs(lastSequence === undefined ? incoming : [...logs.value, ...incoming].slice(-500))
     if (!isTerminalStatus(data.status)) schedulePoll(sequence)
     return 'loaded'
@@ -187,6 +206,27 @@ async function loadJob(sequence: number): Promise<'loaded' | 'missing' | 'failed
       return 'missing'
     }
     return 'failed'
+  }
+}
+
+async function loadExecutionLogArtifactUrl(sequence: number) {
+  if (!props.executionDbId) return ''
+  try {
+    const { data } = await getAutomationUiExecutionArtifacts(props.executionDbId, 1, 50)
+    if (sequence !== loadSequence) return ''
+    const executionLogs = (data?.list || []).filter((item) => (
+      String(item.artifactType || '').toLowerCase().replaceAll('-', '_') === 'execution_log'
+    ))
+    const caseExecutionDbId = props.caseExecutionDbId == null ? '' : String(props.caseExecutionDbId)
+    const artifact = executionLogs.find((item) => (
+      caseExecutionDbId && item.caseExecutionDbId != null
+      && String(item.caseExecutionDbId) === caseExecutionDbId
+    )) || (executionLogs.length === 1 ? executionLogs[0] : undefined)
+    return artifact?.artifactDbId
+      ? getAutomationUiExecutionArtifactContentUrl(props.executionDbId, artifact.artifactDbId)
+      : ''
+  } catch {
+    return ''
   }
 }
 
@@ -200,12 +240,12 @@ function schedulePoll(sequence: number) {
       return
     }
     if (jobResult === 'missing') {
-      if (props.artifactUrl) await loadArtifact(sequence)
+      if (resolvedArtifactUrl) await loadArtifact(sequence)
       return
     }
     pollFailures++
     if (pollFailures >= pollIntervals.length) {
-      if (props.artifactUrl) await loadArtifact(sequence)
+      if (resolvedArtifactUrl) await loadArtifact(sequence)
       else useFallback()
       return
     }
@@ -213,14 +253,15 @@ function schedulePoll(sequence: number) {
   }, pollIntervals[Math.min(pollFailures, pollIntervals.length - 1)])
 }
 
-async function loadArtifact(sequence: number) {
+async function loadArtifact(sequence: number, artifactUrl = resolvedArtifactUrl || props.artifactUrl) {
+  if (!artifactUrl) return false
   artifactController?.abort()
   if (artifactTimeoutTimer) window.clearTimeout(artifactTimeoutTimer)
   const controller = new AbortController()
   artifactController = controller
   artifactTimeoutTimer = window.setTimeout(() => controller.abort(), artifactTimeoutMs)
   try {
-    const response = await fetch(resolveProtectedUrl(props.artifactUrl!), {
+    const response = await fetch(resolveProtectedUrl(artifactUrl), {
       headers: authorizationHeaders(),
       signal: controller.signal,
     })
@@ -320,6 +361,12 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
     const duration = Number(step.duration_ms ?? step.duration) || 0
     const outcome = fallbackStepOutcome(step.status, duration, step.error)
     push(outcome.level, 'step', `步骤 ${number}: ${name}，${outcome.message}`)
+    push('info', 'step', [
+      `步骤 ${number}: ${name}`,
+      `动作类型=${step.action_type || '-'}`,
+      `状态=${step.status || '-'}`,
+      `耗时=${duration}ms`,
+    ].join('，'), true)
     const locatorSource = step.locator_source || step.locatorSource
     if (locatorSource) {
       const locatorType = step.locator_type || step.locatorType
@@ -398,8 +445,14 @@ function normalizeLog(item: any, index: number) {
     level: normalizeLevel(item.level),
     phase: String(item.phase || 'runner'),
     message: String(item.message || ''),
-    detail: Boolean(item.detail),
+    detail: parseBoolean(item.detail),
   } as AutomationPlaywrightRunnerLog
+}
+
+function parseBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  return ['1', 'true', 'yes'].includes(String(value || '').trim().toLowerCase())
 }
 
 function normalizeOutputTail(lines: string[]) {
@@ -435,6 +488,10 @@ function toggleExpanded(sequence: number) {
   if (next.has(sequence)) next.delete(sequence)
   else next.add(sequence)
   expanded.value = next
+}
+
+function setLogFormat(value: unknown) {
+  if (value === 'compact' || value === 'detailed') format.value = value
 }
 
 function handleScroll() {

@@ -95,7 +95,11 @@ onBeforeUnmount(() => {
 const unreadMessageCount = ref(0)
 // 初始化 WebSocket
 const initWebSocket = (token: string) => {
-  socket = new WebSocket(`${import.meta.env.VITE_API_WS_URL}/websocket?token=${token}`)
+  // 使用当前页面的 host/port，避免把部署服务器 IP 写入构建产物。
+  const websocketUrl = new URL('/api/websocket', window.location.origin)
+  websocketUrl.protocol = websocketUrl.protocol === 'https:' ? 'wss:' : 'ws:'
+  websocketUrl.searchParams.set('token', token)
+  socket = new WebSocket(websocketUrl.toString())
   socket.onopen = () => {
     // console.log('WebSocket connection opened')
   }

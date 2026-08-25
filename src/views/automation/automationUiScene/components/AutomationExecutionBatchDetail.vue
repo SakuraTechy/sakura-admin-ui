@@ -134,6 +134,8 @@
                 <AutomationExecutionLogViewer
                   v-if="activeTab === 'log'"
                   :job-id="record.jobId"
+                  :execution-db-id="record.recordTarget.executionDbId"
+                  :case-execution-db-id="record.caseExecutionDbId"
                   :status="record.executeStatus"
                   :artifact-url="record.executionLogArtifactUrl"
                   :live-logs="record.liveLogs"
@@ -570,6 +572,10 @@ function recordLogFallback(record: ExecutionHistoryCaseRow) {
       status: step.status,
       duration_ms: step.duration,
       error: step.error === '-' ? undefined : step.error,
+      locator_source: step.locatorSource === '-' ? undefined : step.locatorSource,
+      locator_type: step.locatorType === '-' ? undefined : step.locatorType,
+      locator_value: step.locatorValue === '-' ? undefined : step.locatorValue,
+      matched_count: step.matchedCount === '-' ? undefined : step.matchedCount,
     })),
   }, null, 2)
 }

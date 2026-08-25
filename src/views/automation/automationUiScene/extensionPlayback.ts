@@ -7,6 +7,13 @@ const buildExtensionApiBase = () => {
   const backendBase = import.meta.env.VITE_API_BASE_URL || ''
   if (/^https?:\/\//i.test(backendBase)) return backendBase.replace(/\/$/, '')
   if (/^https?:\/\//i.test(prefix)) return prefix.replace(/\/$/, '')
+  if (backendBase.startsWith('/')) {
+    // 生产环境由 Nginx 通过 /api 转发后端；扩展请求不能丢失此前缀。
+    return `${window.location.origin.replace(/\/$/, '')}${backendBase}`.replace(/\/$/, '')
+  }
+  if (prefix.startsWith('/')) {
+    return `${window.location.origin.replace(/\/$/, '')}${prefix}`.replace(/\/$/, '')
+  }
   return window.location.origin.replace(/\/$/, '')
 }
 

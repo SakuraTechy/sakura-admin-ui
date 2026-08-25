@@ -1303,9 +1303,15 @@ function normalizeExecutionLogs(value: unknown): LiveExecutionLog[] {
         : 'info',
       phase: stringValue(source.phase) || 'runner',
       message: stringValue(source.message),
-      detail: Boolean(source.detail),
+      detail: parseBoolean(source.detail),
     }
   }).filter(item => item.message)
+}
+
+function parseBoolean(value: unknown) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  return ['1', 'true', 'yes'].includes(String(value || '').trim().toLowerCase())
 }
 
 function normalizeHistoryStep(step: any, parentKey: string, index: number): ExecutionHistoryStepRow {

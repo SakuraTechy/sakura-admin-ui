@@ -131,6 +131,7 @@ import {
   type ExecutionResultOpenOptions,
   type ExecutionType,
   type ExecutionViewType,
+  executionAggregateResultLabel as aggregateResultLabel,
   executionTypeLabel,
   executionViewLabels,
   formatExecutionDuration as formatDuration,
@@ -140,7 +141,6 @@ import {
   matchesExecutionRecord,
   resolveJenkinsVideoUrl,
   executionResultColor as resultColor,
-  executionAggregateResultLabel as aggregateResultLabel,
   executionResultLabel as resultLabel,
   executionStatusColor as statusColor,
   executionStatusLabel as statusLabel,
@@ -149,11 +149,13 @@ import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
 import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import {
+  type AutomationUiExecutionStep,
   AUTOMATION_UI_EXECUTION_CHILD_PAGE_SIZE_LIMIT,
   getAutomationUiExecution,
+  getAutomationUiExecutionArtifactContentUrl,
+  getAutomationUiExecutionArtifacts,
   getAutomationUiExecutionCases,
   getAutomationUiExecutionSteps,
-  type AutomationUiExecutionStep,
 } from '@/apis/automation/automationUiQuery'
 import { getToken } from '@/utils/auth'
 
@@ -353,7 +355,7 @@ const onOpen = async (
   loading.value = true
   try {
     if (options.target?.executionDbId) {
-      scene.value = await loadLayeredExecutionRecord(sceneId, options)
+      scene.value = await loadLayeredExecutionRecord(sceneId, options, type)
       const availableRecords = getExecutionRecords(scene.value, type, recordScope.value, testPlanId.value)
       selectedRecordKey.value = availableRecords[0]?.__key || ''
       return
@@ -407,7 +409,11 @@ const loadAllExecutionSteps = async (caseExecutionDbId: string | number): Promis
   }
 }
 
-const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionResultOpenOptions) => {
+const loadLayeredExecutionRecord = async (
+  sceneId: string,
+  options: ExecutionResultOpenOptions,
+  type: ExecutionType,
+) => {
   const executionDbId = options.target?.executionDbId
   if (!executionDbId) return undefined
   const [detailResponse, executionCase] = await Promise.all([
@@ -416,6 +422,18 @@ const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionRes
   ])
   if (!detailResponse.data) throw new Error('执行记录已过期或无权访问')
   const detail = detailResponse.data
+  let artifactUrls: Record<string, string> = {}
+  try {
+    // Artifact 元数据只用于关联当前用例，内容仍通过后端授权下载接口读取。
+    const artifactResponse = await getAutomationUiExecutionArtifacts(executionDbId, 1, 50)
+    artifactUrls = buildLayeredArtifactUrls(
+      executionDbId,
+      artifactResponse.data?.list || [],
+      executionCase?.caseExecutionDbId,
+    )
+  } catch {
+    // 旧执行记录可能没有产物记录，不能因此阻断日志和步骤历史展示。
+  }
   const executionSteps = executionCase?.caseExecutionDbId
     ? await loadAllExecutionSteps(executionCase.caseExecutionDbId)
     : []
@@ -440,10 +458,12 @@ const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionRes
     step_pass: executionCase.stepPass,
     step_fail: executionCase.stepFail,
     step_skip: executionCase.stepSkip,
+    artifact_urls: artifactUrls,
     steps,
   } : undefined
   const record = {
     __key: `execution:${detail.executionDbId}`,
+    executionType: type,
     executionId: detail.executionKey,
     batchId: detail.batchId,
     buildNumber: detail.buildNumber,
@@ -457,6 +477,7 @@ const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionRes
     testReportUrl: detail.testReportUrl,
     caseName: executionCase?.caseName,
     caseId: executionCase?.definitionCaseId || executionCase?.caseKey,
+    artifactUrls,
     caseResults: caseResult ? [caseResult] : [],
   }
   return {
@@ -466,6 +487,33 @@ const loadLayeredExecutionRecord = async (sceneId: string, options: ExecutionRes
     debugRecord: detail.recordSource === 'debug' ? [record] : [],
     testRecord: detail.recordSource === 'test' ? [record] : [],
   }
+}
+
+function buildLayeredArtifactUrls(
+  executionDbId: string | number,
+  artifacts: Array<{ artifactDbId: number, artifactType?: string, caseExecutionDbId?: number }>,
+  caseExecutionDbId?: number,
+) {
+  const targetCaseId = caseExecutionDbId == null ? '' : String(caseExecutionDbId)
+  const scopedArtifacts = targetCaseId
+    ? artifacts.filter((artifact) => (
+        artifact.caseExecutionDbId != null && String(artifact.caseExecutionDbId) === targetCaseId
+      ))
+    : artifacts
+  const candidates = scopedArtifacts.length > 0
+    ? scopedArtifacts
+    : artifacts.filter((artifact) => artifact.caseExecutionDbId == null)
+  const urls: Record<string, string> = {}
+  candidates.forEach((artifact) => {
+    if (!artifact.artifactDbId || !artifact.artifactType) return
+    const type = String(artifact.artifactType).toLowerCase().replaceAll('-', '_')
+    let key = type
+    if (type === 'report') key = 'report_html'
+    if (type === 'screenshots') key = 'screenshot'
+    if (urls[key]) return
+    urls[key] = getAutomationUiExecutionArtifactContentUrl(executionDbId, artifact.artifactDbId)
+  })
+  return urls
 }
 
 const openExternal = (url?: string) => {
