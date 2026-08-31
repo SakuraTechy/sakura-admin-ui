@@ -3,6 +3,7 @@
   "type": "module",
   "version": "v1.0.0",
   "private": "true",
+  "packageManager": "pnpm@10.33.0",
   "scripts": {
     "bootstrap": "pnpm install --registry=https://registry.npmmirror.com",
     "dev": "vite --host",
@@ -104,12 +105,14 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "@parcel/watcher",
       "@vue-office/docx",
       "@vue-office/excel",
       "@vue-office/pdf",
       "core-js",
       "es5-ext",
       "esbuild",
+      "unrs-resolver",
       "vue-demi",
       "vue-echarts"
     ]

@@ -48,8 +48,8 @@
           type="primary"
           @click="onChromeRecord()"
         >
-          <template #icon><icon-play-arrow /></template>
-          <template #default>Chrome录制</template>
+          <template #icon><icon-record /></template>
+          <template #default>场景录制</template>
         </a-button>
         <a-button
           v-permission="['automation:automationUiScene:delete']"

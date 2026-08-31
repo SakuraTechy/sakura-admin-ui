@@ -1,5 +1,9 @@
 // 使用示例：D:\King\Cursor\sakura-admin-ui\demo\全局动态加载配置文件\README.md
 window.config = {
+  cuecast: {
+    // CueCast Chrome 扩展安装包下载地址。
+    extensionDownloadUrl: 'http://172.19.5.228:5183/file/2026/8/31/6a9543c6e4b02e1bb4b59d1e.zip',
+  },
   gitee: {
     baseURL: 'https://gitee.com',
     // Gitee OAuth2 获取 AccessToken：https://gitee.com/api/v5/oauth_doc#/list-item-2

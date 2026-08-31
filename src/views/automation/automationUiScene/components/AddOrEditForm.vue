@@ -29,7 +29,7 @@
                 </a-doption>
                 <a-dsubmenu v-if="!isReadonly">
                   <template #icon>
-                    <icon-play-arrow />
+                    <icon-record />
                   </template>
                   <template #default>录制用例</template>
                   <template #content>

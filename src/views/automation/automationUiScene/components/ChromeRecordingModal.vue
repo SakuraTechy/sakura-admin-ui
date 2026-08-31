@@ -9,7 +9,7 @@
   >
     <template #title>
       <div class="modal-title-bar">
-        <span>Chrome 扩展录制</span>
+        <span>Chrome 扩展 · 场景录制</span>
       </div>
     </template>
     <div
@@ -31,7 +31,16 @@
             <span v-if="extensionVersion" class="muted">v{{ extensionVersion }}</span>
             <a-tag v-if="recordingActive" color="arcoblue">已捕获 {{ liveStepCount }} 步</a-tag>
           </a-space>
-          <a-button size="small" :loading="detectingExtension" @click="detectExtension">检测插件</a-button>
+          <a-space>
+            <a-button size="small" :loading="detectingExtension" @click="detectExtension">
+              <template #icon><icon-check /></template>
+              检测插件
+            </a-button>
+            <a-button v-if="extensionStatus === 'missing'" type="primary" size="small" :disabled="!extensionDownloadUrl" @click="downloadExtension">
+              <template #icon><icon-download /></template>
+              下载插件
+            </a-button>
+          </a-space>
         </div>
       </div>
       <a-alert type="info" show-icon class="recording-tip">
@@ -456,6 +465,8 @@ import {
 import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } from '@/apis/project/projectEnvironmentConfig'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { getToken } from '@/utils/auth'
+import { getConfigValue } from '@/utils/config'
+import { downloadByUrl } from '@/utils/downloadFile'
 
 type RecordingMode = 'createScene' | 'appendCase' | 'replaceCase' | 'appendStep' | 'replaceStep'
 type RecordingViewMode = 'standard' | 'compact' | 'focus' | 'console' | 'cards' | 'split' | 'timeline' | 'cardSidebar'
@@ -544,6 +555,7 @@ const formRef = ref()
 const targetScene = ref<AutomationUiSceneResp | null>(null)
 const extensionStatus = ref<ExtensionStatus>('checking')
 const extensionVersion = ref('')
+const extensionDownloadUrl = getConfigValue('cuecast.extensionDownloadUrl', '')
 const projectEnvironmentOptions = ref<ProjectEnvironmentOption[]>([])
 const recordingLog = ref<RecordingLog | null>(null)
 const openContext = ref<RecordingOpenOptions>({})
@@ -1339,6 +1351,18 @@ const detectExtension = async () => {
     Message.warning(e?.message || '未检测到 CueCast Chrome 扩展')
   } finally {
     detectingExtension.value = false
+  }
+}
+
+const downloadExtension = async () => {
+  if (!extensionDownloadUrl) {
+    Message.warning('未配置 CueCast Chrome 扩展下载地址')
+    return
+  }
+  try {
+    await downloadByUrl({ url: extensionDownloadUrl, target: '_blank' })
+  } catch (e: any) {
+    Message.error(e?.message || '下载 CueCast Chrome 扩展失败')
   }
 }
 

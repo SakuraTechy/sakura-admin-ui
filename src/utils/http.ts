@@ -136,7 +136,7 @@ http.interceptors.response.use(
   },
   (error: AxiosError) => {
     const config = error.config as SilentAxiosRequestConfig | undefined
-    if (error.code === AxiosError.ERR_CANCELED) return Promise.reject(error)
+    if (error.code === 'ERR_CANCELED') return Promise.reject(error)
     if (!error.response) {
       const message = error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED'
         ? '请求超时，请稍后重试'

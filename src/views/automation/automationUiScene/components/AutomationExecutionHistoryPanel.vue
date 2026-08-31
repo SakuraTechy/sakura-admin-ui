@@ -933,7 +933,7 @@ const batchColumns = computed<TableInstance['columns']>(() => [
   {
     title: '操作',
     dataIndex: 'action',
-    width: 100,
+    width: 110,
     fixed: 'right',
     align: 'center',
     render: ({ record }: any) => (

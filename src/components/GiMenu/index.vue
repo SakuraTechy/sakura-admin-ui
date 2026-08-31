@@ -20,7 +20,7 @@
       :unmount-on-close="true"
     >
       <a-menu-item>
-        <template #icon><icon-play-arrow :size="16" :stroke-width="3" /></template>
+        <template #icon><icon-record :size="16" :stroke-width="3" /></template>
         <a-row justify="space-between" align="center">
           <span>{{ props.recordingLabel }}</span>
           <icon-right class="arrow-icon" />
