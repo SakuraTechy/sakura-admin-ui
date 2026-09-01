@@ -1,7 +1,8 @@
 <template>
   <GiPageLayout ref="pageLayout" :left-style="{ width: 440 }">
     <template #left>
-      <a-tabs :active-key="activeKey" type="text" size="medium" @change="handleTabChange">
+      <!-- lazy-load：用户停在「基础信息」时不渲染用例树；AddCase/投影树都会在首次挂载时自行补建。 -->
+      <a-tabs :active-key="activeKey" class="scene-left-tabs" type="text" size="medium" lazy-load @change="handleTabChange">
         <!-- <template #extra>
           <a-button>Action</a-button>
         </template> -->
@@ -75,7 +76,7 @@
             :scene-db-id="activeSceneId"
             :definition-version="sceneDetail?.definitionVersion ?? 0"
             :selected-node="projectedSelectedNode"
-            default-expand-all
+            default-expand-first
             :readonly="isReadonly"
             @get-case="getCase"
             @get-step="getStep"
@@ -995,7 +996,6 @@ const handleSubmit = async () => {
 }
 
 const caseList = shallowRef<AutomationUiCase[]>([])
-const stepList = ref([])
 const sceneDetail = ref<AutomationUiSceneDetailResp>()
 const sceneDefinitionMode = ref<'inline' | 'projected'>('inline')
 const projectedCaseNodes = ref<Array<{ id: string, name: string, stepList: unknown[] }>>([])
@@ -1196,17 +1196,10 @@ const getSceneInfo = async (data1?: any) => {
     form.status = normalizedData.status ?? 1
     form.tags = Array.isArray(normalizedData.tags) ? normalizedData.tags : []
     caseList.value = data.mode === 'inline' ? data.caseList ?? [] : []
-    if (data.mode === 'projected') {
-      stepList.value = []
-      return
-    }
+    if (data.mode === 'projected') return
     // 等待 caseList/definitionVersion 传入子树后再恢复节点，避免用旧 props 重建树。
     await nextTick()
     await caseListRef.value?.getTreeCaseList(data1)
-    // stepTotal.value = data.caseList.reduce((total: number, item: any) => total + item.stepList.length, 0)
-    stepList.value = caseList.value.reduce((list: any, item: any) => {
-      return list.concat(item.stepList || [])
-    }, [])
   } catch (error: any) {
     if (!isRequestCancelled(error) && requestSequence === sceneInfoRequestSequence && props.paneActive) {
       Message.error(error?.message || '读取场景定义失败，请稍后重试')
@@ -1411,7 +1404,6 @@ onUnmounted(() => {
   sceneInfoController?.abort()
   sceneExecutionController?.abort()
   caseList.value = []
-  stepList.value = []
   sceneExecutionBatches.value = []
   sceneDetail.value = undefined
 })
@@ -1446,6 +1438,46 @@ export default {}
 
 :deep(.arco-tabs-pane) {
   margin-top: 10px !important;
+}
+
+// 左侧 tab 链路原本没有确定高度：a-tabs 及其 content/pane 都是内容高度，
+// 树只能被 __left 的 overflow: hidden 裁掉，也无法用视口高度做虚拟滚动。
+// 这里把高度从 __left 一路传到 pane，树才能拿到真实视口并自行滚动。
+.scene-left-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  :deep(.arco-tabs-content) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.arco-tabs-content-list) {
+    flex: 1;
+    min-height: 0;
+  }
+
+  :deep(.arco-tabs-content-item) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  :deep(.arco-tabs-content-item-active) {
+    height: 100%;
+  }
+
+  :deep(.arco-tabs-pane) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    // 基础信息表单比视口高时自行滚动；用例树是内部滚动，不受影响。
+    overflow: auto;
+  }
 }
 
 :deep(.w-full) {

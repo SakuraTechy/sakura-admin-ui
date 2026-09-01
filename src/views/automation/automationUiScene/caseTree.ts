@@ -37,6 +37,55 @@ export function buildCaseTree(caseList: AutomationUiCase[]): AutomationUiCaseTre
   })
 }
 
+/**
+ * 复用未变化的节点对象重建树。
+ *
+ * buildCaseTree 每次都产出全新对象，于是任何一次改名都让 a-tree 重新生成内部节点、
+ * 重绘所有可见行，treeKey -> node 索引也整体失效。这里逐层按 treeKey + name 比对：
+ * 用例的子列表完全一致就沿用旧用例对象，整棵树都没变则直接返回旧数组引用，
+ * 让下游 watch 与渲染彻底跳过。
+ *
+ * 注意仍会先调用一次 buildCaseTree，省下的是渲染与响应式开销，不是对象分配；
+ * 分配本身很便宜，为省它而重写一份映射逻辑不值得。
+ */
+export function reconcileCaseTree(
+  prev: AutomationUiCaseTreeNode[] | undefined,
+  caseList: AutomationUiCase[],
+): AutomationUiCaseTreeNode[] {
+  const next = buildCaseTree(caseList)
+  if (!prev?.length) return next
+
+  const prevCaseByKey = new Map(prev.map((node) => [node.treeKey, node]))
+  let changed = next.length !== prev.length
+
+  const merged = next.map((nextCase, index) => {
+    // 同 key 换了位置也算变化，否则拖动排序不会反映到树上。
+    if (prev[index]?.treeKey !== nextCase.treeKey) changed = true
+    const oldCase = prevCaseByKey.get(nextCase.treeKey)
+    if (!oldCase || oldCase.name !== nextCase.name) {
+      changed = true
+      return nextCase
+    }
+
+    const oldSteps = oldCase.children || []
+    const nextSteps = nextCase.children || []
+    let stepsChanged = oldSteps.length !== nextSteps.length
+    const mergedSteps = nextSteps.map((nextStep, stepIndex) => {
+      const oldStep = oldSteps[stepIndex]
+      if (!oldStep || oldStep.treeKey !== nextStep.treeKey || oldStep.name !== nextStep.name) {
+        stepsChanged = true
+        return nextStep
+      }
+      return oldStep
+    })
+    if (!stepsChanged) return oldCase
+    changed = true
+    return { ...nextCase, children: mergedSteps }
+  })
+
+  return changed ? merged : prev
+}
+
 export function nodeRefOf(node: AutomationUiCaseTreeNode): AutomationUiTreeNodeRef {
   return node.type === 'case'
     ? { type: 'CASE', caseId: String(node.caseId) }

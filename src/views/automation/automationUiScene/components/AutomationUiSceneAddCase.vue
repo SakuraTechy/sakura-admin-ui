@@ -171,11 +171,11 @@
 </template>
 
 <script setup lang="tsx">
-import { computed, defineEmits, defineProps, h, nextTick, reactive, ref, watch } from 'vue'
+import { computed, defineEmits, defineProps, h, nextTick, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Collapse, CollapseItem, Message, Tooltip } from '@arco-design/web-vue'
 import { IconQuestionCircle } from '@arco-design/web-vue/es/icon'
 import { useRouter } from 'vue-router'
-import { buildCaseTree, canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, toMovePosition } from '../caseTree'
+import { canDropCaseTreeNode, findNodeDetail, nodeRefOf, normalizeAutomationNodeStatus, reconcileCaseTree, toMovePosition, treeKeyOf } from '../caseTree'
 import type { AutomationUiCaseTreeNode } from '../caseTree'
 import { executionTypeOptions } from '../execution'
 import AutomationOperationMethodForm from './AutomationOperationMethodForm.vue'
@@ -236,8 +236,9 @@ const onTreeFocus = () => {
 }
 
 const loading = ref(false)
-type TreeCateItem = AutomationUiCaseTreeNode & { popupVisible?: boolean, isEdit?: boolean }
-const treeList = ref<TreeCateItem[]>([])
+type TreeCateItem = AutomationUiCaseTreeNode
+// shallowRef：整棵树只在替换根数组时触发渲染，避免 Vue 深度代理上千个节点。
+const treeList = shallowRef<TreeCateItem[]>([])
 const mutationLoading = ref(false)
 const operationCatalog = ref<AutomationOperationCatalog>()
 const operationCatalogLoading = ref(false)
@@ -496,13 +497,11 @@ const normalizeCatalogStepForEdit = (step: any) => {
     configList: mergeCatalogConfigList(step, method, methodConfig),
   }
 }
-const decorateTreeNode = (node: AutomationUiCaseTreeNode): TreeCateItem => ({
-  ...node,
-  popupVisible: false,
-  isEdit: false,
-  children: node.children?.map(decorateTreeNode),
-})
-const buildUiTree = (caseList: AutomationUiCase[]) => buildCaseTree(caseList).map(decorateTreeNode)
+// buildCaseTree 已经产出全新节点对象；此前的 decorateTreeNode 只为挂 popupVisible/isEdit
+// 而深克隆整棵树，GiTree 改为按 key 记录这两个状态后不再需要，克隆一并去掉。
+// 增量重建：沿用未变化的节点对象，整棵树没变时连数组引用都不换，
+// 于是 a-tree 不重新生成内部节点、treeIndex 缓存继续有效。
+const buildUiTree = (caseList: AutomationUiCase[]) => reconcileCaseTree(treeList.value, caseList)
 const normalizeSelectionRef = (data?: any): AutomationUiTreeNodeRef | null => {
   const node = data?.selectedNode || data?.node || data
   if (!node) return null
@@ -513,12 +512,25 @@ const normalizeSelectionRef = (data?: any): AutomationUiTreeNodeRef | null => {
   if (type === 'STEP' && caseId && stepId) return { type: 'STEP', caseId, stepId }
   return null
 }
-const findTreeNode = (ref: AutomationUiTreeNodeRef) => {
-  const caseNode = treeList.value.find(node => String(node.caseId) === String(ref.caseId))
-  return ref.type === 'CASE'
-    ? caseNode
-    : caseNode?.children?.find(node => String(node.stepId) === String(ref.stepId))
+/**
+ * treeKey -> 节点索引。按 treeList 的数组引用缓存，树没换引用就不重建。
+ * 批量删除原先对每个勾选 key 都摊平整棵树再 find，勾 100 个 / 树 1000 节点就是
+ * 100 次摊平加约 10 万次比较；查一次索引即可。
+ */
+let treeIndexSource: TreeCateItem[] | null = null
+let treeIndexCache = new Map<string, TreeCateItem>()
+const treeIndex = () => {
+  if (treeIndexSource === treeList.value) return treeIndexCache
+  const index = new Map<string, TreeCateItem>()
+  treeList.value.forEach((caseNode) => {
+    index.set(caseNode.treeKey, caseNode)
+    caseNode.children?.forEach(stepNode => index.set(stepNode.treeKey, stepNode))
+  })
+  treeIndexSource = treeList.value
+  treeIndexCache = index
+  return index
 }
+const findTreeNode = (ref: AutomationUiTreeNodeRef) => treeIndex().get(treeKeyOf(ref))
 const refreshTree = async (selection?: AutomationUiTreeNodeRef) => {
   if (props.refreshScene) {
     await props.refreshScene(selection)
@@ -1589,7 +1601,7 @@ const onMenuClick = async (data?: any) => {
         break
       case 'delete': {
         const nodes = selectionMode.value === 'batch-delete'
-          ? checkedKeys.value.map(key => treeList.value.flatMap(item => [item, ...(item.children || [])]).find(item => item.treeKey === key)).filter(Boolean)
+          ? checkedKeys.value.map(key => treeIndex().get(key)).filter(Boolean)
           : Array.isArray(data.node) ? data.node : [data.node]
         mutationLoading.value = true
         const response = await deleteCaseTree({ nodes: nodes.map((item: TreeCateItem) => nodeRefOf(item)), expectedDefinitionVersion: props.definitionVersion }, sceneDbId.value)
@@ -1641,6 +1653,14 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(() => {
+  // tab 懒加载时本组件在 caseList 到位之后才挂载，父组件那次 getTreeCaseList 调用
+  // 落在 ref 还是 undefined 的时刻，因此这里补建一次；非懒加载路径下树已非空，不会重复。
+  if (!props.controllerOnly && props.caseList?.length && !treeList.value.length) {
+    void getTreeCaseList()
+  }
+})
 
 defineExpose({
   onMenuClick,

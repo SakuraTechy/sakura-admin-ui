@@ -5,7 +5,7 @@
         <template #prefix><icon-search /></template>
       </a-input>
     </div>
-    <div class="gi-tree__tree">
+    <div ref="treeViewportRef" class="gi-tree__tree">
       <a-scrollbar
         :style="{ height: '100%', overflow: virtualListEnabled ? 'hidden' : 'auto' }"
         outer-style="height: 100%; overflow: hidden"
@@ -21,7 +21,7 @@
           :disabled="disabled || loading"
           :block-node="blockNode"
           :show-line="showLine"
-          :virtual-list-props="virtualListProps"
+          :virtual-list-props="resolvedVirtualListProps"
           :expanded-keys="expandedKeys"
           :data="filteredData"
           :field-names="fieldNames"
@@ -47,19 +47,23 @@
               scroll-to-close
             >
               <div
-                v-if="!node.isEdit"
-                style="width: 100%; margin-right: 10px;"
+                v-if="!isNodeEditing(node)"
+                class="gi-tree__node-title"
                 @contextmenu.prevent="onContextmenu(node)"
                 @dblclick="() => onNodeDblClick(node)"
               >
-                <a-typography-paragraph :ellipsis="{ rows: 1, showTooltip: true, css: true }">
+                <!-- 原生 title 替代 a-typography-paragraph：后者会为每个节点创建
+                     ResizeObserver 和 Tooltip 实例，千级节点下是主要挂载开销。 -->
+                <span class="gi-tree__node-text" :title="String(node?.[fieldNames.title] ?? '')">
                   {{ node?.[fieldNames.title] }}
-                </a-typography-paragraph>
+                </span>
               </div>
+              <!-- 编辑态改用组件级 editingDraft：节点对象不再承载 isEdit，
+                   树数据得以保持 shallow，避免千节点深度代理。 -->
               <a-input
                 v-else
                 ref="inputNodeRef"
-                v-model="node[fieldNames.title]"
+                v-model="editingDraft"
                 size="mini"
                 placeholder="请填写"
                 @input="onInput"
@@ -111,8 +115,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
+import { useElementSize } from '@vueuse/core'
 import GiMenu from '@/components/GiMenu/index.vue'
 import GiLoading from '@/components/GiLoading/index.vue'
 
@@ -140,6 +145,8 @@ const props = defineProps({
   blockNode: { type: Boolean, default: true },
   showLine: { type: Boolean, default: true },
   virtualListProps: { type: Object, default: undefined },
+  /** 可见节点数超过该阈值时自动启用虚拟滚动；传 0 可关闭自动虚拟化。 */
+  virtualThreshold: { type: Number, default: 100 },
   onSave: Function,
   editMethod: { type: String, default: '弹窗编辑' },
 })
@@ -310,11 +317,16 @@ const inputValue = ref('')
 const filterKeyword = ref('')
 let filterTimer: number | undefined
 const treeContainerRef = ref<HTMLElement>()
+const treeViewportRef = ref<HTMLElement>()
+const { height: treeViewportHeight } = useElementSize(treeViewportRef)
 const treeRef = ref()
 const inputNodeRef = ref()
-const editCacheValue = ref('')
-const contextmenuNode = ref<any>(null)
+// shallowRef：节点对象只做引用持有，不需要 Vue 深度代理其 children。
+const contextmenuNode = shallowRef<any>(null)
 const contextmenuNodeKey = ref('')
+// 编辑态与草稿值提到组件级，按 key 判定，节点对象保持纯净。
+const editingNodeKey = ref('')
+const editingDraft = ref('')
 // const localSelectedKeys = ref(props.selectedKeys)
 
 const collectExpandableKeys = (nodes: any[]): any[] => nodes.flatMap((node) => {
@@ -390,9 +402,40 @@ const treeNodeCount = computed(() => {
   return count(filteredData.value as any[])
 })
 
+// 展开后的可见行数决定是否值得虚拟化：折叠状态下的子节点不进 DOM，无需计入。
+const visibleNodeCount = computed(() => {
+  const expanded = new Set((expandedKeys.value || []).map(String))
+  const count = (nodes: any[]): number => nodes.reduce((total, node) => {
+    const children = node?.[props.fieldNames.children]
+    const hasChildren = Array.isArray(children) && children.length > 0
+    const childCount = hasChildren && expanded.has(String(node?.[props.fieldNames.key]))
+      ? count(children)
+      : 0
+    return total + 1 + childCount
+  }, 0)
+  return count(filteredData.value as any[])
+})
+
 const virtualListEnabled = computed(() => {
-  const threshold = Number(props.virtualListProps?.threshold ?? 0)
-  return Boolean(props.virtualListProps && treeNodeCount.value > threshold)
+  // 显式传入 virtualListProps 时沿用调用方语义，仍按其 threshold 判断。
+  if (props.virtualListProps) {
+    const threshold = Number(props.virtualListProps.threshold ?? 0)
+    return treeNodeCount.value > threshold
+  }
+  // 自动模式需要确定高度：视口未测量出来时不能虚拟化，否则容器高度为 0。
+  if (!props.virtualThreshold || treeViewportHeight.value <= 0) return false
+  return visibleNodeCount.value > props.virtualThreshold
+})
+
+const resolvedVirtualListProps = computed(() => {
+  if (!virtualListEnabled.value) return undefined
+  return {
+    height: treeViewportHeight.value,
+    // 行高不固定（编辑态是 input），交给 VirtualList 实测，estimatedSize 只作首屏估算。
+    estimatedSize: 26,
+    buffer: 15,
+    ...props.virtualListProps,
+  }
 })
 
 // 选中节点
@@ -470,17 +513,35 @@ const isContextmenuVisible = (node: any) => {
   const nodeKey = nodeKeyOf(node)
   return Boolean(nodeKey) && nodeKey === contextmenuNodeKey.value
 }
+const isNodeEditing = (node: any) => {
+  const nodeKey = nodeKeyOf(node)
+  return Boolean(nodeKey) && nodeKey === editingNodeKey.value
+}
+
+const startEditing = (node: any) => {
+  editingNodeKey.value = nodeKeyOf(node)
+  editingDraft.value = String(node?.[props.fieldNames.title] ?? '')
+  nextTick(() => {
+    inputNodeRef.value?.focus()
+  })
+}
+
+/** 退出编辑态。commit 时把草稿写回节点，保持原地编辑的本地回显行为。 */
+const stopEditing = (commit = false) => {
+  const node = contextmenuNode.value
+  if (commit && node && editingNodeKey.value === nodeKeyOf(node)) {
+    node[props.fieldNames.title] = editingDraft.value
+  }
+  editingNodeKey.value = ''
+  editingDraft.value = ''
+}
+
 const onContextmenu = (node: any) => {
   setActive()
-  if (contextmenuNode.value && contextmenuNode.value !== node) {
-    contextmenuNode.value.popupVisible = false
-  }
-  if (contextmenuNode.value?.isEdit !== undefined) {
-    contextmenuNode.value.isEdit = false
-  }
+  // popupVisible 曾写在节点上，但模板读的是 contextmenuNodeKey，属于无效写入，已移除。
+  stopEditing()
   contextmenuNode.value = node
   contextmenuNodeKey.value = nodeKeyOf(node)
-  node.popupVisible = true
   selectedKeys.value = [node[props.fieldNames.key]]
 //   if (!multiple.value) emit('node-click', node)
 }
@@ -492,7 +553,6 @@ const onPopupVisibleChange = (node: any, visible: boolean) => {
   } else if (isContextmenuVisible(node)) {
     contextmenuNodeKey.value = ''
   }
-  node.popupVisible = visible
 }
 
 // 节点双击操作
@@ -500,15 +560,9 @@ const onNodeDblClick = (node: any) => {
   if (props.editMethod === '弹窗编辑') {
     emit('menu-click', { mode: 'edit', node })
   } else if (props.editMethod === '原地编辑') {
-    if (contextmenuNode.value?.isEdit !== undefined) {
-      contextmenuNode.value.isEdit = false
-    }
-    node.isEdit = true
+    stopEditing()
     contextmenuNode.value = node
-    editCacheValue.value = node[props.fieldNames.title]
-    nextTick(() => {
-      inputNodeRef.value?.focus()
-    })
+    startEditing(node)
   }
 }
 
@@ -522,34 +576,28 @@ const onEnter = () => {
 
 // 输入框脱焦
 const onBlur = (e: any) => {
+  // 草稿在 stopEditing 里写回节点；这里先取值，避免 Modal 回调期间被清空。
+  const draft = editingDraft.value
   Modal.warning({
     title: '温馨提示',
     content: `是否需要保存「${e.target.value}」？`,
     hideCancel: false,
     okButtonProps: { status: 'danger' },
     onBeforeOk: () => {
+      editingDraft.value = draft
+      stopEditing(true)
       if (props.onSave) {
         return props.onSave({ mode: 'edit', node: contextmenuNode.value })
       }
     },
-    onCancel: () => {
-      if (contextmenuNode.value?.name) {
-        contextmenuNode.value.name = editCacheValue.value
-      }
-    },
-    onClose: () => {
-      if (contextmenuNode.value?.isEdit) {
-        contextmenuNode.value.isEdit = false
-      }
-    },
+    // 取消时草稿直接丢弃，节点标题从未被改写，无需回滚。
+    onCancel: () => stopEditing(),
+    onClose: () => stopEditing(),
   })
 }
 
 // 关闭右键菜单弹框
 const closeRightMenu = () => {
-  if (contextmenuNode.value?.popupVisible) {
-    contextmenuNode.value.popupVisible = false
-  }
   contextmenuNodeKey.value = ''
 }
 
@@ -573,13 +621,9 @@ const onMenuItemClick = (mode?: any, node?: any) => {
       // emit('node-edit', contextmenuNode.value)
       emit('menu-click', { mode, node: contextmenuNode.value })
     } else if (props.editMethod === '原地编辑') {
-      if (contextmenuNode.value?.isEdit !== undefined) {
-        contextmenuNode.value.isEdit = true
-        editCacheValue.value = contextmenuNode.value?.name
-        nextTick(() => {
-          inputNodeRef.value?.focus()
-        })
-      }
+      // 原先靠 node.isEdit !== undefined 判断节点是否被装饰过；
+      // 编辑态改为按 key 记录后，任何节点都能直接进入编辑。
+      if (contextmenuNode.value) startEditing(contextmenuNode.value)
     }
   }
   if (mode === 'copy') {
@@ -744,6 +788,22 @@ export default {}
       position: relative;
     }
 
+    &__node-title {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+      margin-right: 10px;
+    }
+
+    &__node-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
     &__virtual {
       height: 100%;
 
@@ -756,8 +816,12 @@ export default {}
   :deep(.arco-tree-node-title-text) {
     white-space: nowrap;
     display: flex;
+    // flex 链上任一环缺少 min-width: 0 都会撑开容器，导致省略号不生效。
+    min-width: 0;
+    overflow: hidden;
   }
   :deep(.arco-tree-node-selected) {
+    .gi-tree__node-text,
     .arco-typography {
       color: rgb(var(--primary-6));
     }

@@ -80,7 +80,7 @@
         >
           <a-tooltip content="请选择所属Jenkins，批量同步最新节点数据">
             <a-button
-              v-permission="['automation:automationNodeConfig:syncAllNode']"
+              v-permission="['automation:automationNodeConfig:sync']"
               type="primary"
               status="success"
               size="small"
