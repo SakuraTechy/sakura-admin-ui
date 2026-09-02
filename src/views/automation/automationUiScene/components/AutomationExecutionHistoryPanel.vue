@@ -396,6 +396,8 @@ interface HistoryScene {
   sceneId?: string
   name?: string
   caseList?: unknown[]
+  /** projected 定义模式只下发用例总数，没有完整 caseList。 */
+  caseCount?: number
   debugRecord?: unknown[]
   testRecord?: unknown[]
 }
@@ -577,30 +579,81 @@ const scopedHistoryRows = computed(() => {
   }
   return displayedRows
 })
-const sceneCases = computed(() => historyScenes.value.flatMap(scene => (
-  (Array.isArray(scene?.caseList) ? scene.caseList : []).map((item: any) => ({
-    sceneKey: String(scene?.id || ''),
-    caseId: String(item.id),
-  }))
-)))
-const latestScopedExecutionRows = computed(() => {
-  const currentCaseIds = new Set(sceneCases.value.map(item => `${item.sceneKey}:${item.caseId}`))
-  const latestByCaseId = new Map<string, ExecutionHistoryCaseRow>()
-  scopedHistoryRows.value.forEach((row) => {
-    const rowCaseKey = `${row.sceneKey || ''}:${row.caseId}`
-    if (!row.caseId || row.caseId === '-' || latestByCaseId.has(rowCaseKey)) return
-    if (!props.selectedCaseId && currentCaseIds.size > 0 && !currentCaseIds.has(rowCaseKey)) return
-    latestByCaseId.set(rowCaseKey, row)
+// 单场景历史里执行行只有一种场景口径，跨场景才需要场景前缀区分不同场景的同名用例。
+const sceneCaseKey = (sceneKey: string, caseId: string) => (isMultiScene.value ? `${sceneKey}:${caseId}` : caseId)
+// projected 模式的场景只给 caseCount，拿不到完整 caseList，此时不能用用例清单反向过滤执行行。
+const sceneCaseIndex = computed(() => {
+  const cases: Array<{ sceneKey: string, caseId: string }> = []
+  const scenesWithCaseList = new Set<string>()
+  historyScenes.value.forEach((scene) => {
+    const sceneKey = String(scene?.id || '')
+    const caseList = Array.isArray(scene?.caseList) ? scene.caseList : []
+    if (!caseList.length) return
+    scenesWithCaseList.add(sceneKey)
+    caseList.forEach((item: any) => {
+      const caseId = String(item?.id ?? item?.caseId ?? '')
+      if (caseId) cases.push({ sceneKey, caseId })
+    })
   })
-  return [...latestByCaseId.values()]
+  return {
+    cases,
+    scenesWithCaseList,
+    keys: new Set(cases.map(item => sceneCaseKey(item.sceneKey, item.caseId))),
+  }
 })
+// 执行行已按开始时间倒序（实时行在最前），首次出现即该用例最新一次执行。
+const latestCaseExecutions = computed(() => {
+  const { keys, scenesWithCaseList } = sceneCaseIndex.value
+  const latest = new Map<string, ExecutionHistoryCaseRow>()
+  scopedHistoryRows.value.forEach((row) => {
+    if (!row.caseId || row.caseId === '-') return
+    const sceneKey = String(row.sceneKey || '')
+    const rowKey = sceneCaseKey(sceneKey, String(row.caseId))
+    // 已删除的历史用例不属于当前用例树，只有该场景的用例清单可用时才敢按清单剔除。
+    const filterable = !props.selectedCaseId && keys.size > 0
+      && (isMultiScene.value ? scenesWithCaseList.has(sceneKey) : true)
+    if (filterable && !keys.has(rowKey)) return
+    if (!latest.has(rowKey)) latest.set(rowKey, row)
+  })
+  return latest
+})
+const latestScopedExecutionRows = computed(() => [...latestCaseExecutions.value.values()])
+// 总用例取用例树规模：inline 用 caseList 长度，projected 用 caseCount，都拿不到时退回已执行用例数。
+const sceneCaseTotal = computed(() => {
+  const latestSceneCounts = new Map<string, number>()
+  latestCaseExecutions.value.forEach((row) => {
+    const sceneKey = String(row.sceneKey || '')
+    latestSceneCounts.set(sceneKey, (latestSceneCounts.get(sceneKey) || 0) + 1)
+  })
+  return historyScenes.value.reduce((total, scene) => {
+    const sceneKey = String(scene?.id || '')
+    const inlineCases = Array.isArray(scene?.caseList) ? scene.caseList.length : 0
+    const declared = inlineCases || countValue(scene?.caseCount)
+    return total + (declared || latestSceneCounts.get(sceneKey) || 0)
+  }, 0)
+})
+// 顶部统计的口径是左侧场景用例树：总用例为树上全部用例，各状态取每个用例最新一次执行的结果，
+// 从未执行过的用例只计入总数，不落入任何状态，用户由此看到的是用例覆盖情况而非执行记录条数。
 const executionSummary = computed(() => {
-  const sceneCaseTotal = sceneCases.value.length
-  const total = props.selectedCaseId ? 1 : (sceneCaseTotal || latestScopedExecutionRows.value.length)
-  return latestScopedExecutionRows.value.reduce((summary, row) => {
+  const latest = latestCaseExecutions.value
+  const { cases, scenesWithCaseList } = sceneCaseIndex.value
+  // 用例清单缺失的场景（projected）没有可枚举的用例键，只能直接采用它们的最新执行行。
+  const untrackedRows = [...latest.entries()]
+    .filter(([key]) => !sceneCaseIndex.value.keys.has(key))
+    .map(([, row]) => row)
+  const trackedRows = cases.length
+    ? [...cases.map(item => latest.get(sceneCaseKey(item.sceneKey, item.caseId))), ...untrackedRows]
+    : [...latest.values()]
+  const total = props.selectedCaseId
+    ? 1
+    : Math.max(sceneCaseTotal.value, scenesWithCaseList.size ? cases.length : latest.size)
+  return trackedRows.reduce((summary, row) => {
+    if (!row) return summary
     const status = executionStatusLabel(row.executeStatus)
     const result = executionResultLabel(row.executeResult)
-    if (['已完成', '已取消'].includes(status)) summary.completed += 1
+    // 已完成看“该用例是否跑完”：状态进入终态，或状态缺失/异常但结果已落定，都算完成。
+    const terminalResult = ['通过', '失败', '阻塞', '跳过', '已取消'].includes(result)
+    if (['已完成', '已取消'].includes(status) || terminalResult) summary.completed += 1
     if (result === '通过') summary.passed += 1
     if (result === '失败') summary.failed += 1
     if (result === '阻塞') summary.blocked += 1
@@ -610,7 +663,8 @@ const executionSummary = computed(() => {
   }, { total, completed: 0, passed: 0, failed: 0, blocked: 0, cancelled: 0, skipped: 0 })
 })
 const summaryCards = computed(() => {
-  if (tableBatchMode.value && aggregatePlanBatches.value) {
+  // 计划/报告的跨场景聚合口径是“场景”，与视图模式无关；否则切换视图会让同一份数据换算成另一种维度。
+  if (aggregatePlanBatches.value && !props.selectedCaseId) {
     const latestByScene = new Map<string, any>()
     filteredBatchRows.value
       .slice()
@@ -792,13 +846,12 @@ watch(
   () => `${viewMode.value}:${props.selectedCaseId || ''}:${props.executionBatches?.map(item => `${item.executionDbId}:${item.casesLoaded}`).join('|') || ''}`,
   () => {
     if (!props.executionBatches || !props.loadExecutionCases) return
-    // 批次表格无需预取用例；指定用例时表格展示的是用例执行记录，必须先加载批次子项再筛选。
-    if (viewMode.value === 'table') return
-    const start = (pagination.current - 1) * pagination.pageSize
-    const visible = props.executionBatches.slice(start, start + pagination.pageSize)
-      .filter(item => !item.casesLoaded)
+    // 顶部统计要按用例维度汇总当前范围内每个用例的最新执行，四个视图都必须先补齐批次子项；
+    // 批次已按服务端分页有界，这里只补当前页未加载的批次。
+    if (remoteCasePagination.value) return
+    const pending = props.executionBatches.filter(item => !item.casesLoaded)
     const casePageSize = props.selectedCaseId ? 50 : 20
-    void Promise.all(visible.map(item => props.loadExecutionCases?.(item, 1, casePageSize)))
+    void Promise.all(pending.map(item => props.loadExecutionCases?.(item, 1, casePageSize)))
   },
   { immediate: true },
 )

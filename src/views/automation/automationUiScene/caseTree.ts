@@ -1,3 +1,4 @@
+import { h, type VNode } from 'vue'
 import type { AutomationUiCase, AutomationUiStep, AutomationUiTreeMovePosition, AutomationUiTreeNodeRef } from '@/apis/automation/automationUiScene'
 
 export interface AutomationUiCaseTreeNode {
@@ -7,6 +8,7 @@ export interface AutomationUiCaseTreeNode {
   stepId?: string
   name: string
   children?: AutomationUiCaseTreeNode[]
+  switcherIcon?: () => VNode
 }
 
 export const treeKeyOf = (ref: AutomationUiTreeNodeRef) => ref.type === 'CASE'
@@ -26,16 +28,27 @@ export function buildCaseTree(caseList: AutomationUiCase[]): AutomationUiCaseTre
     return {
       treeKey: treeKeyOf({ type: 'CASE', caseId }),
       type: 'case', caseId, name: caseItem.name,
-      children: (caseItem.stepList || []).map((step) => {
+      children: (caseItem.stepList || []).map((step, stepIndex) => {
         const stepId = String(step.id)
         return {
           treeKey: treeKeyOf({ type: 'STEP', caseId, stepId }),
-          type: 'step' as const, caseId, stepId, name: step.name,
+          type: 'step' as const,
+          caseId,
+          stepId,
+          name: step.name,
+          switcherIcon: createStepNumberIcon(stepIndex + 1),
         }
       }),
     }
   })
 }
+
+// 步骤使用序号替代默认文件图标，序号只反映当前用例内的显示顺序。
+export const createStepNumberIcon = (order: number) => () => h(
+  'span',
+  { class: 'automation-step-number' },
+  String(order),
+)
 
 /**
  * 复用未变化的节点对象重建树。

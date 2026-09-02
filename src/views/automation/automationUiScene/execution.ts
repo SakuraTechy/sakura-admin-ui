@@ -1613,7 +1613,9 @@ export function executionResultLabel(value: unknown) {
   if (['passed', 'success', '14'].includes(normalized)) return '通过'
   if (['failed', '15'].includes(normalized)) return '失败'
   if (normalized === 'blocked') return '阻塞'
-  if (['skipped', 'cancelled', '16'].includes(normalized)) return normalized === 'cancelled' ? '已取消' : '跳过'
+  // 字典里 17 同时表达“执行已取消”和“结果已取消”，缺这条映射会把取消用例显示成原始码值。
+  if (['cancelled', '17'].includes(normalized)) return '已取消'
+  if (['skipped', '16'].includes(normalized)) return '跳过'
   if (['starting', 'running', 'cancelling', 'pending'].includes(normalized)) return '生成中'
   if (['waiting', 'queued', 'not_executed', '13'].includes(normalized)) return '未执行'
   return normalized || '-'
@@ -1663,7 +1665,8 @@ export function executionStatusLabel(value: unknown) {
   if (normalized === 'queued') return '排队中'
   if (normalized === 'cancelling') return '取消中'
   if (['running', '11'].includes(normalized)) return '执行中'
-  if (['passed', 'failed', 'blocked', 'skipped', 'cancelled'].includes(normalized)) return normalized === 'cancelled' ? '已取消' : '已完成'
+  if (['cancelled', '17'].includes(normalized)) return '已取消'
+  if (['passed', 'failed', 'blocked', 'skipped'].includes(normalized)) return '已完成'
   if (['completed', '12'].includes(normalized)) return '已完成'
   return normalized || '-'
 }

@@ -7,7 +7,8 @@
     </div>
     <div ref="treeViewportRef" class="gi-tree__tree">
       <a-scrollbar
-        :style="{ height: '100%', overflow: virtualListEnabled ? 'hidden' : 'auto' }"
+        :style="{ height: '100%', overflow: virtualListEnabled ? 'hidden' : disableHorizontal ? 'hidden auto' : 'auto' }"
+        :disable-horizontal="disableHorizontal"
         outer-style="height: 100%; overflow: hidden"
       >
         <a-tree
@@ -48,15 +49,13 @@
             >
               <div
                 v-if="!isNodeEditing(node)"
-                class="gi-tree__node-title"
+                style="width: 100%; margin-right: 10px;"
                 @contextmenu.prevent="onContextmenu(node)"
                 @dblclick="() => onNodeDblClick(node)"
               >
-                <!-- 原生 title 替代 a-typography-paragraph：后者会为每个节点创建
-                     ResizeObserver 和 Tooltip 实例，千级节点下是主要挂载开销。 -->
-                <span class="gi-tree__node-text" :title="String(node?.[fieldNames.title] ?? '')">
+                <a-typography-paragraph :ellipsis="{ rows: 1, showTooltip: true, css: true }">
                   {{ node?.[fieldNames.title] }}
-                </span>
+                </a-typography-paragraph>
               </div>
               <!-- 编辑态改用组件级 editingDraft：节点对象不再承载 isEdit，
                    树数据得以保持 shallow，避免千节点深度代理。 -->
@@ -147,6 +146,8 @@ const props = defineProps({
   virtualListProps: { type: Object, default: undefined },
   /** 可见节点数超过该阈值时自动启用虚拟滚动；传 0 可关闭自动虚拟化。 */
   virtualThreshold: { type: Number, default: 100 },
+  // 某些树只允许纵向浏览，避免 Arco 根据超长节点内容生成横向滚动条。
+  disableHorizontal: { type: Boolean, default: false },
   onSave: Function,
   editMethod: { type: String, default: '弹窗编辑' },
 })
@@ -788,22 +789,6 @@ export default {}
       position: relative;
     }
 
-    &__node-title {
-      display: flex;
-      align-items: center;
-      width: 100%;
-      min-width: 0;
-      margin-right: 10px;
-    }
-
-    &__node-text {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
     &__virtual {
       height: 100%;
 
@@ -816,12 +801,8 @@ export default {}
   :deep(.arco-tree-node-title-text) {
     white-space: nowrap;
     display: flex;
-    // flex 链上任一环缺少 min-width: 0 都会撑开容器，导致省略号不生效。
-    min-width: 0;
-    overflow: hidden;
   }
   :deep(.arco-tree-node-selected) {
-    .gi-tree__node-text,
     .arco-typography {
       color: rgb(var(--primary-6));
     }
@@ -836,5 +817,38 @@ export default {}
     display: flex;
     width: 100%;
     margin-right: 10px;
+  }
+
+  // Arco 虚拟列表内部自带 overflow:auto，必须在这一层关闭横向滚动。
+  :deep(.arco-virtual-list) {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-width: none;
+  }
+
+  // 统一由 Arco 自绘滚动条负责显示，避免浏览器原生滚动条常驻占位。
+  :deep(.arco-scrollbar-container),
+  :deep(.arco-virtual-list) {
+    scrollbar-width: none;
+  }
+
+  :deep(.arco-scrollbar-container::-webkit-scrollbar),
+  :deep(.arco-virtual-list::-webkit-scrollbar) {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  // 默认隐藏滑块，仅把鼠标移到右侧竖向轨道或拖动滑块时显示。
+  :deep(.arco-scrollbar.arco-scrollbar-type-embed .arco-scrollbar-thumb) {
+    opacity: 0 !important;
+  }
+
+  // 轨道可能被外层布局覆盖时，以滚动容器悬停作为兜底显示条件。
+  :deep(.gi-tree__tree:hover .arco-scrollbar .arco-scrollbar-thumb),
+  :deep(.arco-scrollbar.arco-scrollbar-type-embed:hover .arco-scrollbar-thumb),
+  :deep(.arco-scrollbar.arco-scrollbar-type-embed .arco-scrollbar-track-direction-vertical:hover .arco-scrollbar-thumb),
+  :deep(.arco-scrollbar.arco-scrollbar-type-embed .arco-scrollbar-thumb-dragging) {
+    opacity: 0.8 !important;
   }
   </style>

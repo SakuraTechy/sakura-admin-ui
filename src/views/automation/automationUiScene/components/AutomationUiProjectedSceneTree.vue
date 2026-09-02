@@ -18,7 +18,7 @@
       <div
         ref="scrollRef"
         class="projected-scene-tree__scroll"
-        :style="{ overflow: virtualListProps ? 'hidden' : 'auto' }"
+        :style="{ overflow: virtualListProps ? 'hidden' : undefined }"
         @scroll="closeActionMenu"
       >
         <a-tree
@@ -89,7 +89,7 @@ import {
   mapWithConcurrency,
 } from '../queryCache'
 import { moveCaseTree } from '@/apis/automation/automationUiScene'
-import { canDropCaseTreeNode, nodeRefOf, toMovePosition } from '../caseTree'
+import { canDropCaseTreeNode, createStepNumberIcon, nodeRefOf, toMovePosition } from '../caseTree'
 
 interface TreeNode {
   key: string
@@ -262,6 +262,7 @@ async function attachSteps(node: TreeNode) {
       caseId: node.caseId,
       stepId,
       isLeaf: true,
+      switcherIcon: createStepNumberIcon(index + 1),
     } as TreeNode
   })
   node.loaded = true
@@ -378,7 +379,14 @@ watch(() => `${props.sceneDbId}:${props.definitionVersion}`, () => {
 // flex: none 让搜索框保持自身高度，剩余空间全给下面的滚动区。
 .projected-scene-tree__search { flex: none; margin-bottom: 8px; }
 .projected-scene-tree__content { display: flex; flex: 1; min-height: 0; flex-direction: column; }
-.projected-scene-tree__scroll { flex: 1; min-height: 0; overflow: auto; }
+.projected-scene-tree__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.projected-scene-tree__scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .projected-scene-tree :deep(.arco-pagination) { justify-content: flex-end; margin-top: 10px; }
 .projected-scene-tree__error { margin-top: 8px; }
 .projected-scene-tree__title {
@@ -389,9 +397,32 @@ watch(() => `${props.sceneDbId}:${props.definitionVersion}`, () => {
   text-overflow: ellipsis;
 }
 // 标题与操作按钮共用一行，需要让标题可收缩才能出现省略号。
-.projected-scene-tree :deep(.arco-tree-node-title-text) { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.projected-scene-tree :deep(.arco-tree-node-title-text) {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  overflow: visible;
+}
 .projected-scene-tree :deep(.arco-tree-node-title) { display: flex; width: 100%; min-width: 0; }
-.projected-scene-tree__action { margin-left: 6px; flex: none; }
+// 虚拟列表内部默认使用 overflow:auto，需同步关闭其横向滚动。
+.projected-scene-tree :deep(.arco-virtual-list) { overflow-x: hidden !important; overflow-y: auto !important; }
+.projected-scene-tree :deep(.automation-step-number) {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+.projected-scene-tree__action {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  margin-left: 6px;
+  padding: 0;
+}
 // 零尺寸固定定位锚点：菜单靠它定位，本身不可见也不参与布局与命中。
 .projected-scene-tree__anchor {
   position: fixed;

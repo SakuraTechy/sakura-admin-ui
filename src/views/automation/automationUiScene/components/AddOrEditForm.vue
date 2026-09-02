@@ -290,6 +290,7 @@
             :load-execution-step-detail="loadSceneExecutionStepDetail"
             :loading="sceneExecutionLoading"
             :selected-case-id="selectedHistoryCaseId"
+            :auto-expand-scene-id="historyAutoExpandSceneId"
             :live-executions="liveExecutions"
             @cancel-batch="cancelHistoryBatch"
             @cancel-case="cancelHistoryCase"
@@ -815,6 +816,8 @@ interface ExecutionCaseSelection extends ExecutionContext {
 
 const liveExecutions = ref<LiveExecutionCase[]>([])
 const executionRunning = ref(false)
+// 执行发起后自动展开最新批次明细；仅在本轮执行期间生效，翻页或离开历史页即释放。
+const historyAutoExpandSceneId = ref('')
 const executionCaseSelectModalRef = ref<{
   onOpen: (
     record: any,
@@ -883,9 +886,14 @@ function reopenExecutionCaseSelect(payload: ExecutionCaseSelection) {
   })
 }
 
-function handleExecutionStarted() {
+async function handleExecutionStarted() {
   executionRunning.value = true
   detailActiveKey.value = '5'
+  // 执行发起后回到“全部历史”批次口径：单用例历史看不到批次日志与步骤明细。
+  showAllExecutionHistory()
+  // 等待 selectedCaseId 清空引发的展开态重置生效，再指定自动展开目标。
+  await nextTick()
+  historyAutoExpandSceneId.value = activeSceneId.value || ''
 }
 
 async function handleExecutionFinished() {
@@ -894,6 +902,8 @@ async function handleExecutionFinished() {
     if (detailActiveKey.value === '5') await loadSceneExecutionHistory()
     // 最终结果已落库并包含步骤明细，移除临时实时行，报告立即切换到完整历史记录。
     liveExecutions.value = []
+    // 执行结束后释放自动展开，回到用户自由导航。
+    historyAutoExpandSceneId.value = ''
   } finally {
     executionRunning.value = false
   }
@@ -1048,6 +1058,8 @@ const loadSceneExecutionHistory = async () => {
 }
 
 const loadSceneExecutionPage = async (page: number, size: number) => {
+  // 用户主动翻页即接管展开态，避免后续刷新反复把首行重新展开。
+  historyAutoExpandSceneId.value = ''
   sceneExecutionPage.value = page
   sceneExecutionPageSize.value = size
   await loadSceneExecutionHistory()
@@ -1395,6 +1407,8 @@ watch(
     if (props.paneActive && detailActiveKey.value === '5' && activeSceneId.value) {
       void loadSceneExecutionHistory()
     } else {
+      // 离开执行历史或切换场景后释放自动展开目标，回到普通浏览。
+      historyAutoExpandSceneId.value = ''
       sceneExecutionController?.abort()
     }
   },
@@ -1475,9 +1489,19 @@ export default {}
     min-height: 0;
     display: flex;
     flex-direction: column;
-    // 基础信息表单比视口高时自行滚动；用例树是内部滚动，不受影响。
-    overflow: auto;
+    // 左侧 tab 外层不滚动，场景用例和基础信息分别由各自内容区域处理滚动。
+    overflow: hidden;
   }
+
+  // 左侧树只需要纵向浏览；关闭 GiTree 滚动容器及其自绘横向滚动轨道。
+  :deep(.gi-tree__tree .arco-scrollbar-container) {
+    overflow-x: hidden !important;
+  }
+
+  :deep(.gi-tree__tree .arco-scrollbar-track-direction-horizontal) {
+    display: none !important;
+  }
+
 }
 
 :deep(.w-full) {
