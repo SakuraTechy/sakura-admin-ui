@@ -442,6 +442,13 @@
                 <a-form-item label="执行邮箱"><a-input v-model="execState.executeEmail" allow-clear /></a-form-item>
               </a-col>
             </a-row>
+            <a-collapse v-if="canReviewAdmin" :bordered="false">
+              <a-collapse-item key="review-gate" header="管理员放行">
+                <a-form-item label="放行原因">
+                  <a-textarea v-model="execState.reviewGateBypassReason" :max-length="1000" show-word-limit :auto-size="{ minRows: 2, maxRows: 4 }" />
+                </a-form-item>
+              </a-collapse-item>
+            </a-collapse>
           </a-form>
         </div>
       </a-spin>
@@ -537,6 +544,7 @@ import type {
   LiveExecutionCase,
 } from '@/views/automation/automationUiScene/execution'
 import { useUserStore } from '@/stores/modules/user'
+import has from '@/utils/has'
 
 defineOptions({ name: 'TestTestPlan' })
 
@@ -1018,13 +1026,16 @@ const execState = reactive<{
   automationEnvironmentId?: string
   executeName: string
   executeEmail: string
+  reviewGateBypassReason: string
 }>({
   executionEngine: 'SELENIUM',
   projectEnvironmentId: undefined,
   automationEnvironmentId: undefined,
   executeName: '',
   executeEmail: '',
+  reviewGateBypassReason: '',
 })
+const canReviewAdmin = computed(() => has.hasPerm('automation:automationUiScene:review:admin'))
 
 const fillCurrentExecutor = () => {
   execState.executeName = userStore.userInfo.nickname || userStore.userInfo.username || ''
@@ -1410,6 +1421,7 @@ const openExecModal = (record: TestPlanResp) => {
   execState.executionEngine = 'SELENIUM'
   execState.projectEnvironmentId = undefined
   execState.automationEnvironmentId = undefined
+  execState.reviewGateBypassReason = ''
   fillCurrentExecutor()
   resetExecRuntimeConfig()
   execVisible.value = true
@@ -1458,6 +1470,7 @@ const cdpPlanDispatch = ref<{
   reportId: string
   projectEnvironmentId: string
   cdpOptions: AutomationCdpPlaybackOptions
+  reviewGateBypassReason?: string
   queue: Array<{ scene: any, caseIds: string[] }>
 } | null>(null)
 
@@ -1704,6 +1717,7 @@ const onPlaywrightExecutionFinished = async (payload?: { cancelled?: boolean }) 
         testReportId: cdpPlanDispatch.value.reportId,
         projectEnvironmentId: cdpPlanDispatch.value.projectEnvironmentId,
         cdpOptions: cdpPlanDispatch.value.cdpOptions,
+        reviewGateBypassReason: cdpPlanDispatch.value.reviewGateBypassReason,
         autoStart: true,
       })
       return
@@ -1921,6 +1935,7 @@ async function submitExecute(): Promise<boolean> {
         : undefined,
       executeName: execState.executeName,
       executeEmail: execState.executeEmail,
+      reviewGateBypassReason: execState.reviewGateBypassReason || undefined,
     })
     data = response.data
   } catch {
@@ -1965,6 +1980,7 @@ async function submitExecute(): Promise<boolean> {
       reportId: String(executeResp.testReportId),
       projectEnvironmentId,
       cdpOptions: { ...execCdpConfig },
+      reviewGateBypassReason: execState.reviewGateBypassReason || undefined,
       queue,
     }
     const first = cdpPlanDispatch.value.queue.shift()
@@ -1976,6 +1992,7 @@ async function submitExecute(): Promise<boolean> {
         testReportId: String(executeResp.testReportId),
         projectEnvironmentId,
         cdpOptions: cdpPlanDispatch.value.cdpOptions,
+        reviewGateBypassReason: cdpPlanDispatch.value.reviewGateBypassReason,
         autoStart: true,
       })
     } else {

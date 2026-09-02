@@ -327,6 +327,15 @@
             </a-card>
           </a-col>
         </a-row>
+        <a-collapse v-if="canReviewAdmin" :bordered="false" class="admin-bypass">
+          <a-collapse-item key="review-gate" header="管理员放行">
+            <a-form layout="vertical">
+              <a-form-item label="放行原因">
+                <a-textarea v-model="reviewGateBypassReason" :disabled="running" :max-length="1000" show-word-limit :auto-size="{ minRows: 2, maxRows: 4 }" />
+              </a-form-item>
+            </a-form>
+          </a-collapse-item>
+        </a-collapse>
       </div>
     </a-spin>
 
@@ -386,6 +395,7 @@ import { getProjectVersionConfig } from '@/apis/project/projectVersionConfig'
 import { useDict } from '@/hooks/app'
 import { useUserStore } from '@/stores'
 import GiCellTag from '@/components/GiCell/GiCellTag.vue'
+import has from '@/utils/has'
 
 interface ProjectEnvironmentOption {
   value: string
@@ -454,6 +464,8 @@ const router = useRouter()
 
 const visible = ref(false)
 const userStore = useUserStore()
+const canReviewAdmin = computed(() => has.hasPerm('automation:automationUiScene:review:admin'))
+const reviewGateBypassReason = ref('')
 const loading = ref(false)
 const previewLoading = ref(false)
 const scene = ref<any>()
@@ -783,6 +795,7 @@ const onOpen = async (
   previewError.value = ''
   previewCaseId.value = ''
   cdpConfiguredCaseId.value = ''
+  reviewGateBypassReason.value = options.reviewGateBypassReason || ''
   resetRunnerConfig()
   resetCdpConfig()
   resetBatchState()
@@ -932,6 +945,7 @@ async function startBatch(caseIds: string[]) {
     executeEmail: userStore.userInfo.email || undefined,
     testPlanId: executionContext.value.testPlanId,
     testReportId: executionContext.value.testReportId,
+    reviewGateBypassReason: reviewGateBypassReason.value || undefined,
     executionConfig: executionType.value === 'extension-cdp'
       ? { ...cdpConfig }
       : buildRunnerOptions(),

@@ -169,6 +169,15 @@
           </template>
         </a-table>
       </a-card>
+      <a-collapse v-if="canReviewAdmin" :bordered="false" class="admin-bypass">
+        <a-collapse-item key="review-gate" header="管理员放行">
+          <a-form :model="form" layout="vertical">
+            <a-form-item label="放行原因">
+              <a-textarea v-model="form.reviewGateBypassReason" :max-length="1000" show-word-limit :auto-size="{ minRows: 2, maxRows: 4 }" />
+            </a-form-item>
+          </a-form>
+        </a-collapse-item>
+      </a-collapse>
     </div>
   </a-modal>
 </template>
@@ -187,6 +196,7 @@ import { useDict } from '@/hooks/app'
 import { pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 import GiCellTag from '@/components/GiCell/GiCellTag.vue'
 import type { LabelValueState } from '@/types/global'
+import has from '@/utils/has'
 
 const { server_type, status_type } = useDict('server_type', 'status_type')
 
@@ -263,6 +273,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const userStore = useUserStore()
+const canReviewAdmin = computed(() => has.hasPerm('automation:automationUiScene:review:admin'))
 
 const visible = ref(false)
 const sceneList = ref<SceneRow[]>([])
@@ -623,6 +634,7 @@ const handleOk = async () => {
           executeName: form.executeName,
           executeEmail: form.executeEmail,
           testPlanId: form.testPlanId,
+          reviewGateBypassReason: form.reviewGateBypassReason,
         } as AutomationUiSceneExecAllReq)
       : execAutomationUiScene(form as AutomationUiSceneExecReq)
     const { data } = await request
@@ -652,6 +664,7 @@ const handleClose = () => {
   form.testPlanId = undefined
   form.projectEnvironmentId = ''
   form.automationEnvironmentId = ''
+  form.reviewGateBypassReason = undefined
 }
 
 defineExpose({ onOpen })

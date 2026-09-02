@@ -18,58 +18,45 @@
         </a-tab-pane>
         <a-tab-pane key="2">
           <template #title>
-            <a-dropdown v-if="uiStore.activeId" trigger="hover">
-              <icon-ordered-list /> 场景用例
-              <template #content>
-                <a-doption v-if="!isReadonly" @click="addCase">
-                  <template #icon>
-                    <icon-plus />
-                  </template>
-                  <template #default>新增用例</template>
-                </a-doption>
-                <a-dsubmenu v-if="!isReadonly">
-                  <template #icon>
-                    <icon-play-arrow />
-                  </template>
-                  <template #default>录制用例</template>
-                  <template #content>
-                    <a-doption @click="openChromeRecording({ allowedModes: ['appendCase'], defaultMode: 'appendCase', fixedTargetScene: true })">
-                      追加用例
-                    </a-doption>
-                    <a-doption @click="openChromeRecording({ allowedModes: ['replaceCase'], defaultMode: 'replaceCase', fixedTargetScene: true })">
-                      替换用例
-                    </a-doption>
-                  </template>
-                </a-dsubmenu>
-                <a-dsubmenu
-                  v-permission="['automation:automationUiScene:execute']"
-                  :disabled="executionRunning"
-                >
-                  <template #icon>
-                    <icon-play-arrow />
-                  </template>
-                  <template #default>执行用例</template>
-                  <template #content>
-                    <a-doption
-                      v-for="item in executionTypeOptions"
-                      :key="item.value"
-                      :disabled="executionRunning"
-                      @click="handleUnifiedExecutionSelect(item.value)"
-                    >
-                      {{ item.label }}
-                    </a-doption>
-                  </template>
-                </a-dsubmenu>
-                <a-doption @click="getSceneInfo()">
-                  <template #icon>
-                    <icon-refresh />
-                  </template>
-                  <template #default>刷新用例</template>
-                </a-doption>
-              </template>
-            </a-dropdown>
-            <span v-else><icon-ordered-list /> 场景用例</span>
+            <icon-ordered-list /> 场景用例
           </template>
+          <div v-if="uiStore.activeId" class="case-toolbar">
+            <a-space size="mini">
+              <a-tooltip v-if="!isReadonly" content="新增用例">
+                <a-button shape="circle" aria-label="新增用例" @click="addCase">
+                  <template #icon><icon-plus /></template>
+                </a-button>
+              </a-tooltip>
+              <a-dropdown v-if="!isReadonly" trigger="click" @select="handleRecordingMenuSelect">
+                <a-tooltip content="录制用例">
+                  <a-button shape="circle" aria-label="录制用例">
+                    <template #icon><icon-record /></template>
+                  </a-button>
+                </a-tooltip>
+                <template #content>
+                  <a-doption value="appendCase">追加用例</a-doption>
+                  <a-doption value="replaceCase">替换用例</a-doption>
+                </template>
+              </a-dropdown>
+              <a-dropdown v-if="canExecute" trigger="click" @select="handleUnifiedExecutionSelect">
+                <a-tooltip content="执行用例">
+                  <a-button type="primary" shape="circle" aria-label="执行用例" :disabled="executionRunning">
+                    <template #icon><icon-play-arrow /></template>
+                  </a-button>
+                </a-tooltip>
+                <template #content>
+                  <a-doption v-for="item in executionTypeOptions" :key="item.value" :value="item.value">
+                    {{ item.label }}
+                  </a-doption>
+                </template>
+              </a-dropdown>
+              <a-tooltip content="刷新用例">
+                <a-button shape="circle" aria-label="刷新用例" @click="getSceneInfo()">
+                  <template #icon><icon-refresh /></template>
+                </a-button>
+              </a-tooltip>
+            </a-space>
+          </div>
           <AutomationUiSceneAddCase
             v-if="uiStore.activeId"
             ref="caseListRef"
@@ -242,7 +229,16 @@
         </a-tab-pane>
         <a-tab-pane key="3" title="评审信息">
           <template #title>评审信息</template>
-          Content of Tab Panel 3
+          <AutomationCaseReviewPanel
+            v-permission="['automation:automationUiScene:review:view']"
+            :scene-id="sceneDetail?.id"
+            :project-id="sceneDetail?.projectId"
+            :definition-version="sceneDetail?.definitionVersion"
+            :case-id="selectedHistoryCaseId || undefined"
+            :selected-step-id="stepDetail?.id"
+            :readonly="isReadonly"
+            @select-step="handleReviewStepSelect"
+          />
         </a-tab-pane>
         <a-tab-pane key="5" title="执行历史">
           <AutomationExecutionHistoryPanel
@@ -307,6 +303,7 @@ import ChromeRecordingModal from './ChromeRecordingModal.vue'
 import AutomationExecutionCaseSelectModal from './AutomationExecutionCaseSelectModal.vue'
 import AutomationExecutionCaseModal from './AutomationExecutionCaseModal.vue'
 import AutomationExecutionHistoryPanel from './AutomationExecutionHistoryPanel.vue'
+import AutomationCaseReviewPanel from './review/AutomationCaseReviewPanel.vue'
 // import { AiEditor } from '@/components/GiEditor/AiEditor.vue'
 // import QuillEditor from '@/components/GiEditor/QuillEditor.vue'
 
@@ -314,6 +311,7 @@ import type { ColumnItem, GiForm } from '@/components/GiForm'
 import { useResetReactive } from '@/hooks'
 import type { ProjectModuleConfigResp } from '@/apis/project/projectModuleConfig'
 import mittBus from '@/utils/mitt'
+import has from '@/utils/has'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
 import { filterSceneStatusOptions, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
@@ -348,6 +346,7 @@ const emit = defineEmits<{
 }>()
 
 const uiStore = useUiStore()
+const canExecute = computed(() => has.hasPerm('automation:automationUiScene:execute'))
 const formRef = ref<InstanceType<typeof GiForm>>()
 const { scene_level, browser_type, status_type } = useDict('scene_level', 'browser_type', 'status_type')
 
@@ -772,6 +771,11 @@ const handleUnifiedExecutionSelect = async (value: string) => {
   })
 }
 
+const handleRecordingMenuSelect = (value: string) => {
+  const mode: RecordingMode = value === 'replaceCase' ? 'replaceCase' : 'appendCase'
+  openChromeRecording({ allowedModes: [mode], defaultMode: mode, fixedTargetScene: true })
+}
+
 const handleCaseExecution = async (payload: { caseId: string, executionType: string }) => {
   if (executionRunning.value) {
     Message.warning('已有用例正在执行，请等待当前任务结束')
@@ -1044,6 +1048,10 @@ const clearCaseSelection = () => {
   stepDetail.value = undefined
   selectedHistoryCaseId.value = ''
 }
+const handleReviewStepSelect = (stepId: string) => {
+  if (!selectedHistoryCaseId.value || !stepId) return
+  caseListRef.value?.selectNode({ type: 'STEP', caseId: selectedHistoryCaseId.value, stepId })
+}
 const showAllExecutionHistory = () => {
   caseListRef.value?.clearSelection()
   clearCaseSelection()
@@ -1104,9 +1112,21 @@ const addCase = () => {
   }
 }
 
+const openReview = async (caseId: string) => {
+  if (!caseId) return
+  await getSceneInfo()
+  await nextTick()
+  // 已删除用例不再存在于树中，但仍需允许从治理队列只读查看其评审快照。
+  selectedHistoryCaseId.value = caseId
+  caseListRef.value?.selectNode({ type: 'CASE', caseId })
+  activeKey.value = '2'
+  detailActiveKey.value = '3'
+}
+
 defineExpose({
   getSceneInfo,
   getCaseList,
+  openReview,
 })
 </script>
 
@@ -1226,6 +1246,12 @@ export default {}
 
 .recording-tab-content {
   padding-bottom: 16px;
+}
+
+.case-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 8px 8px;
 }
 
 .recording-path-line {

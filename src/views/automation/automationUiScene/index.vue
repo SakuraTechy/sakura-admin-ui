@@ -73,6 +73,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { mapTree } from 'xe-utils'
 import TabList from './components/tab/tabList.vue'
@@ -84,10 +85,12 @@ import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
 import type { LiveExecutionCase } from './execution'
 import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
+import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 
 defineOptions({ name: 'Ui' })
 
 const uiStore = useUiStore()
+const route = useRoute()
 
 const selectedKeys = ref()
 const multiple = ref(false)
@@ -341,6 +344,24 @@ onMounted(async () => {
   await uiStore.fetchUsers()
   // }
   uiStore.activeKey = '0'
+  const sceneId = Array.isArray(route.query.sceneId) ? route.query.sceneId[0] : route.query.sceneId
+  const caseId = Array.isArray(route.query.caseId) ? route.query.caseId[0] : route.query.caseId
+  if (sceneId) {
+    try {
+      const { data } = await getAutomationUiScene(sceneId)
+      if (data?.projectId && String(uiStore.projectId || '') !== String(data.projectId)) {
+        uiStore.projectId = String(data.projectId)
+        await uiStore.fetchVersions(String(data.projectId))
+      }
+      if (data?.versionId) uiStore.versionId = String(data.versionId)
+      await uiStore.fetchTrees(String(data.projectId), String(data.versionId))
+      await addTab(data)
+      await nextTick()
+      if (caseId && route.query.view === 'review') await addOrEditFormRef.value?.openReview(String(caseId))
+    } catch {
+      Message.error('无法打开评审对应的场景')
+    }
+  }
 })
 </script>
 

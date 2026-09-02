@@ -25,6 +25,7 @@ export interface AutomationPlaywrightBatchCreateReq {
   executeEmail?: string
   testPlanId?: string
   testReportId?: string
+  reviewGateBypassReason?: string
   executionConfig?: Record<string, unknown>
   cdpOptions?: AutomationCdpPlaybackOptions
 }

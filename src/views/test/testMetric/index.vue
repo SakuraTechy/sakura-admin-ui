@@ -89,13 +89,10 @@
               <div class="asset-module-tree">
                 <div class="asset-module-tree__header">
                   <span>模块层级</span>
-                  <div>
-                    <small>{{ moduleTreeSummary }}</small>
-                    <a-link v-if="selectedModuleNode" class="asset-module-tree__reset" @click="clearModuleSelection">查看全部</a-link>
-                  </div>
+                  <small>{{ moduleTreeSummary }}</small>
                 </div>
                 <a-input
-                  v-if="moduleTreeNodes.length > 8"
+                  v-if="moduleTreeNodeCount > 8"
                   v-model="moduleTreeSearch"
                   size="small"
                   allow-clear
@@ -126,15 +123,45 @@
                   </a-tree>
                   <a-empty v-else description="未找到匹配模块" />
                 </a-scrollbar>
-                <div class="asset-module-selection">
-                  <template v-if="selectedModuleNode">
-                    <span>当前模块场景占比</span>
-                    <strong>{{ selectedModuleShare }}</strong>
-                    <small>{{ selectedModuleNode.label }} · {{ formatNumber(selectedModuleNode.totalSceneCount) }} / {{ formatNumber(inventory.sceneTotal) }} 个场景</small>
-                  </template>
-                  <span v-else>点击模块查看对应场景占比</span>
-                </div>
               </div>
+              <aside class="asset-module-selection">
+                <div class="asset-module-selection__header">
+                  <span>{{ selectedModuleNode ? '当前模块场景占比' : '全部模块场景概览' }}</span>
+                  <a-link v-if="selectedModuleNode" class="asset-module-tree__reset" @click="clearModuleSelection">查看全部</a-link>
+                </div>
+                <template v-if="selectedModuleNode">
+                  <a-typography-paragraph class="asset-module-selection__name" :ellipsis="{ rows: 2, showTooltip: true, css: true }">
+                    {{ selectedModuleNode.label }}
+                  </a-typography-paragraph>
+                  <div class="asset-module-selection__share">
+                    <strong>{{ selectedModuleShare }}</strong>
+                    <span>占全部场景</span>
+                  </div>
+                  <a-progress
+                    class="asset-module-selection__progress"
+                    :percent="selectedModuleShareRatio"
+                    :show-text="false"
+                    size="small"
+                  />
+                  <div class="asset-module-selection__stats">
+                    <div><span>直接归属</span><strong>{{ formatNumber(selectedModuleNode.count) }}</strong></div>
+                    <div><span>含子模块</span><strong>{{ formatNumber(selectedModuleNode.totalSceneCount) }}</strong></div>
+                    <div><span>全部场景</span><strong>{{ formatNumber(inventory.sceneTotal) }}</strong></div>
+                  </div>
+                </template>
+                <template v-else>
+                  <div class="asset-module-selection__all">
+                    <strong>{{ formatNumber(inventory.sceneTotal) }}</strong>
+                    <span>个启用场景</span>
+                  </div>
+                  <a-progress class="asset-module-selection__progress" :percent="1" :show-text="false" size="small" />
+                  <div class="asset-module-selection__stats asset-module-selection__stats--all">
+                    <div><span>模块总数</span><strong>{{ formatNumber(moduleTreeNodeCount) }}</strong></div>
+                    <div><span>场景总数</span><strong>{{ formatNumber(inventory.sceneTotal) }}</strong></div>
+                  </div>
+                  <p class="asset-module-selection__hint">选择左侧模块，可查看直接归属及包含子模块后的场景占比。</p>
+                </template>
+              </aside>
             </div>
             <div v-else class="asset-empty"><a-empty description="当前版本暂无启用模块" /></div>
           </div>
@@ -647,10 +674,13 @@ const findModuleNode = (nodes: MetricModuleTreeNode[], key?: string): MetricModu
 }
 
 const selectedModuleNode = computed(() => findModuleNode(moduleTreeNodes.value, selectedModuleKey.value))
-const selectedModuleShare = computed(() => {
+const selectedModuleShareRatio = computed(() => {
   const total = Number(inventory.value.sceneTotal || 0)
   const count = Number(selectedModuleNode.value?.totalSceneCount || 0)
-  return total > 0 ? `${(count / total * 100).toFixed(1)}%` : '--'
+  return total > 0 ? Math.min(count / total, 1) : 0
+})
+const selectedModuleShare = computed(() => {
+  return inventory.value.sceneTotal > 0 ? `${(selectedModuleShareRatio.value * 100).toFixed(1)}%` : '--'
 })
 
 const moduleChartItems = computed<InventoryItem[]>(() => {
@@ -1503,10 +1533,10 @@ onMounted(async () => {
   gap: 12px;
 }
 
-.asset-grid,
 .snapshot-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+.asset-grid { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); }
 
 .asset-panel,
 .snapshot-panel { min-width: 0; }
@@ -1515,8 +1545,8 @@ onMounted(async () => {
 .asset-empty { display: grid; place-items: center; min-height: 230px; }
 .asset-module-content {
   display: grid;
-  grid-template-columns: minmax(150px, 36%) minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(160px, 28%) minmax(280px, 360px) minmax(220px, 1fr);
+  gap: 0;
   height: 230px;
   padding: 0 14px 10px;
   box-sizing: border-box;
@@ -1527,7 +1557,8 @@ onMounted(async () => {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  padding: 10px 0 0;
+  padding: 10px 14px 0 8px;
+  border-right: 1px solid var(--color-border-2);
 }
 .asset-module-tree__header {
   display: flex;
@@ -1545,38 +1576,109 @@ onMounted(async () => {
   font-size: 11px;
   font-weight: 400;
 }
-.asset-module-tree__reset { margin-left: 8px; font-size: 11px; }
 .asset-module-tree > .arco-input-wrapper { flex: 0 0 auto; margin-top: 6px; }
 .asset-module-tree__scroll { min-height: 0; flex: 1; margin-top: 5px; }
 .asset-module-tree__node {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: block;
   min-width: 0;
-  gap: 8px;
   width: 100%;
+  padding-right: 40px;
+  box-sizing: border-box;
 }
 .asset-module-tree__node .arco-typography { min-width: 0; margin: 0; color: var(--color-text-2); font-size: 12px; line-height: 20px; }
-.asset-module-tree__node > span { flex: 0 0 auto; color: var(--color-text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
-.asset-module-tree__scroll :deep(.arco-tree-node-title) { min-width: 0; padding-right: 4px; }
-.asset-module-tree__scroll :deep(.arco-tree-node) { min-height: 28px; }
-.asset-module-tree__scroll :deep(.arco-tree-node-title-text) { min-width: 0; flex: 1; }
-.asset-module-selection {
-  display: grid;
-  grid-template-columns: auto auto;
-  align-items: baseline;
-  gap: 2px 8px;
-  min-height: 36px;
-  margin-top: 6px;
-  padding: 5px 8px;
+.asset-module-tree__node > span {
+  position: absolute;
+  top: 50%;
+  right: 8px;
   color: var(--color-text-3);
-  background: var(--color-fill-2);
-  border-radius: 3px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
+}
+.asset-module-tree__scroll :deep(.arco-tree),
+.asset-module-tree__scroll :deep(.arco-tree-node-list),
+.asset-module-tree__scroll :deep(.arco-tree-node) { width: 100%; box-sizing: border-box; }
+.asset-module-tree__scroll :deep(.arco-tree-node-title) { min-width: 0; width: 0; flex: 1; padding-right: 4px; }
+.asset-module-tree__scroll :deep(.arco-tree-node) { min-height: 28px; }
+.asset-module-tree__scroll :deep(.arco-tree-node-title-text) { display: block; min-width: 0; width: 100%; flex: 1; }
+.asset-module-selection {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  margin: 10px 0 4px;
+  padding-left: 14px;
+  color: var(--color-text-3);
   font-size: 11px;
   line-height: 16px;
 }
-.asset-module-selection strong { color: var(--color-text-1); font-size: 15px; line-height: 20px; }
-.asset-module-selection small { grid-column: 1 / -1; overflow: hidden; color: var(--color-text-3); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.asset-module-selection__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+  color: var(--color-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.asset-module-selection__header .arco-link { flex: 0 0 auto; padding: 0; font-size: 11px; }
+.asset-module-selection__name {
+  min-height: 20px;
+  margin: 10px 0 0 !important;
+  color: var(--color-text-1) !important;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.asset-module-selection__share,
+.asset-module-selection__all {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 7px;
+}
+.asset-module-selection__share strong,
+.asset-module-selection__all strong {
+  color: var(--color-text-1);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 30px;
+  font-variant-numeric: tabular-nums;
+}
+.asset-module-selection__progress { margin-top: 5px; }
+.asset-module-selection__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-2);
+}
+.asset-module-selection__stats > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 7px;
+  border-right: 1px solid var(--color-border-2);
+  text-align: center;
+}
+.asset-module-selection__stats > div:first-child { padding-left: 0; }
+.asset-module-selection__stats > div:last-child { padding-right: 0; border-right: 0; }
+.asset-module-selection__stats span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-module-selection__stats strong {
+  color: var(--color-text-1);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.asset-module-selection__stats--all { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.asset-module-selection__hint {
+  margin: 10px 0 0;
+  color: var(--color-text-3);
+  font-size: 11px;
+  line-height: 17px;
+}
 
 .kpi-grid {
   display: grid;
@@ -1860,6 +1962,7 @@ onMounted(async () => {
 @media (max-width: 1200px) {
   .metric-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-filter-form__actions { justify-self: start; }
+  .asset-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 900px) {
@@ -1870,6 +1973,19 @@ onMounted(async () => {
   .status-item { border-right: 0; border-bottom: 1px solid var(--color-border-2); }
   .status-item:last-child { border-bottom: 0; }
   .asset-grid, .snapshot-grid, .chart-grid { grid-template-columns: 1fr; }
+  .asset-module-content {
+    grid-template-columns: minmax(160px, .8fr) minmax(220px, 1.2fr);
+    height: auto;
+  }
+  .asset-module-content .asset-module-chart { height: 210px; }
+  .asset-module-tree { height: 210px; border-right: 0; }
+  .asset-module-selection {
+    grid-column: 1 / -1;
+    min-height: 130px;
+    margin: 0;
+    padding: 10px 0 2px;
+    border-top: 1px solid var(--color-border-2);
+  }
   .value-layout { grid-template-columns: 1fr; }
   .value-primary { border-right: 0; border-bottom: 1px solid var(--color-border-2); }
 }
@@ -1880,7 +1996,9 @@ onMounted(async () => {
   .asset-chart { height: 280px; }
   .asset-module-content { grid-template-columns: 1fr; height: auto; gap: 0; padding: 0 12px 12px; }
   .asset-module-content .asset-module-chart { height: 170px; }
-  .asset-module-tree { height: 190px; padding-top: 4px; }
+  .asset-module-tree { height: 210px; padding: 4px 0 8px; border-bottom: 1px solid var(--color-border-2); }
+  .asset-module-selection { grid-column: auto; min-height: 0; padding-top: 10px; border-top: 0; }
+  .asset-module-selection__stats { margin-top: 10px; }
   .snapshot-stats { grid-template-columns: 1fr; }
   .snapshot-stat { border-right: 0; }
   .snapshot-stat:nth-last-child(-n+2) { border-bottom: 1px solid var(--color-border-2); }

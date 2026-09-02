@@ -24,6 +24,7 @@ export interface ExecutionCaseOpenOptions extends ExecutionContext {
   projectEnvironmentId?: string
   autoStart?: boolean
   cdpOptions?: import('@/apis/automation/automationPlaywrightRunner').AutomationCdpPlaybackOptions
+  reviewGateBypassReason?: string
 }
 
 export interface ExecutionRecordTarget {

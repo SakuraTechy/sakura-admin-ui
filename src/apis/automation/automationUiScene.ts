@@ -154,7 +154,7 @@ export interface AutomationUiSceneExecReq {
   testPlanId?: string
   /** 测试报告ID，用于精确隔离同一计划的多次执行 */
   testReportId?: string
-  testReportId?: string
+  reviewGateBypassReason?: string
 }
 
 export interface AutomationUiSceneExecAllReq {
@@ -172,6 +172,7 @@ export interface AutomationUiSceneExecAllReq {
   executeEmail?: string
   testPlanId?: string
   testReportId?: string
+  reviewGateBypassReason?: string
 }
 
 export interface AutomationUiStepConfig {

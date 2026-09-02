@@ -206,9 +206,22 @@ async function inspectViewport(client, viewport) {
 
   await evaluate(client, `document.querySelector('.asset-module-tree .arco-tree-node-title')?.click()`)
   await delay(250)
-  diagnostics.moduleSelectionInteractive = await evaluate(client, `Boolean(document.querySelector('.asset-module-selection strong'))`)
+  const moduleSelection = await evaluate(client, `(() => {
+    const tree = document.querySelector('.asset-module-tree')?.getBoundingClientRect()
+    const detail = document.querySelector('.asset-module-selection')?.getBoundingClientRect()
+    if (!tree || !detail) return { interactive: false, placementValid: false }
+    return {
+      interactive: Boolean(document.querySelector('.asset-module-selection__share strong')),
+      placementValid: innerWidth > 900
+        ? detail.left >= tree.right - 1
+        : detail.top >= tree.bottom - 1,
+    }
+  })()`)
+  diagnostics.moduleSelectionInteractive = moduleSelection.interactive
+  diagnostics.moduleSelectionPlacementValid = moduleSelection.placementValid
   await evaluate(client, `document.querySelector('.asset-module-tree__reset')?.click()`)
   await delay(150)
+  diagnostics.moduleSelectionReset = await evaluate(client, `!document.querySelector('.asset-module-selection__share')`)
 
   await evaluate(client, `document.querySelector('.metric-page').scrollTop = 0`)
   await delay(350)
@@ -232,6 +245,8 @@ async function inspectViewport(client, viewport) {
     valueLayout: diagnostics.valueLayoutValid,
     moduleHierarchy: diagnostics.moduleTreePresent,
     moduleSelection: diagnostics.moduleSelectionInteractive,
+    moduleSelectionPlacement: diagnostics.moduleSelectionPlacementValid,
+    moduleSelectionReset: diagnostics.moduleSelectionReset,
     defectLabel: diagnostics.defectLabelPresent,
     laborLabel: diagnostics.laborLabelPresent,
     executionValue: diagnostics.executionValuePresent,

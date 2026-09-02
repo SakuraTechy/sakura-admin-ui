@@ -234,6 +234,9 @@ const addTab = (record?: any) => {
         return pane
       })
       uiStore.activeKey = samePane[0].key
+      uiStore.activeId = String(samePane[0].id || '')
+      uiStore.activeReadonly = Boolean(samePane[0].readonly)
+      uiStore.activeCopy = Boolean(samePane[0].copy)
       return
     }
   }
@@ -256,7 +259,9 @@ const addTab = (record?: any) => {
 
   // 设置为当前激活的标签页
   uiStore.activeKey = newKey
-  uiStore.activeId = ''
+  uiStore.activeId = record?.id ? String(record.id) : ''
+  uiStore.activeReadonly = Boolean(record?.readonly)
+  uiStore.activeCopy = Boolean(record?.copy)
   newTabIndex.value++
 }
 

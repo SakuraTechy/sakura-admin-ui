@@ -68,6 +68,7 @@ export interface TestPlanExecuteReq {
   cdpOptions?: AutomationCdpPlaybackOptions
   executeName?: string
   executeEmail?: string
+  reviewGateBypassReason?: string
 }
 
 export interface TestPlanExecuteResp {

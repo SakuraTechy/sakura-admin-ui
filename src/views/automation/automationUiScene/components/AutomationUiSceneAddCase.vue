@@ -1381,6 +1381,10 @@ const clearSelection = () => {
   checkedKeys.value = []
   emit('selection-clear')
 }
+const selectNode = (ref: AutomationUiTreeNodeRef) => {
+  const node = findTreeNode(ref)
+  if (node) onNodeClick({ node, selected: true })
+}
 const exitBatchDeleteMode = () => {
   checkedKeys.value = []
   selectionMode.value = 'single'
@@ -1615,6 +1619,7 @@ defineExpose({
   onMenuClick,
   getTreeCaseList,
   clearSelection,
+  selectNode,
 })
 </script>
 
