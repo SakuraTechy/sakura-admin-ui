@@ -24,6 +24,7 @@
       :load-execution-cases="loadExecutionCases"
       :load-execution-steps="loadExecutionSteps"
       :load-execution-step-detail="loadExecutionStepDetail"
+      :auto-expand-scene-id="historyAutoExpandSceneId"
       :live-executions="liveExecutions"
       :scene-filter-value="sceneFilterValue"
       :scene-filter-options="sceneFilterOptions"
@@ -84,6 +85,8 @@ let pollTimer: number | undefined
 let refreshing = false
 let requestGeneration = 0
 let workspaceController: AbortController | undefined
+// 首次打开历史或刷新后自动展开目标场景的最新批次（跟随用户视角）。
+const historyAutoExpandSceneId = ref('')
 
 const scenes = computed(() => sceneSummaries.value.map(scene => ({
   id: scene.sceneDbId,
@@ -211,6 +214,8 @@ const changeScenePage = async (page: number) => {
 }
 
 const onSceneChange = async (sceneId: string) => {
+  // 用户切换场景筛选即接管展开态。
+  historyAutoExpandSceneId.value = ''
   sceneFilterValue.value = sceneId || ALL_SCENES
   executionPage.value = 1
   await refresh(true)
@@ -218,6 +223,8 @@ const onSceneChange = async (sceneId: string) => {
 
 const loadExecutionPage = async (page: number, size: number) => {
   if (!sceneFilterValue.value) return
+  // 用户主动翻页即接管展开态。
+  historyAutoExpandSceneId.value = ''
   executionPage.value = page
   executionPageSize.value = size
   await refresh(true)
@@ -300,6 +307,8 @@ const openHistory = async (sceneId?: string) => {
     sceneFilterValue.value = sceneId || ALL_SCENES
     executionPage.value = 1
   }
+  // 首次打开或刷新时标记场景以自动展开，保持用户工作连续（执行后跳转）。
+  historyAutoExpandSceneId.value = sceneId || ''
   await refresh()
   startPolling()
 }

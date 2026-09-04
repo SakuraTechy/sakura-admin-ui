@@ -8,6 +8,8 @@
     :tree-data="treeList"
     :field-names="{ key: 'treeKey', title: 'name', children: 'children' }"
     :loading="loading"
+    disable-horizontal
+    :virtual-threshold="0"
     :disabled="readonly || mutationLoading"
     :draggable="!readonly && !mutationLoading && selectionMode !== 'batch-delete'"
     :allow-node-drop="canDrop"
@@ -1683,9 +1685,16 @@ export default {}
 }
 :deep(.gi-tree__tree){
   // height: 11%;
-  margin-bottom: 10px;
+  margin-bottom: 5px;
 }
-
+:deep(.automation-step-number) {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  color: var(--color-text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
 :global(.remark-editor-collapse .arco-collapse-item-content) {
   padding-right: 0;
   padding-left: 0;
