@@ -68,6 +68,21 @@ export default defineConfig(({ command, mode }) => {
         },
         // 证书系统代理配置
         '/api/certificate': {
+          // 服务器部署需要配置 Nginx 代理
+          // location ^~ /certificate2-api/ {
+          //   proxy_pass https://172.24.4.222/;
+          //   proxy_ssl_server_name on;
+          //   proxy_ssl_verify off;
+
+          //   proxy_set_header Host 172.24.4.222;
+          //   proxy_set_header X-Real-IP $remote_addr;
+          //   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          //   proxy_set_header X-Forwarded-Proto $scheme;
+
+          //   # The certificate service rejects the frontend Origin during  preflight.
+          //   proxy_set_header Origin "";
+          //   proxy_set_header Referer "";
+          // }
           target: certificateTarget, // 从 public/config.js 的 environment.url 读取
           changeOrigin: true, // 允许跨域
           secure: false, // 支持https（如果证书无效可设为false）
