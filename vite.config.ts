@@ -11,9 +11,10 @@ function loadCertificateTarget() {
 
   runInNewContext(source, sandbox, { filename: configPath })
 
-  const target = sandbox.window.config?.environment?.url
+  const target = sandbox.window.config?.environment?.proxyTarget
+    || sandbox.window.config?.environment?.url
   if (typeof target !== 'string' || !target.trim())
-    throw new Error(`public/config.js 中未找到有效的 environment.url: ${configPath}`)
+    throw new Error(`public/config.js 中未找到有效的 environment.proxyTarget: ${configPath}`)
 
   return target
 }
@@ -69,7 +70,7 @@ export default defineConfig(({ command, mode }) => {
         // 证书系统代理配置
         '/api/certificate': {
           // 服务器部署需要配置 Nginx 代理
-          // location ^~ /certificate2-api/ {
+          // location ^~ /api/certificate/ {
           //   proxy_pass https://172.24.4.222/;
           //   proxy_ssl_server_name on;
           //   proxy_ssl_verify off;

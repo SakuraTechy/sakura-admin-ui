@@ -232,8 +232,8 @@ export interface CertificateConfig {
   environment: {
     /** 系统URL */
     url: string
-    /** 开发环境URL */
-    devUrl?: string
+    /** 证书系统真实地址 */
+    proxyTarget?: string
     /** 登录接口 */
     login: string
     /** 用户名 */

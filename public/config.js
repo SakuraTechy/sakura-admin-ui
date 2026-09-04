@@ -2,12 +2,11 @@
 window.config = {
   // 证书系统环境配置
   environment: {
-    // 证书系统基础URL（生产环境）
-    url: 'https://172.24.4.222',
+    // 浏览器访问前缀；生产环境由当前站点的 Nginx 转发，避免跨域并确保请求经过代理
+    url: '/api/certificate',
 
-    // 开发环境URL（可选，仅在开发环境生效）
-    // 开发环境下，前端请求会使用 devUrl，但后端下载证书文件仍使用 url
-    devUrl: '/api/certificate',  // 通过 vite.config.ts 代理到证书系统
+    // 证书系统真实地址，仅供 Vite 开发代理和需要直连的服务端场景使用
+    proxyTarget: 'https://172.24.4.222',
 
     // 自动登录配置
     username: 'liuzhi',

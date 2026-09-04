@@ -554,11 +554,8 @@ async function loadConfig() {
 
     const environment = { ...cfg.environment }
 
-    // 保存原始的生产环境URL，用于后端下载证书文件
-    environment.productionUrl = cfg.environment.url
-
-    if (import.meta.env.DEV && environment.devUrl)
-      environment.url = environment.devUrl
+    // 保存证书系统真实地址，用于后端下载证书文件；浏览器 API 仍走同源 Nginx 前缀。
+    environment.productionUrl = cfg.environment.productionUrl || cfg.environment.proxyTarget || cfg.environment.url
 
     config.value = { ...cfg, environment }
   }
@@ -949,10 +946,10 @@ async function downloadFileToServer() {
       // 开发环境：通过当前前端地址的代理访问，避免SSL证书问题
       // 生产环境：直接使用生产环境URL
       let downloadUrl
-      if (import.meta.env.DEV && config.value.environment.devUrl) {
+      if (import.meta.env.DEV) {
         // 使用当前浏览器地址 + 代理路径
         const origin = window.location.origin
-        downloadUrl = `${origin}${config.value.environment.devUrl}${config.value.environment.download}/${record.licenseId}`
+        downloadUrl = `${origin}${config.value.environment.url}${config.value.environment.download}/${record.licenseId}`
       }
       else {
         downloadUrl = `${config.value.environment.productionUrl}${config.value.environment.download}/${record.licenseId}`

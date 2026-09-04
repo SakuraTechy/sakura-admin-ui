@@ -122,10 +122,7 @@ const getCertificateConfig = () => {
 const buildCertificateUrl = (endpoint: string) => {
   const config = getCertificateConfig()
   if (!config?.environment) return endpoint
-  // 开发环境优先使用 devUrl（代理），生产环境使用 url
-  const baseUrl = (import.meta.env.DEV && config.environment.devUrl)
-    ? config.environment.devUrl
-    : (config.environment.url || '')
+  const baseUrl = config.environment.url || ''
   return `${baseUrl}${endpoint}`
 }
 

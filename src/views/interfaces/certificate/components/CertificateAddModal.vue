@@ -244,10 +244,7 @@ const buildCertificateUrl = (endpoint: string, pathParams: Record<string, string
   Object.entries(pathParams).forEach(([key, value]) => {
     resolvedEndpoint = resolvedEndpoint.replace(`{${key}}`, encodeURIComponent(String(value)))
   })
-  // 开发环境优先使用 devUrl（代理），生产环境使用 url
-  const baseUrl = (import.meta.env.DEV && config.environment.devUrl)
-    ? config.environment.devUrl
-    : (config.environment.url || '')
+  const baseUrl = config.environment.url || ''
   return `${baseUrl}${resolvedEndpoint}`
 }
 
