@@ -363,3 +363,17 @@ export function timeFix() {
   const hour = time.getHours()
   return hour < 9 ? '早上好' : hour <= 11 ? '上午好' : hour <= 13 ? '中午好' : hour < 20 ? '下午好' : '晚上好'
 }
+
+/** @desc 生成随机 UUID */
+export function randomUUID() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID().replace(/-/g, '')
+  }
+  // 降级方案：生成符合 UUID v4 格式的随机字符串
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy-]/g, (c) => {
+    if (c === '-') return ''
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}

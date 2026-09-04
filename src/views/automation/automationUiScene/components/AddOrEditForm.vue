@@ -331,7 +331,6 @@ import { computed, defineEmits, defineProps, nextTick, onUnmounted, reactive, re
 import { add, mapTree } from 'xe-utils'
 import TagsInput from 'vue3-tags-input'
 import { Message, Modal } from '@arco-design/web-vue'
-import { string } from 'sql-formatter/dist/cjs/lexer/regexFactory'
 
 import {
   type ExecutionCaseOpenOptions,

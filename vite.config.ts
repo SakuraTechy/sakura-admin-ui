@@ -1,9 +1,26 @@
 import { URL, fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { runInNewContext } from 'node:vm'
 import { defineConfig, loadEnv } from 'vite'
 import createVitePlugins from './config/plugins'
 
+function loadCertificateTarget() {
+  const configPath = fileURLToPath(new URL('./public/config.js', import.meta.url))
+  const source = readFileSync(configPath, 'utf8')
+  const sandbox: { window: Record<string, any> } = { window: {} }
+
+  runInNewContext(source, sandbox, { filename: configPath })
+
+  const target = sandbox.window.config?.environment?.url
+  if (typeof target !== 'string' || !target.trim())
+    throw new Error(`public/config.js 中未找到有效的 environment.url: ${configPath}`)
+
+  return target
+}
+
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd()) as ImportMetaEnv
+  const certificateTarget = loadCertificateTarget()
 
   return {
     // 开发或生产环境服务的公共基础路径
@@ -31,7 +48,7 @@ export default defineConfig(({ command, mode }) => {
     server: {
       // 开发端口由 .env.development 的 VITE_DEV_PORT 指定；未设 strictPort，占用时 Vite 自动换端口
       port: Number.parseInt(env.VITE_DEV_PORT || '5173', 10),
-       // 是否严格检查端口是否被占用，默认false，占用时Vite 自动换端口
+      // 是否严格检查端口是否被占用，默认false，占用时Vite 自动换端口
       strictPort: false,
       // 后端 Debug 启动会先等待调试器，自动开页会在 8000 端口监听前触发初始化请求。
       // 关闭自动开页，待前后端都启动完成后再手动访问开发地址。
@@ -48,6 +65,20 @@ export default defineConfig(({ command, mode }) => {
           target: 'https://gitee.com',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/gitee/, ''),
+        },
+        // 证书系统代理配置
+        '/api/certificate': {
+          target: certificateTarget, // 从 public/config.js 的 environment.url 读取
+          changeOrigin: true, // 允许跨域
+          secure: false, // 支持https（如果证书无效可设为false）
+          configure: (proxy, _options) => {
+            proxy.on('proxyReq', (proxyReq, _req, _res) => {
+              // The browser request is same-origin after proxying; do not forward its CORS origin.
+              proxyReq.removeHeader('origin')
+              proxyReq.removeHeader('referer')
+            })
+          },
+          rewrite: (path) => path.replace(/^\/api\/certificate/, ''), // 去掉 /api/certificate 前缀
         },
       },
     },
