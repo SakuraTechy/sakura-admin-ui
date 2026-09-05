@@ -287,7 +287,7 @@ const selectPermission = (record) => {
 // 保存
 const save = async () => {
   await updateRolePermission(props.roleId, {
-    menuIds: Array.from(selectedKeys.value),
+    menuIds: Array.from(selectedKeys.value).map(id => String(id)),
     menuCheckStrictly: isCascade.value,
   })
   Message.success('保存成功')

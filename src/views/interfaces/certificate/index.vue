@@ -669,8 +669,18 @@ async function getList(retryOnUnauthorized = true) {
 
   loading.value = true
   try {
+    // 将 productId 转换为 productName（后端只支持 productName 参数）
+    const requestParams = { ...queryParam, ...queryForm }
+    if (requestParams.productId) {
+      const product = projectOptions.value.find(p => p.productId === requestParams.productId)
+      if (product) {
+        requestParams.productName = product.productName
+      }
+      delete requestParams.productId
+    }
+
     const response = await axios.get(buildUrl(config.value.environment.makes), {
-      params: { ...queryParam, ...queryForm },
+      params: requestParams,
       headers: { Authorization: `Bearer ${token.value}` },
     })
 
