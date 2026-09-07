@@ -517,7 +517,9 @@ async function readMachineCode(file: File): Promise<MachineCodeInfo> {
   if (!machineCode)
     throw new Error(`${file.name} 中未找到机器码`)
 
-  const licenseNo = data.licenseNo || md5(machineCode).slice(0, 16).toUpperCase()
+  // 标准机器码文件名中的编号是上传文件的业务标识，优先保留；其他文件继续使用原有规则。
+  const fileLicenseNo = file.name.match(/^clientInfoFile([a-f\d]+)\.(?:info|txt)$/i)?.[1]
+  const licenseNo = fileLicenseNo?.toUpperCase() || data.licenseNo || md5(machineCode).slice(0, 16).toUpperCase()
   return { machineCode, licenseNo }
 }
 
