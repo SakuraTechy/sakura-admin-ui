@@ -286,6 +286,7 @@ export type AutomationUiExecutionPage = {
 export interface AutomationUiExecutionQuery {
   sceneDbId: string | number
   recordSource: AutomationUiRecordSource
+  executionEngine?: import('./automationUiScene').ExecutionType
   testPlanId?: string | number
   testReportId?: string | number
   buildNumber?: number
@@ -515,6 +516,7 @@ export function getAutomationUiExecutionStep(stepExecutionDbId: string | number,
 export interface AutomationUiExecutionCaseHistoryQuery extends AutomationUiExecutionScope {
   sceneDbId: string | number
   caseId: string
+  executionEngine?: import('./automationUiScene').ExecutionType
 }
 
 export function getAutomationUiExecutionRevisions(sceneIds: Array<string | number>) {

@@ -62,6 +62,11 @@ export default defineConfig(({ command, mode }) => {
           secure: false, // 支持https
           rewrite: (path) => path.replace(new RegExp(`^${env.VITE_API_PREFIX}`), ''),
         },
+        '/file': {
+          target: env.VITE_API_BASE_URL,
+          changeOrigin: true,
+          secure: false,
+        },
         '/api/gitee': {
           target: 'https://gitee.com',
           changeOrigin: true,

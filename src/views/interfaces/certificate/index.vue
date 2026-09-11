@@ -168,6 +168,7 @@ import type { TableInstance } from '@arco-design/web-vue'
 import axios from 'axios'
 import { getToken } from '@/utils/auth'
 import { randomUUID } from '@/utils'
+import { useUserStore } from '@/stores'
 import type { ColumnItem } from '@/components/GiForm'
 import CertificateAddModal from './components/CertificateAddModal.vue'
 import CertificateDetailDrawer from './components/CertificateDetailDrawer.vue'
@@ -183,6 +184,7 @@ defineOptions({ name: 'Certificate' })
 const config = ref<any>(null)
 const token = ref('')
 const projectOptions = ref<any[]>([])
+const userStore = useUserStore()
 
 // 证书列表和 Markdown 列表（用于企业微信推送）
 const certificateList = ref<CertificateResp[]>([])
@@ -438,7 +440,7 @@ const columns: TableInstance['columns'] = [
     title: '产品名称',
     dataIndex: 'productName',
     slotName: 'productName',
-    width: 120,
+    width: 150,
     ellipsis: true,
     tooltip: true,
     align: 'center',
@@ -463,7 +465,7 @@ const columns: TableInstance['columns'] = [
     title: '证书编号',
     dataIndex: 'licenseNo',
     slotName: 'licenseNo',
-    width: 120,
+    width: 130,
     ellipsis: true,
     tooltip: true,
     align: 'center',
@@ -506,7 +508,7 @@ const columns: TableInstance['columns'] = [
   {
     title: '操作',
     slotName: 'action',
-    width: 110,
+    width: 120,
     fixed: 'right',
     align: 'center',
   },
@@ -1004,7 +1006,7 @@ async function buildMarkdownData(record: CertificateResp, fileName: string) {
   // 使用旧版本的字段名，确保与后端兼容
   const markdown = {
     orderId: record.testNo || randomUUID(), // 优先使用后端返回的testNo，确保与申请时的testNo一致
-    userName: localStorage.getItem('userName') || record.createBy,
+    userName: userStore.userInfo.nickname || userStore.userInfo.username || record.createBy,
     productChName: record.productName,
     productVersionNumber: record.versionName,
     typeName: record.modelName,

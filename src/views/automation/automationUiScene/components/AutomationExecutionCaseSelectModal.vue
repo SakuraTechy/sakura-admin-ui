@@ -22,6 +22,7 @@
           <template #prefix><icon-search /></template>
         </a-input>
         <a-select v-model="statusFilter" allow-clear placeholder="执行状态" :style="{ width: '150px' }">
+          <a-option value="未执行">未执行</a-option>
           <a-option value="排队中">排队中</a-option>
           <a-option value="启动中">启动中</a-option>
           <a-option value="执行中">执行中</a-option>
@@ -72,7 +73,7 @@
           <a-table-column title="执行状态" :width="105" align="center">
             <template #cell="{ record }">
               <a-tag :color="executionStatusColor(record.executeStatus)">
-                {{ executionStatusLabel(record.executeStatus) }}
+                {{ selectionStatusLabel(record.executeStatus) }}
               </a-tag>
             </template>
           </a-table-column>
@@ -81,7 +82,7 @@
               <a-tag v-if="record.lastResult" :color="executionResultColor(record.lastResult)">
                 {{ executionAggregateResultLabel(record.lastResult) }}
               </a-tag>
-              <span v-else>-</span>
+              <span v-else>未执行</span>
             </template>
           </a-table-column>
           <a-table-column title="运行耗时" :width="105" align="center">
@@ -112,7 +113,7 @@
     <template #footer>
       <a-space>
         <a-button @click="visible = false">取消</a-button>
-        <a-button type="primary" :disabled="selectedCaseKeys.length === 0" @click="nextStep">
+        <a-button type="primary" :disabled="loading || selectedCaseKeys.length === 0" @click="nextStep">
           下一步
         </a-button>
       </a-space>
@@ -123,26 +124,32 @@
 <script setup lang="ts">
 import { Message } from '@arco-design/web-vue'
 import {
+  type SelectionExecutionState,
+  caseSelectionExecution,
+  emptySelectionExecution,
+  sceneSelectionExecution,
+  selectionDuration,
+  selectionStatusLabel,
+  withSelectionLiveExecution,
+} from '../executionSelectionState'
+import {
   type ExecutionCaseOpenOptions,
   type ExecutionContext,
   type ExecutionType,
-  type ExecutionHistoryCaseRow,
   type LiveExecutionCase,
-  executionResultColor,
   executionAggregateResultLabel,
-  executionResultLabel,
+  executionResultColor,
   executionStatusColor,
-  executionStatusLabel,
   executionTypeLabel,
   executableStepCount,
   formatExecutionDuration,
-  getExecutionBatchRows,
-  getExecutionHistoryRows,
   isExecutableCase,
 } from '../execution'
-import { loadAutomationUiExecutionSelectionScene } from '../queryCache'
+import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
+import { getAutomationUiExecutionCaseHistory, getAutomationUiExecutions } from '@/apis/automation/automationUiQuery'
 
-interface SelectableCase {
+interface SelectableCase extends SelectionExecutionState {
+  sceneDbId: string
   rowKey: string
   sceneKey: string
   sceneId: string
@@ -151,13 +158,10 @@ interface SelectableCase {
   caseId: string
   name: string
   stepTotal: number
-  executeStatus: unknown
-  lastResult: unknown
-  duration: unknown
-  executionId: string
 }
 
-interface SelectableScene {
+interface SelectableScene extends SelectionExecutionState {
+  sceneDbId: string
   rowKey: string
   sceneKey: string
   sceneId: string
@@ -166,10 +170,6 @@ interface SelectableScene {
   caseIds: string[]
   selectAllCases: boolean
   definitionVersion?: number
-  executeStatus: unknown
-  lastResult: unknown
-  duration: unknown
-  executionId: string
 }
 
 interface CaseSelectionPayload extends ExecutionContext {
@@ -190,6 +190,32 @@ const emit = defineEmits<{
 const visible = ref(false)
 const loading = ref(false)
 const scene = ref<any>()
+const clock = ref(Date.now())
+let loadController: AbortController | undefined
+let clockTimer: ReturnType<typeof setInterval> | undefined
+
+function stopLoading() {
+  loadController?.abort()
+  loadController = undefined
+  loading.value = false
+}
+
+watch(visible, (open) => {
+  if (clockTimer) clearInterval(clockTimer)
+  clockTimer = undefined
+  if (open) {
+    clock.value = Date.now()
+    clockTimer = setInterval(() => {
+      clock.value = Date.now()
+    }, 1000)
+  } else {
+    stopLoading()
+  }
+})
+onBeforeUnmount(() => {
+  stopLoading()
+  if (clockTimer) clearInterval(clockTimer)
+})
 const executionType = ref<Exclude<ExecutionType, 'jenkins'>>('extension-cdp')
 const keyword = ref('')
 const statusFilter = ref('')
@@ -228,29 +254,26 @@ const caseTablePagination = computed(() => isRemoteProjectedCases.value
     }
   : { pageSize: 10, showTotal: true, showPageSize: true })
 
-const casesWithLiveStatus = computed(() => {
-  const recordSource = executionContext.value.recordSource || 'debug'
-  const liveByCase = new Map(props.liveExecutions
-    .filter((item) => (
-      (item.recordSource || 'debug') === recordSource
-      && (recordSource !== 'test'
-        || String(item.testPlanId || '') === String(executionContext.value.testPlanId || ''))
-    ))
-    .map((item) => [`${String(item.sceneKey || item.sceneId || '')}:${item.caseId}`, item]))
-  return cases.value.map((item) => {
-    const live = liveByCase.get(`${item.sceneKey}:${item.caseId}`)
-      || liveByCase.get(`:${item.caseId}`)
-    if (!live) return item
-    const terminal = ['passed', 'failed', 'cancelled'].includes(live.status)
-    return {
-      ...item,
-      executeStatus: live.status,
-      lastResult: terminal ? live.status : item.lastResult,
-      duration: live.startedAt ? Math.max(0, (live.finishedAt || Date.now()) - live.startedAt) : item.duration,
-      executionId: live.executionId || item.executionId,
-    }
-  })
-})
+const scopedLiveExecutions = computed(() => props.liveExecutions.filter((item) => (
+  item.executionType === executionType.value
+  && (item.recordSource || 'debug') === (executionContext.value.recordSource || 'debug')
+  && (executionContext.value.recordSource !== 'test'
+    || String(item.testPlanId || '') === String(executionContext.value.testPlanId || ''))
+  && (!executionContext.value.testReportId
+    || String(item.testReportId || '') === String(executionContext.value.testReportId))
+)))
+const casesWithLiveStatus = computed(() => cases.value.map((item) => {
+  // 旧实时消息的 sceneKey 可能是数据库 ID，也可能是业务 ID；不能只凭 caseId 跨场景匹配。
+  const sceneIds = [item.sceneDbId, item.sceneId, item.sceneKey].filter(Boolean)
+  const liveRows = scopedLiveExecutions.value.filter((live) => live.caseId === item.caseId
+    && [live.sceneKey, live.sceneId].some((id) => id && sceneIds.includes(String(id))))
+  const state = liveRows.reduce<SelectionExecutionState>(withSelectionLiveExecution, item)
+  return { ...item, ...state, duration: selectionDuration(state, clock.value) }
+}))
+const scenesWithDuration = computed(() => sceneRows.value.map((item) => ({
+  ...item,
+  duration: selectionDuration(item, clock.value),
+})))
 const filteredCases = computed(() => {
   const search = keyword.value.trim().toLowerCase()
   return casesWithLiveStatus.value.filter((item) => (
@@ -259,31 +282,22 @@ const filteredCases = computed(() => {
       || item.sceneName.toLowerCase().includes(search)
       || item.caseId.toLowerCase().includes(search)
       || item.name.toLowerCase().includes(search))
-    && (!statusFilter.value || executionStatusLabel(item.executeStatus) === statusFilter.value)
+    && (!statusFilter.value || selectionStatusLabel(item.executeStatus) === statusFilter.value)
     && matchesResultFilter(item.lastResult)
   ))
 })
 const filteredScenes = computed(() => {
   const search = keyword.value.trim().toLowerCase()
-  return sceneRows.value.filter((item) => (
+  return scenesWithDuration.value.filter((item) => (
     (!search || item.sceneId.toLowerCase().includes(search) || item.sceneName.toLowerCase().includes(search))
-    && (!statusFilter.value || executionStatusLabel(item.executeStatus) === statusFilter.value)
+    && (!statusFilter.value || selectionStatusLabel(item.executeStatus) === statusFilter.value)
     && matchesResultFilter(item.lastResult)
   ))
 })
 const filteredRows = computed(() => isSceneSelection.value ? filteredScenes.value : filteredCases.value)
 
 function matchesResultFilter(value: unknown) {
-  if (!resultFilter.value) return true
-  const label = executionAggregateResultLabel(value)
-  if (resultFilter.value === '未执行') return label === '未执行'
-  if (resultFilter.value === '全部通过') return label === '全部通过'
-  if (resultFilter.value === '不通过') return label === '不通过'
-  if (resultFilter.value === '跳过') {
-    const rawLabel = executionResultLabel(value)
-    return rawLabel === '跳过' || rawLabel === '已取消'
-  }
-  return false
+  return !resultFilter.value || executionAggregateResultLabel(value) === resultFilter.value
 }
 
 async function onOpen(
@@ -291,10 +305,14 @@ async function onOpen(
   type: Exclude<ExecutionType, 'jenkins'>,
   options: ExecutionCaseOpenOptions = {},
 ) {
+  stopLoading()
+  const controller = new AbortController()
+  loadController = controller
   executionType.value = type
   executionContext.value = {
     recordSource: options.recordSource || 'debug',
     testPlanId: options.testPlanId,
+    testReportId: options.testReportId,
   }
   keyword.value = ''
   statusFilter.value = ''
@@ -304,6 +322,7 @@ async function onOpen(
   projectedPagination.current = 1
   projectedPagination.pageSize = 20
   projectedPagination.total = 0
+  scene.value = undefined
   cases.value = []
   sceneRows.value = []
   selectionDisabled.value = Boolean(options.selectionDisabled)
@@ -318,12 +337,13 @@ async function onOpen(
       : record?.__definitionLoaded && !record?.__projectedDefinition
         ? record
         : record?.id
-          ? await loadAutomationUiExecutionSelectionScene(String(record.id), record, undefined, (
+          ? await loadAutomationUiExecutionSelectionScene(String(record.id), record, controller.signal, (
               options.selectionDisabled && options.caseIds?.length
                 ? { projectedCaseIds: options.caseIds }
                 : { projectedPage: 1, projectedPageSize: projectedPagination.pageSize }
             ))
           : record
+    if (controller.signal.aborted) return
     scene.value = detail || record
     if (scene.value?.__projectedDefinition) {
       existingCases.forEach((item: any) => rememberProjectedCase(scene.value, item))
@@ -331,7 +351,8 @@ async function onOpen(
       projectedPagination.pageSize = Number(scene.value.__projectedCasePageSize || projectedPagination.pageSize)
       projectedPagination.total = Number(scene.value.__caseTotal || 0)
     }
-    loadSelectionRows(scene.value, options.caseIds || [])
+    await loadSelectionRows(scene.value, options.caseIds || [], controller.signal)
+    if (controller.signal.aborted) return
     if (scene.value?.__projectedDefinition && !selectionDisabled.value && options.caseIds?.length) {
       const sceneKey = getSceneKey(scene.value)
       selectedCaseKeys.value = options.caseIds
@@ -339,27 +360,25 @@ async function onOpen(
         .filter(key => caseRowsByKey.has(key))
     }
   } catch (error: any) {
-    scene.value = record
-    loadSelectionRows(record, options.caseIds || [])
-    Message.error(error?.message || '读取场景用例和执行记录失败')
+    if (!controller.signal.aborted) Message.error(error?.message || '读取场景用例和执行记录失败')
   } finally {
-    loading.value = false
+    if (loadController === controller) loading.value = false
   }
 }
 
-function loadSelectionRows(record: any, preferredCaseIds: string[]) {
+async function loadSelectionRows(record: any, preferredCaseIds: string[], signal: AbortSignal) {
   if (isSceneSelection.value) {
-    loadScenes(record)
+    await loadScenes(record, signal)
     return
   }
-  loadCases(record, preferredCaseIds)
+  await loadCases(record, preferredCaseIds, signal)
 }
 
-function loadScenes(record: any) {
+async function loadScenes(record: any, signal: AbortSignal) {
   const sourceScenes = Array.isArray(record?.__planScenes) && record.__planScenes.length
     ? record.__planScenes
     : [record]
-  sceneRows.value = sourceScenes.map((sourceScene: any) => {
+  const rows = await mapWithConcurrency<any, SelectableScene>(sourceScenes, 6, async (sourceScene) => {
     const sceneKey = getSceneKey(sourceScene)
     const sceneId = String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-')
     const sceneName = String(sourceScene?.name || sourceScene?.sceneName || sceneId)
@@ -367,12 +386,23 @@ function loadScenes(record: any) {
       .filter(isExecutableCase)
       .map((item: any) => String(item.id))
     const selectAllCases = Boolean(sourceScene?.__projectedDefinition)
-    const latest = getExecutionBatchRows(
-      sourceScene,
-      executionContext.value.recordSource || 'debug',
-      executionContext.value.testPlanId,
-    ).find((item) => item.executionType === executionType.value)
+    const sceneDbId = String(sourceScene?.id || '')
+    if (signal.aborted) throw new Error('执行记录请求已取消')
+    const response = sceneDbId
+      ? await getAutomationUiExecutions({
+        sceneDbId,
+        recordSource: executionContext.value.recordSource || 'debug',
+        testPlanId: executionContext.value.testPlanId,
+        testReportId: executionContext.value.testReportId,
+        executionEngine: executionType.value,
+        page: 1,
+        size: 1,
+        sort: ['createTime,desc'],
+      }, signal)
+      : undefined
     return {
+      ...sceneSelectionExecution(response?.data.list[0]),
+      sceneDbId,
       rowKey: sceneKey,
       sceneKey,
       sceneId,
@@ -381,36 +411,19 @@ function loadScenes(record: any) {
       caseIds,
       selectAllCases,
       definitionVersion: sourceScene?.definitionVersion,
-      executeStatus: latest?.executeStatus || sourceScene?.executeStatus || 'not_started',
-      lastResult: latest?.executeResult || sourceScene?.executeResult || '',
-      duration: latest?.duration ?? sourceScene?.duration,
-      // 场景级执行编号使用批次号，避免把某一个用例的编号误当作场景编号。
-      executionId: latest?.batchId || sourceScene?.executionId || '-',
     }
-  }).filter((item) => item.selectAllCases || item.caseIds.length > 0)
+  })
+  if (signal.aborted) return
+  sceneRows.value = rows.filter((item) => item.selectAllCases || item.caseIds.length > 0)
   selectedCaseKeys.value = sceneRows.value.map((item) => item.rowKey)
 }
 
-function loadCases(record: any, preferredCaseIds: string[], preserveSelection = false) {
+async function loadCases(record: any, preferredCaseIds: string[], signal: AbortSignal, preserveSelection = false) {
   const sourceScenes = Array.isArray(record?.__planScenes) && record.__planScenes.length
     ? record.__planScenes
     : [record]
-  const latestByCase = new Map<string, ExecutionHistoryCaseRow>()
-  sourceScenes.forEach((sourceScene: any) => {
-    const sceneKey = getSceneKey(sourceScene)
-    getExecutionHistoryRows(
-      sourceScene,
-      executionContext.value.recordSource || 'debug',
-      executionContext.value.testPlanId,
-    )
-      .filter((item) => item.executionType === executionType.value)
-      .forEach((item) => {
-        const key = `${sceneKey}:${item.caseId}`
-        if (item.caseId !== '-' && !latestByCase.has(key)) latestByCase.set(key, item)
-      })
-  })
   const preferredIds = new Set(preferredCaseIds.map(String))
-  cases.value = sourceScenes.flatMap((sourceScene: any) => {
+  const rows: SelectableCase[] = sourceScenes.flatMap((sourceScene: any) => {
     const sceneKey = getSceneKey(sourceScene)
     const sceneId = String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-')
     const sceneName = String(sourceScene?.name || sourceScene?.sceneName || sceneId)
@@ -420,8 +433,9 @@ function loadCases(record: any, preferredCaseIds: string[], preserveSelection = 
       .filter((item: any) => !selectionDisabled.value || !preferredIds.size || preferredIds.has(String(item.id)))
       .map((item: any) => {
         const caseId = String(item.id)
-        const latest = latestByCase.get(`${sceneKey}:${caseId}`)
         return {
+          ...emptySelectionExecution(),
+          sceneDbId: String(sourceScene?.id || ''),
           rowKey: `${sceneKey}:${caseId}`,
           sceneKey,
           sceneId,
@@ -430,10 +444,6 @@ function loadCases(record: any, preferredCaseIds: string[], preserveSelection = 
           caseId,
           name: item.name || caseId,
           stepTotal: executableStepCount(item),
-          executeStatus: latest?.executeStatus || 'not_started',
-          lastResult: latest?.executeResult || '',
-          duration: latest?.duration,
-          executionId: latest?.executionId || '-',
         }
       })
     rows.forEach((row) => {
@@ -443,6 +453,23 @@ function loadCases(record: any, preferredCaseIds: string[], preserveSelection = 
     })
     return rows
   })
+  // 按引擎在服务端筛选后取最近一条，不能依赖已移除的 caseList 历史正文。
+  const loaded = await mapWithConcurrency(rows, 6, async (row) => {
+    if (signal.aborted) throw new Error('执行记录请求已取消')
+    if (!row.sceneDbId) return row
+    const response = await getAutomationUiExecutionCaseHistory({
+      sceneDbId: row.sceneDbId,
+      caseId: row.caseId,
+      recordSource: executionContext.value.recordSource || 'debug',
+      testPlanId: executionContext.value.testPlanId,
+      testReportId: executionContext.value.testReportId,
+      executionEngine: executionType.value,
+    }, 1, 1, signal)
+    return { ...row, ...caseSelectionExecution(response.data.list[0]) }
+  })
+  if (signal.aborted) return
+  cases.value = loaded
+  loaded.forEach((row) => caseRowsByKey.set(row.rowKey, row))
   if (!preserveSelection) {
     selectedCaseKeys.value = selectionDisabled.value
       ? cases.value.map((item) => item.rowKey)
@@ -456,6 +483,8 @@ function rememberProjectedCase(sourceScene: any, item: any) {
   const rowKey = `${sceneKey}:${String(item.id)}`
   if (!caseRowsByKey.has(rowKey)) {
     caseRowsByKey.set(rowKey, {
+      ...emptySelectionExecution(),
+      sceneDbId: String(sourceScene?.id || ''),
       rowKey,
       sceneKey,
       sceneId: String(sourceScene?.sceneId || sourceScene?.id || sceneKey || '-'),
@@ -464,31 +493,32 @@ function rememberProjectedCase(sourceScene: any, item: any) {
       caseId: String(item.id),
       name: item.name || String(item.id),
       stepTotal: executableStepCount(item),
-      executeStatus: 'not_started',
-      lastResult: '',
-      duration: undefined,
-      executionId: '-',
     })
   }
 }
 
 async function loadProjectedCasePage(page: number, size: number) {
   if (!scene.value?.id || loading.value) return
+  const controller = new AbortController()
+  loadController?.abort()
+  loadController = controller
   loading.value = true
   try {
-    const next = await loadAutomationUiExecutionSelectionScene(String(scene.value.id), scene.value, undefined, {
+    const next = await loadAutomationUiExecutionSelectionScene(String(scene.value.id), scene.value, controller.signal, {
       projectedPage: page,
       projectedPageSize: size,
     })
+    if (controller.signal.aborted) return
+    await loadCases(next, [], controller.signal, true)
+    if (controller.signal.aborted) return
     scene.value = next
     projectedPagination.current = Number(next.__projectedCasePage || page)
     projectedPagination.pageSize = Number(next.__projectedCasePageSize || size)
     projectedPagination.total = Number(next.__caseTotal || 0)
-    loadCases(next, [], true)
   } catch (error: any) {
-    Message.error(error?.message || '读取用例分页失败')
+    if (!controller.signal.aborted) Message.error(error?.message || '读取用例分页失败')
   } finally {
-    loading.value = false
+    if (loadController === controller) loading.value = false
   }
 }
 
@@ -499,6 +529,7 @@ function selectFilteredCases() {
 }
 
 function nextStep() {
+  if (loading.value || !selectedCaseKeys.value.length) return
   const selectedRows = selectedCaseKeys.value.map(String)
   const selectedCaseIds = selectedRows
     .map(key => caseRowsByKey.get(key)?.caseId)
@@ -532,7 +563,7 @@ function nextStep() {
 }
 
 function getSceneKey(record: any) {
-  // Runner/CDP 的实时事件使用业务场景 ID，优先使用 sceneId 保证历史状态与实时状态能对应。
+  // 保留业务场景 ID 作为选择键；查询和实时匹配另行保留数据库 ID。
   return String(record?.sceneId || record?.id || record?.sceneKey || record?.name || 'scene-unknown')
 }
 

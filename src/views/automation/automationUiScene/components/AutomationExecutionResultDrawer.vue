@@ -50,6 +50,7 @@
               <AutomationExecutionLogViewer
                 v-else
                 :job-id="selectedJobId"
+                :execution-id="selectedExecutionId"
                 :status="caseResult.status || selectedRecord.executeStatus"
                 :artifact-url="executionLogArtifactUrl"
                 :fallback-content="logContent"
@@ -264,14 +265,6 @@ const runnerVideoEmptyText = computed(() => {
 })
 const logContent = computed(() => {
   const record = selectedRecord.value || {}
-  if (executionType.value === 'extension-cdp') {
-    return prettyJson({
-      error: caseResult.value?.error || selectedPlaywrightResult.value?.error || record.playwrightError || '',
-      failed_step_index: selectedPlaywrightResult.value?.failed_step_index,
-      cdp_attach_error: selectedPlaywrightResult.value?.detail?.cdp_attach_error,
-      diagnostics: selectedPlaywrightResult.value?.detail || {},
-    })
-  }
   return prettyJson({
     execution_id: selectedExecutionId.value,
     executor: executionType.value,
@@ -280,6 +273,9 @@ const logContent = computed(() => {
     started_at: caseResult.value?.started_at || selectedRecord.value?.startedAt,
     finished_at: caseResult.value?.finished_at || selectedRecord.value?.finishedAt,
     status: caseResult.value?.status || selectedRecord.value?.executeStatus,
+    result: caseResult.value?.executeResult || selectedRecord.value?.executeResult,
+    duration_ms: caseResult.value?.duration_ms ?? selectedPlaywrightResult.value?.duration_ms,
+    execution_logs: selectedPlaywrightResult.value?.execution_logs || selectedPlaywrightResult.value?.executionLogs,
     error: caseResult.value?.error || selectedPlaywrightResult.value?.error || record.playwrightError || '',
     error_code: selectedPlaywrightResult.value?.error_code,
     error_details: selectedPlaywrightResult.value?.error_details,

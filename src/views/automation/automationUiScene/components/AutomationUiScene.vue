@@ -203,7 +203,7 @@
 
     <AutomationUiSceneAddModal ref="AutomationUiSceneAddModalRef" @save-success="search" />
     <ChromeRecordingModal ref="chromeRecordingModalRef" :scene-options="tableData" @recording-finished="search" />
-    <AutomationExecutionCaseSelectModal ref="executionCaseSelectModalRef" @next="openExecutionConfig" />
+    <AutomationExecutionCaseSelectModal ref="executionCaseSelectModalRef" :live-executions="sceneProps.liveExecutions" @next="openExecutionConfig" />
     <AutomationExecutionCaseModal
       ref="executionCaseModalRef"
       @back="reopenExecutionCaseSelect"
@@ -260,6 +260,8 @@ import {
 } from '../execution'
 
 defineOptions({ name: 'AutomationUiScene' })
+
+const sceneProps = withDefaults(defineProps<{ liveExecutions?: LiveExecutionCase[] }>(), { liveExecutions: () => [] })
 
 const emit = defineEmits<{
   (e: 'update-scene', record: any): void
@@ -386,7 +388,7 @@ const isPlaywrightRecordingScene = (record: any) => {
 }
 
 const columns: TableInstance['columns'] = [
-  { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 200, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景名称', dataIndex: 'name', slotName: 'name', width: 360, ellipsis: true, tooltip: true },
   { title: '版本', dataIndex: 'versionName', slotName: 'versionName', width: 120, ellipsis: true, tooltip: true, align: 'center' },
   { title: '等级', dataIndex: 'level', slotName: 'level', width: 100, ellipsis: true, tooltip: true, align: 'center' },

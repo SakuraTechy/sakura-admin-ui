@@ -27,7 +27,7 @@ window.config = {
     proxyTarget: 'https://172.24.4.222',
 
     // 自动登录配置
-    username: 'liuzhi',
+    username: 'tanghao',
     password: '3edc$RFV',
 
     // API接口路径

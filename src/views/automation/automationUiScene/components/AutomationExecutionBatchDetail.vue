@@ -138,6 +138,7 @@
                   :case-execution-db-id="record.caseExecutionDbId"
                   :status="record.executeStatus"
                   :artifact-url="record.executionLogArtifactUrl"
+                  :execution-id="record.executionId"
                   :live-logs="record.liveLogs"
                   :fallback-content="recordLogFallback(record)"
                 />
@@ -563,6 +564,8 @@ function recordLogFallback(record: ExecutionHistoryCaseRow) {
     started_at: record.startedAt,
     finished_at: record.finishedAt,
     status: record.executeStatus,
+    result: record.executeResult,
+    duration_ms: record.duration,
     error_code: record.errorCode === '-' ? undefined : record.errorCode,
     error: record.error === '-' ? undefined : record.error,
     steps: record.steps.map((step) => ({

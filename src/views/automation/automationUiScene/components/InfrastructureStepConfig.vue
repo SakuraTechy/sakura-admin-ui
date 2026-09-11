@@ -2,7 +2,7 @@
   <div class="infrastructure-step-config">
     <a-form :model="form" layout="vertical" class="config-form">
       <a-row :gutter="16" class="config-columns">
-        <a-col :span="10">
+        <a-col :xs="24" :sm="10">
           <a-card title="目标配置" size="small" class="config-card target-config-card">
             <template #extra>
               <a-button type="outline" size="small" @click="goTargetConfig">去配置</a-button>
@@ -45,7 +45,7 @@
             </div>
           </a-card>
         </a-col>
-        <a-col :span="14">
+        <a-col :xs="24" :sm="14">
           <a-card title="执行配置" size="small" class="config-card">
             <a-row :gutter="[12, 0]">
               <template v-if="kind === 'server'">
@@ -78,6 +78,18 @@
                 <a-col :span="24">
                   <a-form-item label="服务器命令" required>
                     <a-textarea v-model="form.command" :auto-size="{ minRows: 6, maxRows: 6 }" :placeholder="commandPlaceholder" />
+                  </a-form-item>
+                </a-col>
+                <a-col :span="24">
+                  <a-divider orientation="left">结果处理（可选）</a-divider>
+                  <a-form-item label="替换正则">
+                    <a-input v-model="form.replaceRegex" :input-attrs="{ 'aria-label': '替换正则' }" placeholder="例如：[\r\n]+" :max-length="512" />
+                  </a-form-item>
+                  <a-form-item label="替换内容">
+                    <a-input v-model="form.replaceValue" :input-attrs="{ 'aria-label': '替换内容' }" placeholder="留空表示删除匹配内容" :max-length="4096" />
+                  </a-form-item>
+                  <a-form-item label="全局变量名">
+                    <a-input v-model="form.variableName" :input-attrs="{ 'aria-label': '全局变量名' }" placeholder="例如：sys_disk_total1" :max-length="128" />
                   </a-form-item>
                 </a-col>
               </template>
@@ -204,6 +216,9 @@ const form = reactive({
   targetConfigId: '',
   shell: 'bash',
   command: '',
+  replaceRegex: '',
+  replaceValue: '',
+  variableName: '',
   sqlMode: 'update',
   sql: '',
   mongoOperation: 'find',
@@ -289,6 +304,10 @@ const syncFromModel = () => {
   form.targetConfigId = String(methodConfig?.target_ref?.slot_id || target?.slot_id || '')
   form.shell = normalizeShellValue(methodConfig?.shell || methodConfig?.shell_type || getConfig(items, 'shell') || getConfig(items, 'shell_type'))
   form.command = String(methodConfig?.command || getConfig(items, 'command') || '')
+  // 空替换表示删除，不能被 truthy 回退或 trim 改写。
+  form.replaceRegex = String(methodConfig?.replace_regex ?? '')
+  form.replaceValue = String(methodConfig?.replace_value ?? '')
+  form.variableName = String(methodConfig?.variable_name ?? '')
   form.sqlMode = String(methodConfig?.sql_mode || getConfig(items, 'sql_mode') || 'update')
   form.sql = String(methodConfig?.sql || getConfig(items, 'sql') || '')
   form.mongoOperation = String(methodConfig?.mongo_operation || getConfig(items, 'mongo_operation') || 'find')
@@ -338,7 +357,16 @@ const emitStep = () => {
     target_ref: targetRef,
     timeout_ms: form.timeoutMs,
     ...(kind.value === 'server'
-      ? { shell: form.shell, command: form.command }
+      ? {
+          shell: form.shell,
+          command: form.command,
+          ...(parseMethodConfig(props.modelValue || []).value_masked != null
+            ? { value_masked: parseMethodConfig(props.modelValue || []).value_masked }
+            : {}),
+          ...(form.replaceRegex !== '' ? { replace_regex: form.replaceRegex, replace_value: form.replaceValue } : {}),
+          ...(form.replaceRegex === '' && form.replaceValue !== '' ? { replace_value: form.replaceValue } : {}),
+          ...(form.variableName.trim() ? { variable_name: form.variableName.trim() } : {}),
+        }
       : props.actionType === 'database_sql'
         ? { sql_mode: form.sqlMode, sql: form.sql }
         : {

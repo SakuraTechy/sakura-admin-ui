@@ -52,6 +52,7 @@
           v-if="uiReady"
           :key="sceneKey"
           ref="automationUiSceneRef"
+          :live-executions="liveExecutions"
           @update-scene="addTab"
           @open-history="openExecutionHistory"
           @execute-scene="executeScene"

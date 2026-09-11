@@ -132,12 +132,32 @@ export const normalizeAutomationOperationConfig = (method: AutomationOperationMe
   for (const field of method.form_schema) {
     if (!isAutomationOperationFieldVisible(field, values)) continue
     const value = values[field.name]
+    if (method.method_code === 'server.shell' && ['replace_regex', 'replace_value'].includes(field.name)
+      && typeof value === 'string' && (value !== '' || field.name === 'replace_value' && values.replace_regex !== undefined && values.replace_regex !== '')) {
+      // 替换内容的空字符串和空格都是有效数据，其他方法仍沿用原有规范化规则。
+      normalized[field.name] = value
+      continue
+    }
     if (!isAutomationOperationValueEmpty(value)) normalized[field.name] = cloneConfigValue(value)
   }
   return normalized
 }
 
 export const validateAutomationOperationConfig = (method: AutomationOperationMethod, values: Record<string, unknown>) => {
+  if (method.method_code === 'server.shell') {
+    for (const name of ['replace_regex', 'replace_value', 'variable_name']) {
+      if (values[name] != null && typeof values[name] !== 'string') return '结果处理参数必须是字符串'
+    }
+    const regex = String(values.replace_regex ?? '')
+    const replacement = String(values.replace_value ?? '')
+    const variable = String(values.variable_name ?? '').trim()
+    if (regex.length > 512 || replacement.length > 4096) return '替换正则最多 512 字符，替换内容最多 4096 字符'
+    if (regex && !variable) return '配置结果替换后，请填写全局变量名'
+    if (!regex && replacement) return '请先填写替换正则'
+    if ([regex, replacement].some(value => value.includes('${') || value.includes('{{'))) return '替换字段不支持平台变量插值或命名组引用'
+    if (variable && (!/^[A-Za-z_][A-Za-z0-9_.-]{0,127}$/.test(variable)
+      || ['system.', 'secret.', 'execution.'].some(prefix => variable.startsWith(prefix)))) return '全局变量名不合法或使用了保留前缀'
+  }
   for (const field of method.form_schema) {
     if (!isAutomationOperationFieldVisible(field, values)) continue
     const value = values[field.name]

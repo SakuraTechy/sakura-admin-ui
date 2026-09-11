@@ -78,6 +78,7 @@ import { getAutomationPlaywrightRunnerJob } from '@/apis/automation/automationPl
 import { getToken } from '@/utils/auth'
 
 const props = defineProps<{
+  executionId?: string
   jobId?: string
   executionDbId?: string | number
   caseExecutionDbId?: string | number
@@ -110,6 +111,7 @@ let artifactController: AbortController | undefined
 let artifactTimeoutTimer: number | undefined
 let pollFailures = 0
 let resolvedArtifactUrl = ''
+let loadedExecutionKey = ''
 
 const running = computed(() => ['queued', 'running'].includes(status.value))
 const statusText = computed(() => ({
@@ -129,6 +131,7 @@ useResizeObserver(immersiveContainer, updateImmersiveBounds)
 
 watch(
   () => [
+    props.executionId,
     props.jobId,
     props.executionDbId,
     props.caseExecutionDbId,
@@ -147,6 +150,11 @@ onUnmounted(cleanupRequests)
 
 async function resetAndLoad() {
   const sequence = ++loadSequence
+  const executionKey = props.executionId || props.jobId
+    || (props.caseExecutionDbId == null ? '' : `${props.executionDbId}:${props.caseExecutionDbId}`)
+  const sameExecution = Boolean(executionKey && loadedExecutionKey === executionKey)
+  loadedExecutionKey = executionKey
+  if (!sameExecution) logs.value = []
   // 实时日志由执行链路持续提供，直接替换快照但不走 fallback，避免刷新过程中闪回空步骤摘要。
   if (props.liveLogs?.length) {
     cleanupRequests()
@@ -159,8 +167,7 @@ async function resetAndLoad() {
   }
   cleanupRequests()
   resolvedArtifactUrl = ''
-  logs.value = []
-  status.value = ''
+  status.value = props.status || ''
   error.value = ''
   loading.value = true
   expanded.value = new Set()
@@ -311,6 +318,8 @@ async function readArtifactJson(response: Response) {
 }
 
 function useFallback() {
+  // 同一执行的真实日志不能被步骤摘要覆盖；只有成功读取原始 artifact 后才替换。
+  if (logs.value.length) return
   const content = String(props.fallbackContent || '').trim()
   if (!content) return
   const structuredLogs = buildFallbackLogs(content)
@@ -335,7 +344,10 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
   } catch {
     return []
   }
-  if (!Array.isArray(result?.steps)) return []
+  const persistedLogs = [result?.execution_logs, result?.executionLogs].find(value => Array.isArray(value) && value.length)
+  if (persistedLogs) return persistedLogs.map(normalizeLog).filter(Boolean) as AutomationPlaywrightRunnerLog[]
+  if (!Array.isArray(result?.steps) && !result?.error) return []
+  const steps = Array.isArray(result.steps) ? result.steps : []
   const items: AutomationPlaywrightRunnerLog[] = []
   let sequence = 0
   let elapsed = 0
@@ -351,12 +363,15 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
     })
   }
   const executor = String(result.executor || '').toLowerCase().includes('cdp') ? 'CDP' : 'Runner'
-  push('info', 'runner', `${executor} 任务开始，case=${result.case_id || result.case_name || '-'}`)
-  push('success', 'case', `用例加载完成，共 ${result.steps.length} 个步骤`)
-  result.steps.forEach((step: any, index: number) => {
+  push('info', 'runner', `${executor} 执行结果摘要，case=${result.case_id || result.case_name || '-'}（原始日志不可用）`)
+  push('info', 'case', `记录包含 ${steps.length} 个步骤`)
+  steps.forEach((step: any, index: number) => {
     const number = Number(step.step_index ?? index) + 1
     const name = step.description || step.step_name || step.action_type || `步骤 ${number}`
-    push('info', 'step', `步骤 ${number}: ${name}，开始执行`)
+    // 预检失败时服务端会补齐跳过占位；占位不是实际执行过的步骤。
+    if (['passed', 'success', 'failed', 'error', 'running'].includes(String(step.status || '').toLowerCase())) {
+      push('info', 'step', `步骤 ${number}: ${name}，开始执行`)
+    }
     elapsed += Math.max(0, Number(step.duration_ms ?? step.duration) || 0)
     const duration = Number(step.duration_ms ?? step.duration) || 0
     const outcome = fallbackStepOutcome(step.status, duration, step.error)
@@ -381,8 +396,12 @@ function buildFallbackLogs(content: string): AutomationPlaywrightRunnerLog[] {
       ].filter(Boolean).join('，'), true)
     }
   })
-  const runOutcome = fallbackRunOutcome(result.status)
-  push(runOutcome.level, 'runner', `${executor} ${runOutcome.message}，耗时 ${elapsed}ms`)
+  const runError = String(result.error || result.error_message || '').trim()
+  const runOutcome = fallbackRunOutcome(result.result || (runError ? 'failed' : result.status))
+  const duration = Number(result.duration_ms ?? result.duration)
+  if (Number.isFinite(duration) && duration >= 0) elapsed = duration
+  const errorCode = result.error_code && result.error_code !== '-' ? `[${result.error_code}] ` : ''
+  push(runOutcome.level, 'runner', `${executor} ${runOutcome.message}，耗时 ${elapsed}ms${runError ? `：${errorCode}${runError}` : ''}`)
   return items
 }
 

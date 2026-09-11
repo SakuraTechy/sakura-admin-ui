@@ -148,23 +148,24 @@
       <div class="step-diagnostic__heading">
         <span>全局变量执行结果</span>
         <a-tag v-if="variableResult.source" size="small" color="arcoblue">
-          {{ variableSourceLabel(variableResult.source) }}
+          <!-- {{ variableSourceLabel(variableResult.source) }} -->
+            计算公式
         </a-tag>
       </div>
       <a-descriptions :column="2" size="small" bordered>
+        <a-descriptions-item label="变量源">
+          {{ variableSourceLabel(variableResult.source) }}
+        </a-descriptions-item>
+        <a-descriptions-item label="变量值">
+          <code :class="{ 'is-masked': isVariableMasked(variableResult) }">
+            {{ variableDisplayValue(variableResult) }}
+          </code>
+        </a-descriptions-item>
         <a-descriptions-item label="变量名">
           <code>{{ variableResult.variable_name || '-' }}</code>
         </a-descriptions-item>
         <a-descriptions-item label="引用方式">
           <code>{{ variableReferenceLabel(variableResult) }}</code>
-        </a-descriptions-item>
-        <a-descriptions-item label="变量值" :span="2">
-          <code :class="{ 'is-masked': isVariableMasked(variableResult) }">
-            {{ variableDisplayValue(variableResult) }}
-          </code>
-        </a-descriptions-item>
-        <a-descriptions-item label="来源" :span="2">
-          {{ variableSourceLabel(variableResult.source) }}
         </a-descriptions-item>
       </a-descriptions>
     </div>
@@ -913,9 +914,19 @@ function variableSourceLabel(source: unknown) {
   }
   if (source && typeof source === 'object') {
     const sourceObject = source as Record<string, any>
-    return String(sourceObject.label || sourceObject.code || '-')
+    const code = String(sourceObject.code || '').trim()
+    const label = String(sourceObject.label || '').trim()
+    if (code === 'formula' && (!label || label === '计算公式')) {
+      const expression = operationInputs.value.find((item) => item.key === 'expression')?.configured?.preview
+      return expression ? `${expression}` : '计算公式'
+    }
+    return label || code || '-'
   }
   const value = String(source || '')
+  if (value === 'formula') {
+    const expression = operationInputs.value.find((item) => item.key === 'expression')?.configured?.preview
+    return expression ? `${expression}` : labels[value]
+  }
   return labels[value] || value
 }
 
@@ -985,10 +996,15 @@ function assertionActualForInput(input: Record<string, any>) {
   const expectedInput = input.role === 'expected'
     || ['expect', 'regex', 'attribute'].includes(inputKey)
   // 兼容旧目录/旧执行结果未回填 role 的情况；断言实际值仍必须来自执行器返回。
-  if (!assertionProfile || !expectedInput) return null
+  if (!assertionProfile) return null
   const actual = operationAssertion.value?.actual
   if (!actual || typeof actual !== 'object' || actual.value_state === 'unavailable') return null
-  return actual
+  if (expectedInput) return actual
+  const hasExpectedInput = operationInputs.value.some((item) => {
+    const key = String(item.key || '').trim().toLowerCase()
+    return item.role === 'expected' || ['expect', 'regex', 'attribute'].includes(key)
+  })
+  return !hasExpectedInput && (input.role === 'target' || inputKey === 'target_ref') ? actual : null
 }
 
 function operationInputRoleLabel(role: unknown) {
