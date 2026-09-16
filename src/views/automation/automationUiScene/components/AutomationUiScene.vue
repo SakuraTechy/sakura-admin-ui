@@ -291,7 +291,7 @@ const [queryForm, resetForm] = useResetReactive<AutomationUiSceneQuery>({
   createUser: undefined,
   updateUser: undefined,
   createTime: [],
-  sort: ['createTime,asc'],
+  sort: ['sceneId,asc', 'createTime,asc'],
 })
 
 const loadSceneSummaryPage = async (page: { page: number, size: number }) => {

@@ -158,6 +158,14 @@
                 />
               </a-select>
             </div>
+            <a-input
+              v-else-if="isStorageFileReferenceField(field)"
+              :model-value="storageFileId(formValues[field.name])"
+              :disabled="disabled"
+              :placeholder="fieldPlaceholder(field)"
+              allow-clear
+              @update:model-value="value => setStorageFileRef(field.name, value)"
+            />
             <a-textarea
               v-else-if="isLongText(field)"
               v-model="formValues[field.name]"
@@ -254,6 +262,8 @@ const locatorPlaceholder = (strategy: LocatorStrategy) => locatorPlaceholders[st
 const locatorSupportsExact = (strategy: LocatorStrategy) => ['text', 'label'].includes(strategy)
 
 const isCertificateReferenceField = (field: AutomationOperationFormField) => field.name === 'certificate_ref'
+const isStorageFileReferenceField = (field: AutomationOperationFormField) => props.method?.method_code === 'input.file.storage'
+  && field.name === 'file_ref'
 const resourceSlotId = (value: unknown) => value && typeof value === 'object'
   ? String((value as Record<string, unknown>).slot_id || '')
   : ''
@@ -262,6 +272,13 @@ const setEnvironmentResourceRef = (name: string, value: unknown) => {
   formValues[name] = slotId
     ? { scope: 'project_environment', kind: 'certificate', slot_id: slotId }
     : ''
+}
+const storageFileId = (value: unknown) => value && typeof value === 'object'
+  ? String((value as Record<string, unknown>).file_id || '')
+  : String(value || '')
+const setStorageFileRef = (name: string, value: unknown) => {
+  const fileId = String(value || '').trim()
+  formValues[name] = fileId ? { scope: 'storage_management', file_id: fileId } : ''
 }
 const loadCertificateSlots = async () => {
   if (!props.projectId) {

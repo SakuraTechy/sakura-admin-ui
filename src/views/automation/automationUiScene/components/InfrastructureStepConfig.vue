@@ -82,7 +82,16 @@
                 </a-col>
                 <a-col :span="24">
                   <a-divider orientation="left">结果处理（可选）</a-divider>
-                  <a-form-item label="替换正则">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label-with-help">
+                        替换正则
+                        <a-button type="text" size="mini" @click="showAiExtractModal">
+                          <template #icon><icon-robot /></template>
+                          AI 智能提取
+                        </a-button>
+                      </span>
+                    </template>
                     <a-input v-model="form.replaceRegex" :input-attrs="{ 'aria-label': '替换正则' }" placeholder="例如：[\r\n]+" :max-length="512" />
                   </a-form-item>
                   <a-form-item label="替换内容">
@@ -142,13 +151,21 @@
         </a-col>
       </a-row>
     </a-form>
+    <AiVariableExtractModal
+      v-model:visible="aiExtractModalVisible"
+      :default-raw-value="form.command"
+      @confirm="handleAiExtractConfirm"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { IconRobot } from '@arco-design/web-vue/es/icon'
 import type { AutomationUiStepConfig } from '@/apis/automation/automationUiScene'
 import { listEnvironmentResourceSlots } from '@/apis/automation/environmentResources'
+import AiVariableExtractModal from './AiVariableExtractModal.vue'
+import type { AutomationVariableExtractRuleResp } from '@/apis/automation/automationAi'
 
 type InfrastructureActionType = 'server_command' | 'database_sql' | 'database_native'
 
@@ -385,6 +402,18 @@ const emitStep = () => {
     { paramsName: 'method_config', paramsValue: JSON.stringify(methodConfig) },
   ]
   if (JSON.stringify(next) !== JSON.stringify(props.modelValue || [])) emit('update:modelValue', next)
+}
+
+// AI 变量提取
+const aiExtractModalVisible = ref(false)
+
+function showAiExtractModal() {
+  aiExtractModalVisible.value = true
+}
+
+function handleAiExtractConfirm(result: AutomationVariableExtractRuleResp) {
+  form.replaceRegex = result.pattern
+  form.replaceValue = `$${result.group}`
 }
 
 watch(() => [props.modelValue, props.actionType, props.methodCode, props.methodVersion], syncFromModel, { deep: true, immediate: true })
