@@ -350,7 +350,7 @@
                 </a-col>
                 <a-col :span="8">
                   <a-form-item label="页面错误检测">
-                    <a-switch v-model="execRunnerConfig.pageErrorCheckEnabled" />
+                    <a-select v-model="execRunnerPageErrorPolicy" :options="playwrightRunnerPageErrorPolicyOptions" />
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
@@ -368,12 +368,12 @@
                 </a-col>
                 <a-col :span="8">
                   <a-form-item label="步骤超时（ms）">
-                    <a-input-number v-model="execRunnerConfig.stepTimeoutMs" :min="1000" :max="600000" />
+                    <a-input-number v-model="execRunnerConfig.stepTimeoutMs" :min="1000" :max="300000" />
                   </a-form-item>
                 </a-col>
                 <a-col :span="8">
                   <a-form-item label="用例超时（ms）">
-                    <a-input-number v-model="execRunnerConfig.caseTimeoutMs" :min="1000" :max="3600000" />
+                    <a-input-number v-model="execRunnerConfig.caseTimeoutMs" :min="10000" :max="3600000" />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -516,6 +516,14 @@ import type { ColumnItem } from '@/components/GiForm'
 import TestPlanSceneWorkspace from './components/TestPlanSceneWorkspace.vue'
 import TestPlanRelateSceneModal from './components/TestPlanRelateSceneModal.vue'
 import TimedTaskDrawer from '@/views/test/timedTask/components/TimedTaskDrawer.vue'
+import {
+  type PlaywrightRunnerPageErrorPolicy,
+  createDefaultPlaywrightRunnerOptions,
+  playwrightRunnerArtifactPolicyOptions,
+  playwrightRunnerLiveFrameQualityOptions,
+  playwrightRunnerPageErrorPolicyOptions,
+  playwrightRunnerSessionModeOptions,
+} from '@/utils/playwrightRunner'
 import ExecuteSceneModal from '@/views/automation/automationUiScene/components/ExecuteSceneModal.vue'
 import AutomationExecutionCaseSelectModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseSelectModal.vue'
 import AutomationExecutionCaseModal from '@/views/automation/automationUiScene/components/AutomationExecutionCaseModal.vue'
@@ -1025,20 +1033,8 @@ interface ExecAutomationEnvironmentOption {
 
 const execProjectEnvironmentOptions = ref<ExecProjectEnvironmentOption[]>([])
 const execAutomationEnvironmentOptions = ref<ExecAutomationEnvironmentOption[]>([])
-const execRunnerConfig = reactive<AutomationPlaywrightRunnerOptions>({
-  browser: 'chromium',
-  liveFrameQuality: 'high',
-  sessionMode: 'isolated',
-  headed: false,
-  ignoreHttpsErrors: true,
-  pageErrorCheckEnabled: true,
-  trace: 'retain-on-failure',
-  video: 'retain-on-failure',
-  stepTimeoutMs: 6000,
-  caseTimeoutMs: 600000,
-  slowMoMs: 0,
-  finishDelayMs: 0,
-})
+const execRunnerConfig = reactive<AutomationPlaywrightRunnerOptions>(createDefaultPlaywrightRunnerOptions())
+const execRunnerPageErrorPolicy = ref<PlaywrightRunnerPageErrorPolicy>('inherit')
 const execCdpConfig = reactive<AutomationCdpPlaybackOptions>({
   browserSessionSource: 'current-profile',
   sessionMode: 'legacy-profile',
@@ -1048,17 +1044,8 @@ const execCdpConfig = reactive<AutomationCdpPlaybackOptions>({
   viewportHeight: 1080,
   pageErrorCheckEnabled: true,
 })
-const liveFrameQualityOptions = [
-  { label: '流畅（1080P）', value: 'smooth' },
-  { label: '高清（推荐）', value: 'high' },
-  { label: '超清（4K）', value: 'ultra' },
-  { label: '8K', value: '8k' },
-]
-const runnerSessionModeOptions = [
-  { label: '每条用例独立登录（默认）', value: 'isolated' },
-  { label: '复用上一条成功用例登录态', value: 'reuse-auth' },
-  { label: '同一浏览器窗口连续执行', value: 'reuse-browser' },
-]
+const liveFrameQualityOptions = playwrightRunnerLiveFrameQualityOptions
+const runnerSessionModeOptions = playwrightRunnerSessionModeOptions
 const execCdpManagedContextAvailable = ref(false)
 const execCdpGrayEnabled = ref(false)
 const execCdpCapabilityLoading = ref(false)
@@ -1068,11 +1055,7 @@ const execCdpSessionModeOptions = computed(() => [
   { label: '当前浏览器兼容模式（非隔离）', value: 'legacy-profile' },
   ...(execCdpManagedContextAvailable.value && execCdpGrayEnabled.value ? runnerSessionModeOptions : []),
 ])
-const artifactPolicyOptions = [
-  { label: '关闭', value: 'off' },
-  { label: '始终保留', value: 'on' },
-  { label: '仅失败保留', value: 'retain-on-failure' },
-]
+const artifactPolicyOptions = playwrightRunnerArtifactPolicyOptions
 const selectedExecProjectEnvironment = computed(() => execProjectEnvironmentOptions.value
   .find(item => item.value === toIdString(execState.projectEnvironmentId)))
 const selectedExecAutomationEnvironment = computed(() => execAutomationEnvironmentOptions.value
@@ -1164,20 +1147,8 @@ const isRuntimeOnline = (status: unknown) => String(status) === '5' || status ==
 const isRuntimeIdle = (status: unknown) => String(status) === '7' || status === '空闲'
 
 const resetExecRuntimeConfig = () => {
-  Object.assign(execRunnerConfig, {
-    browser: 'chromium',
-    liveFrameQuality: 'high',
-    sessionMode: 'isolated',
-    headed: false,
-    ignoreHttpsErrors: true,
-    pageErrorCheckEnabled: true,
-    trace: 'retain-on-failure',
-    video: 'retain-on-failure',
-    stepTimeoutMs: 6000,
-    caseTimeoutMs: 600000,
-    slowMoMs: 0,
-    finishDelayMs: 0,
-  })
+  Object.assign(execRunnerConfig, createDefaultPlaywrightRunnerOptions())
+  execRunnerPageErrorPolicy.value = 'inherit'
   Object.assign(execCdpConfig, {
     browserSessionSource: 'current-profile',
     sessionMode: 'legacy-profile',
@@ -1519,7 +1490,7 @@ const loadExecutionSelectionScenes = async (
   caseIdsByScene?: Map<string, string[]>,
 ) => {
   const fallbackMap = new Map(fallbackRows.map(row => [toIdString(row.id), row]))
-  return mapWithConcurrency(sceneIds.map(toIdString), 6, sceneId => (
+  const scenes = await mapWithConcurrency(sceneIds.map(toIdString), 6, sceneId => (
     loadAutomationUiExecutionSelectionScene(
       sceneId,
       fallbackMap.get(sceneId) || {},
@@ -1529,6 +1500,12 @@ const loadExecutionSelectionScenes = async (
         : { projectedPage: 1, projectedPageSize: 20 },
     )
   ))
+  // 测试计划的关联顺序可能不是场景 ID 顺序，选择弹窗和串行执行都统一按场景 ID 展示。
+  return scenes.sort((left, right) => {
+    const leftSceneId = String(left.sceneId || '')
+    const rightSceneId = String(right.sceneId || '')
+    return leftSceneId < rightSceneId ? -1 : leftSceneId > rightSceneId ? 1 : 0
+  })
 }
 
 const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: ExecutionType) => {
@@ -1549,7 +1526,7 @@ const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: Ex
       return
     }
     planCaseExecutionMode.value = true
-    planCaseExecutionSceneIds.value = sceneIds
+    planCaseExecutionSceneIds.value = scenes.map((scene) => toIdString(scene.id))
     planCaseExecutionQueue.value = [{ scene: aggregateScene, executionType, testPlanId }]
     openNextPlanCaseSelection()
     return
@@ -1702,7 +1679,12 @@ const onPlanExecutionStart = async (payload: {
   execState.automationEnvironmentId = undefined
   execConfigLoading.value = false
   await refreshExecProjectEnvironmentStatus(payload.projectEnvironmentId)
-  if (payload.runnerOptions) Object.assign(execRunnerConfig, payload.runnerOptions)
+  if (payload.runnerOptions) {
+    Object.assign(execRunnerConfig, payload.runnerOptions)
+    execRunnerPageErrorPolicy.value = payload.runnerOptions.pageErrorCheckEnabled === undefined
+      ? 'inherit'
+      : payload.runnerOptions.pageErrorCheckEnabled ? 'enabled' : 'disabled'
+  }
   if (payload.cdpOptions) Object.assign(execCdpConfig, payload.cdpOptions)
   planCaseExecutionMode.value = false
   planCaseExecutionSceneIds.value = []
@@ -1943,7 +1925,12 @@ const submitExecute = async (): Promise<boolean> => {
         ? execCaseIds.value
         : undefined,
       runnerOptions: execState.executionEngine === 'PLAYWRIGHT_RUNNER'
-        ? { ...execRunnerConfig }
+        ? {
+            ...execRunnerConfig,
+            ...(execRunnerPageErrorPolicy.value === 'inherit'
+              ? {}
+              : { pageErrorCheckEnabled: execRunnerPageErrorPolicy.value === 'enabled' }),
+          }
         : undefined,
       cdpOptions: execState.executionEngine === 'CHROME_DEVTOOLS_PROTOCOL'
         ? { ...execCdpConfig }

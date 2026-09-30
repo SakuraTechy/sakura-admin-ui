@@ -466,7 +466,6 @@ import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } f
 import { useUiStore } from '@/stores/modules/uiStore'
 import { getToken } from '@/utils/auth'
 import { getConfigValue } from '@/utils/config'
-import { downloadByUrl } from '@/utils/downloadFile'
 
 type RecordingMode = 'createScene' | 'appendCase' | 'replaceCase' | 'appendStep' | 'replaceStep'
 type RecordingViewMode = 'standard' | 'compact' | 'focus' | 'console' | 'cards' | 'split' | 'timeline' | 'cardSidebar'
@@ -1360,9 +1359,59 @@ const downloadExtension = async () => {
     return
   }
   try {
-    await downloadByUrl({ url: extensionDownloadUrl, target: '_blank' })
+    const response = await fetch(extensionDownloadUrl, { credentials: 'same-origin' })
+    if (!response.ok) {
+      throw new Error(`下载地址响应异常（HTTP ${response.status}）`)
+    }
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() || ''
+    const buffer = await response.arrayBuffer()
+    const preview = new TextDecoder().decode(buffer.slice(0, 4096)).trim()
+    const errorMessage = preview.match(/<Msg>\s*([\s\S]*?)\s*<\/Msg>/i)?.[1]
+    let responseData: { code?: string | number; msg?: string; success?: boolean } | null = null
+    if (contentType.includes('json') || /^[{[]/.test(preview)) {
+      try {
+        responseData = JSON.parse(preview)
+      } catch {
+        // 非 JSON 响应继续按文件内容校验。
+      }
+    }
+    const bytes = new Uint8Array(buffer.slice(0, 4))
+    const isZip = bytes.length === 4
+      && bytes[0] === 0x50
+      && bytes[1] === 0x4b
+      && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07)
+      && (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08)
+    // 对象存储错误可能以 200 和 XML 响应返回，不能把错误页面当作扩展压缩包下载。
+    if (
+      !buffer.byteLength
+      || responseData?.success === false
+      || responseData?.code === '1'
+      || responseData?.code === 1
+      || contentType.includes('xml')
+      || contentType.includes('html')
+      || /^\s*(?:<\?xml|<!doctype|<html|<R\b)/i.test(preview)
+      || !isZip
+    ) {
+      throw new Error(
+        errorMessage
+        || responseData?.msg
+        || '下载地址返回的不是 CueCast Chrome 扩展安装包',
+      )
+    }
+
+    const blob = new Blob([buffer], { type: contentType || 'application/zip' })
+    const fileName = decodeURIComponent(new URL(extensionDownloadUrl, window.location.href).pathname.split('/').pop() || 'cuecast-extension.zip')
+    const link = document.createElement('a')
+    link.href = URL.createObjectURL(blob)
+    link.download = 'cuecast-extension.zip'
+    link.style.display = 'none'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.setTimeout(() => URL.revokeObjectURL(link.href), 1000)
   } catch (e: any) {
-    Message.error(e?.message || '下载 CueCast Chrome 扩展失败')
+    Message.error('下载 CueCast Chrome 扩展失败：' + (e?.message || ''))
   }
 }
 

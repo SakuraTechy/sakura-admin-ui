@@ -216,11 +216,14 @@ yum install -y powershell
 pwsh --version`
 
 const windowsShellOptions = [{ label: 'PowerShell', value: 'powershell' }]
-const sqlModeOptions = [
+const baseSqlModeOptions = [
   { label: '查询类型语句（executeQuery）', value: 'query' },
   { label: '更新类型语句（executeUpdate）', value: 'update' },
   { label: '调用存储过程（prepareCall）', value: 'call' },
 ]
+const sqlModeOptions = computed(() => props.methodCode === 'database.update'
+  ? [...baseSqlModeOptions, { label: '批量脚本（execute，多条语句）', value: 'script' }]
+  : baseSqlModeOptions)
 const mongoOperationOptions = [
   { label: '查询（find）', value: 'find' },
   { label: '新增（insert）', value: 'insert' },
@@ -261,6 +264,7 @@ const sqlPlaceholders: Record<string, string> = {
   query: '例如：SELECT user_id, user_name FROM `user` ORDER BY user_id DESC LIMIT 20;',
   update: '例如：UPDATE `user` SET status = ? WHERE user_id = ?;',
   call: '例如：CALL refresh_audit_summary(?, ?);',
+  script: '例如：SELECT * FROM user; UPDATE user SET status = 1 WHERE user_id = 1;',
 }
 const mongoFilterPlaceholders: Record<string, string> = {
   find: '例如：{ "status": "ACTIVE" }；留空表示查询全部',
@@ -275,7 +279,7 @@ const mongoDocumentPlaceholders: Record<string, string> = {
   delete: '删除操作无需填写，留空即可',
 }
 const commandPlaceholder = computed(() => commandPlaceholders[form.shell] || '请输入要执行的 Shell 命令')
-const sqlPlaceholder = computed(() => sqlPlaceholders[form.sqlMode] || '请输入单条 SQL；参数请使用 ? 占位符')
+const sqlPlaceholder = computed(() => sqlPlaceholders[form.sqlMode] || '请输入 SQL；参数请使用 ? 占位符')
 const mongoFilterPlaceholder = computed(() => mongoFilterPlaceholders[form.mongoOperation] || '请输入 JSON 对象')
 const mongoDocumentPlaceholder = computed(() => mongoDocumentPlaceholders[form.mongoOperation] || '请输入 JSON 对象')
 const targetConfigOptions = ref<TargetConfigOption[]>([])

@@ -402,10 +402,10 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
 ])
 
 const columns: TableInstance['columns'] = [
-  { title: '所属项目', dataIndex: 'projectName', width: 180, fixed: 'left', ellipsis: true, tooltip: true },
-  { title: '所属计划', dataIndex: 'testPlanName', width: 240, ellipsis: true, tooltip: true },
-  { title: '报告名称', dataIndex: 'name', width: 340, ellipsis: true, tooltip: true },
-  { title: '报告类型', dataIndex: 'reportType', slotName: 'reportType', width: 200, align: 'center' },
+  { title: '所属项目', dataIndex: 'projectName', width: 200, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '所属计划', dataIndex: 'testPlanName', width: 280, ellipsis: true, tooltip: true },
+  { title: '报告名称', dataIndex: 'name', width: 550, ellipsis: true, tooltip: true },
+  // { title: '报告类型', dataIndex: 'reportType', slotName: 'reportType', width: 200, align: 'center' },
   { title: '触发方式', dataIndex: 'triggerMode', slotName: 'triggerMode', width: 90, align: 'center' },
   { title: '执行方式', dataIndex: 'executeMode', slotName: 'executeMode', width: 90, align: 'center' },
   {

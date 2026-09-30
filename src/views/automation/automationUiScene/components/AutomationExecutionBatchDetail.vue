@@ -41,7 +41,7 @@
               </span>
               <span>状态 <a-tag :color="executionStatusColor(group.summary?.executeStatus)">{{ executionStatusLabel(group.summary?.executeStatus) }}</a-tag></span>
               <span>结果 <a-tag :color="executionDisplayResultColor(group.summary?.executeResult, group.summary?.executeStatus)">{{ executionDisplayResultLabel(group.summary?.executeResult, group.summary?.executeStatus) }}</a-tag></span>
-              <span>批次耗时 <strong>{{ formatExecutionDuration(displayBatchDuration()) }}</strong></span>
+              <span>耗时 <strong>{{ formatExecutionDuration(displaySceneDuration(group)) }}</strong></span>
             </span>
           </div>
         </button>
@@ -311,27 +311,23 @@ function caseDurationTotal(cases: ExecutionHistoryCaseRow[]) {
   return cases.reduce((total, record) => total + displayCaseDuration(record), 0)
 }
 
+function displaySceneDuration(group: {
+  summary?: ExecutionHistorySceneSummary
+  cases: ExecutionHistoryCaseRow[]
+}) {
+  void durationTick.value
+  const summaryDuration = Number(group.summary?.duration)
+  return Number.isFinite(summaryDuration) && summaryDuration >= 0
+    ? summaryDuration
+    : caseDurationTotal(group.cases)
+}
+
 function displayCaseDuration(record: ExecutionHistoryCaseRow) {
   durationTick.value
   const stored = Math.max(0, Number(record.duration) || 0)
   if (record.finishedAt || isTerminalCase(record)) return stored
   const started = new Date(record.startedAt as string | number).getTime()
   return Number.isFinite(started) ? Math.max(stored, Date.now() - started) : stored
-}
-
-function displayBatchDuration() {
-  durationTick.value
-  const stored = Math.max(0, Number(props.batch.duration) || 0)
-  if (props.batch.finishedAt || isTerminalBatch()) return stored
-  const started = new Date(props.batch.startedAt as string | number).getTime()
-  return Number.isFinite(started) ? Math.max(stored, Date.now() - started) : stored
-}
-
-function isTerminalBatch() {
-  const status = String(props.batch.executeStatus || '').toLowerCase()
-  const result = String(props.batch.executeResult || '').toLowerCase()
-  return ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '已完成', '已取消'].includes(status)
-    || ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '通过', '不通过', '已取消', '阻塞', '跳过'].includes(result)
 }
 
 function sessionModeLabel(value: string) {

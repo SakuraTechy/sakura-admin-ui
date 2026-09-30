@@ -62,8 +62,8 @@
         <a-switch
           v-model="form.MAIL_SSL_ENABLED"
           type="round"
-          :checked-value="1"
-          :unchecked-value="0"
+          checked-value="1"
+          unchecked-value="0"
         >
           <template #checked>启用</template>
           <template #unchecked>禁用</template>
@@ -88,6 +88,9 @@
         <a-button v-if="isUpdate" type="primary" @click="handleSave">
           <template #icon><icon-save /></template>保存
         </a-button>
+        <a-button v-if="isUpdate" v-permission="['system:config:update']" @click="openTestMailModal">
+          <template #icon><icon-send /></template>测试连接
+        </a-button>
         <a-button v-if="isUpdate" @click="reset">
           <template #icon><icon-refresh /></template>重置
         </a-button>
@@ -96,6 +99,22 @@
         </a-button>
       </a-space>
     </a-form>
+    <a-modal
+      v-model:visible="testMailVisible"
+      title="测试邮件配置"
+      :mask-closable="false"
+      :esc-to-close="false"
+      :width="width >= 500 ? 500 : '100%'"
+      @before-ok="handleTestMail"
+      @close="resetTestMail"
+    >
+      <a-form ref="testMailFormRef" :model="testMailForm" :rules="testMailRules">
+        <a-form-item field="recipient" label="收件人">
+          <a-input v-model.trim="testMailForm.recipient" placeholder="请输入实际收件人邮箱" />
+        </a-form-item>
+      </a-form>
+      <div class="test-mail-tip">将使用当前页面填写的配置发送测试邮件，测试不会保存配置。</div>
+    </a-modal>
   </a-spin>
 </template>
 
@@ -104,9 +123,11 @@ import { useWindowSize } from '@vueuse/core'
 import { type FormInstance, Message, Modal } from '@arco-design/web-vue'
 import {
   type MailConfig,
+  type MailTestReq,
   type OptionResp,
   listOption,
   resetOptionValue,
+  testMailConfig,
   updateOption,
 } from '@/apis/system'
 import { useResetReactive } from '@/hooks'
@@ -115,6 +136,7 @@ defineOptions({ name: 'MailSetting' })
 const { width } = useWindowSize()
 const loading = ref<boolean>(false)
 const formRef = ref<FormInstance>()
+const testMailFormRef = ref<FormInstance>()
 const [form] = useResetReactive({
   MAIL_PROTOCOL: '',
   MAIL_HOST: '',
@@ -131,6 +153,14 @@ const rules: FormInstance['rules'] = {
   MAIL_PASSWORD: [{ required: true, message: '请输入值' }],
   MAIL_SSL_PORT: [{ required: true, message: '请输入值' }],
 }
+const testMailRules: FormInstance['rules'] = {
+  recipient: [
+    { required: true, message: '请输入收件人邮箱' },
+    { type: 'email', message: '收件人邮箱格式不正确' },
+  ],
+}
+const testMailVisible = ref(false)
+const testMailForm = reactive({ recipient: '' })
 
 const mailConfig = ref<MailConfig>({
   MAIL_PROTOCOL: {},
@@ -194,6 +224,39 @@ const handleSave = async () => {
   Message.success('保存成功')
 }
 
+const openTestMailModal = async () => {
+  const isInvalid = await formRef.value?.validate()
+  if (isInvalid) return
+  testMailVisible.value = true
+}
+
+const resetTestMail = () => {
+  testMailFormRef.value?.resetFields()
+  testMailForm.recipient = ''
+}
+
+const handleTestMail = async () => {
+  const isInvalid = await testMailFormRef.value?.validate()
+  if (isInvalid) return false
+  const request: MailTestReq = {
+    recipient: testMailForm.recipient,
+    protocol: form.MAIL_PROTOCOL,
+    host: form.MAIL_HOST,
+    port: Number(form.MAIL_PORT),
+    username: form.MAIL_USERNAME,
+    password: form.MAIL_PASSWORD,
+    sslEnabled: form.MAIL_SSL_ENABLED === '1',
+    sslPort: Number(form.MAIL_SSL_PORT),
+  }
+  await testMailConfig(request).then(() => {
+    Message.success('测试邮件已发送，请检查收件箱')
+    return true
+  }).catch((error) => {
+    loading.value = false
+    return false
+  })
+}
+
 // 恢复默认
 const handleResetValue = async () => {
   await resetOptionValue(queryForm)
@@ -223,5 +286,10 @@ onMounted(() => {
 :deep(.form .arco-input-wrapper),
 :deep(.arco-select-view-single) {
   width: 220px;
+}
+
+.test-mail-tip {
+  color: var(--color-text-3);
+  font-size: 13px;
 }
 </style>

@@ -212,14 +212,25 @@ const loadExcludeSceneIds = async () => {
   }
 }
 
-const buildSceneQuery = (page?: Record<string, unknown>) => ({
-  ...queryForm,
-  projectId: selectedProjectId.value || queryForm.projectId,
-  versionId: queryForm.versionId || uiStore.versionId,
-  recordSource: 'debug' as const,
-  ...(excludeSceneIds.value.length ? { excludeIds: excludeSceneIds.value } : {}),
-  ...page,
-})
+const buildSceneQuery = (page?: Record<string, unknown>) => {
+  const executeStatus = queryForm.executeStatus == null || queryForm.executeStatus === ''
+    ? undefined
+    : String(queryForm.executeStatus)
+  const executeResult = queryForm.executeResult == null || queryForm.executeResult === ''
+    ? undefined
+    : String(queryForm.executeResult)
+  return {
+    ...queryForm,
+    projectId: selectedProjectId.value || queryForm.projectId,
+    versionId: queryForm.versionId || uiStore.versionId,
+    executeStatus,
+    executeResult,
+    executionMatchedOnly: Boolean(executeStatus || executeResult),
+    recordSource: 'debug' as const,
+    ...(excludeSceneIds.value.length ? { excludeIds: excludeSceneIds.value } : {}),
+    ...page,
+  }
+}
 
 const querySummaryPage = (query: AutomationUiSceneQuery, signal?: AbortSignal) =>
   query.excludeIds?.length
@@ -265,7 +276,7 @@ const [queryForm, resetForm] = useResetReactive<AutomationUiSceneQuery>({
   createUser: undefined,
   updateUser: undefined,
   createTime: [],
-  sort: ['createTime,desc'],
+  sort: ['sceneId,asc', 'createTime,asc'],
 })
 
 const {
@@ -357,7 +368,7 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
 ])
 
 const columns: TableInstance['columns'] = [
-  { title: '场景 ID', dataIndex: 'sceneId', width: 170, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '场景 ID', dataIndex: 'sceneId', width: 200, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景名称', dataIndex: 'name', width: 330, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景版本', dataIndex: 'versionName', width: 120, align: 'center' },
   { title: '场景等级', dataIndex: 'level', width: 90, align: 'center' },
@@ -373,7 +384,7 @@ const columns: TableInstance['columns'] = [
   {
     title: '通过率',
     dataIndex: 'scenePassRate',
-    width: 80,
+    width: 90,
     align: 'center',
     render: ({ record }) =>
       Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0].scenePassRate : '-',
@@ -433,6 +444,7 @@ const onNodeClick = (data: any) => {
   uiStore.moduleId = id
   queryForm.moduleId = id || undefined
   treeSelectedKeys.value = id ? [id] : []
+  search()
 }
 
 const refreshModuleTreeLocal = async (options?: { force?: boolean }) => {

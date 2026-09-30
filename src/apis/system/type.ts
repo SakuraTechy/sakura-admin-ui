@@ -368,6 +368,18 @@ export interface MailConfig {
   MAIL_SSL_PORT: OptionResp
 }
 
+/** 邮箱配置测试类型 */
+export interface MailTestReq {
+  recipient: string
+  protocol: string
+  host: string
+  port: number
+  username: string
+  password: string
+  sslEnabled: boolean
+  sslPort: number
+}
+
 /** 登录配置类型 */
 export interface LoginConfig {
   LOGIN_CAPTCHA_ENABLED: OptionResp

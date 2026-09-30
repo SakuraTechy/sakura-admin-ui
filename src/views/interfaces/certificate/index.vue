@@ -496,13 +496,13 @@ const columns: TableInstance['columns'] = [
   {
     title: '申请时间',
     dataIndex: 'createTime',
-    width: 130,
+    width: 140,
     align: 'center',
   },
   {
     title: '授权结束',
     dataIndex: 'expiryDate',
-    width: 130,
+    width: 140,
     align: 'center',
   },
   {

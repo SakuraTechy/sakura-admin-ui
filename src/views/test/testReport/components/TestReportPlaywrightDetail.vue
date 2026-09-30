@@ -1,6 +1,6 @@
 <template>
   <div class="playwright-report-detail">
-    <a-card :title="reportTitle" size="small" :bordered="false">
+    <!-- <a-card :title="reportTitle" size="small" :bordered="false">
       <a-descriptions :column="4" bordered size="small">
         <a-descriptions-item label="报告类型">{{ reportTypeLabel }}</a-descriptions-item>
         <a-descriptions-item label="报告状态">{{ detailData?.status || '-' }}</a-descriptions-item>
@@ -29,7 +29,7 @@
       <a-alert v-if="artifactUploadErrors.length" type="warning" show-icon style="margin-top: 8px">
         {{ `有 ${artifactUploadErrors.length} 个产物上传失败，详见执行记录。` }}
       </a-alert>
-    </a-card>
+    </a-card> -->
 
     <AutomationExecutionHistoryPanel
       class="report-history"
@@ -227,6 +227,10 @@ const loadScenes = async (resetFilter = true, silent = false) => {
       const scene = activeSummaries[0]
       if (!scene) {
         batches = []
+      } else if (scene.latestExecution) {
+        // 单场景报告直接使用当前报告 scope 的 latest，避免再次查询执行列表时丢失报告过滤条件。
+        batches = [buildLayeredExecutionBatchRow(scene.latestExecution, scene)]
+        executionTotal.value = 1
       } else {
         const response = await getAutomationUiExecutions({
           sceneDbId: scene.sceneDbId,

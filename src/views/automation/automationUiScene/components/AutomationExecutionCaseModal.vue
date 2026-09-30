@@ -387,6 +387,14 @@ import { getProjectVersionConfig } from '@/apis/project/projectVersionConfig'
 import { useDict } from '@/hooks/app'
 import { useUserStore } from '@/stores'
 import GiCellTag from '@/components/GiCell/GiCellTag.vue'
+import {
+  type PlaywrightRunnerPageErrorPolicy,
+  createDefaultPlaywrightRunnerOptions,
+  playwrightRunnerArtifactPolicyOptions,
+  playwrightRunnerLiveFrameQualityOptions,
+  playwrightRunnerPageErrorPolicyOptions,
+  playwrightRunnerSessionModeOptions,
+} from '@/utils/playwrightRunner'
 
 interface ProjectEnvironmentOption {
   value: string
@@ -502,41 +510,12 @@ const cdpManagedContextAvailable = ref(false)
 const cdpCapabilitiesReason = ref('')
 const cdpGrayEnabled = ref(false)
 const cdpGrayReason = ref('')
-const runnerConfig = reactive<AutomationPlaywrightRunnerOptions>({
-  browser: 'chromium',
-  liveFrameQuality: 'high',
-  sessionMode: 'reuse-browser',
-  headed: false,
-  ignoreHttpsErrors: true,
-  trace: 'retain-on-failure',
-  video: 'retain-on-failure',
-  stepTimeoutMs: 6000,
-  caseTimeoutMs: 600000,
-  slowMoMs: 0,
-  finishDelayMs: 0,
-})
-const runnerPageErrorPolicy = ref<'inherit' | 'enabled' | 'disabled'>('inherit')
-const runnerPageErrorPolicyOptions = [
-  { label: '跟随录制用例（推荐）', value: 'inherit' },
-  { label: '本次任务开启', value: 'enabled' },
-  { label: '本次任务关闭', value: 'disabled' },
-]
-const artifactPolicyOptions = [
-  { label: '仅失败保留（推荐）', value: 'retain-on-failure' },
-  { label: '始终保留', value: 'on' },
-  { label: '关闭', value: 'off' },
-]
-const liveFrameQualityOptions = [
-  { label: '流畅（1080P，低带宽）', value: 'smooth' },
-  { label: '高清（推荐）', value: 'high' },
-  { label: '超清（4K，高带宽）', value: 'ultra' },
-  { label: '原画（8K，极高资源占用）', value: '8k' },
-]
-const runnerSessionModeOptions = [
-  { label: '同一浏览器窗口（默认）', value: 'reuse-browser' },
-  { label: '复用登录态', value: 'reuse-auth' },
-  { label: '独立登录', value: 'isolated' },
-]
+const runnerConfig = reactive<AutomationPlaywrightRunnerOptions>(createDefaultPlaywrightRunnerOptions())
+const runnerPageErrorPolicy = ref<PlaywrightRunnerPageErrorPolicy>('inherit')
+const runnerPageErrorPolicyOptions = playwrightRunnerPageErrorPolicyOptions
+const artifactPolicyOptions = playwrightRunnerArtifactPolicyOptions
+const liveFrameQualityOptions = playwrightRunnerLiveFrameQualityOptions
+const runnerSessionModeOptions = playwrightRunnerSessionModeOptions
 const cdpSessionModeOptions = computed(() => [
   // ...(cdpManagedContextAvailable.value && cdpGrayEnabled.value ? runnerSessionModeOptions : []),
   { label: '默认使用当前浏览器（兼容模式）', value: 'legacy-profile' },
@@ -592,19 +571,7 @@ const baseConfigValid = computed(() => Boolean(
 const canStartSelected = computed(() => baseConfigValid.value && executionCaseCount.value > 0)
 
 const resetRunnerConfig = () => {
-  Object.assign(runnerConfig, {
-    browser: 'chromium',
-    liveFrameQuality: 'high',
-    sessionMode: 'reuse-browser',
-    headed: false,
-    ignoreHttpsErrors: true,
-    trace: 'retain-on-failure',
-    video: 'retain-on-failure',
-    stepTimeoutMs: 6000,
-    caseTimeoutMs: 600000,
-    slowMoMs: 0,
-    finishDelayMs: 0,
-  })
+  Object.assign(runnerConfig, createDefaultPlaywrightRunnerOptions())
   runnerPageErrorPolicy.value = 'inherit'
 }
 

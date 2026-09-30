@@ -462,6 +462,9 @@ const loadLayeredExecutionRecord = async (
     executionType: type,
     executionId: detail.executionKey,
     batchId: detail.batchId,
+    // 保留服务端执行归属，避免测试计划过滤器将分层记录误判为无历史记录。
+    testPlanId: detail.testPlanId,
+    testReportId: detail.testReportId,
     buildNumber: detail.buildNumber,
     executeStatus: detail.status,
     executeResult: detail.result,

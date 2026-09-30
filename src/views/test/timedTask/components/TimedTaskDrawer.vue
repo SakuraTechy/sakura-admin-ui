@@ -72,6 +72,12 @@
 
       <section class="form-section">
         <div class="section-title">执行配置</div>
+        <a-form-item field="executionEngine" label="执行引擎" required>
+          <a-select v-model="form.executionEngine" :options="executionEngineOptions" @change="onExecutionEngineChange" />
+          <template #extra>
+            Chrome DevTools Protocol 依赖用户本机浏览器会话，仅支持测试计划立即执行，不支持无人值守定时任务。
+          </template>
+        </a-form-item>
         <a-form-item field="projectEnvironmentId" label="产品环境" required>
           <a-select v-model="form.projectEnvironmentId" placeholder="请选择计划所属项目的产品环境">
             <a-option v-for="item in projectEnvironments" :key="item.id" :value="item.id" :disabled="item.status !== 1">
@@ -79,13 +85,45 @@
             </a-option>
           </a-select>
         </a-form-item>
-        <a-form-item field="automationEnvironmentId" label="自动化环境" required>
-          <a-select v-model="form.automationEnvironmentId" placeholder="请选择 Jenkins 自动化环境">
+        <a-form-item v-if="form.executionEngine === 'SELENIUM'" field="automationEnvironmentId" label="自动化环境" required>
+          <a-select v-model="form.automationEnvironmentId" placeholder="请选择 Selenium 自动化环境">
             <a-option v-for="item in automationEnvironments" :key="item.id" :value="item.id" :disabled="item.status !== 1">
               {{ item.name }} <a-tag size="small" :color="item.status === 1 ? 'green' : 'gray'">{{ item.status === 1 ? '启用' : '停用' }}</a-tag>
             </a-option>
           </a-select>
         </a-form-item>
+        <a-card v-if="form.executionEngine === 'PLAYWRIGHT_RUNNER'" title="Playwright Runner 配置" size="small">
+          <a-row :gutter="16">
+            <a-col :span="8">
+              <a-form-item label="浏览器">
+                <a-select v-model="runnerConfig.browser">
+                  <a-option value="chromium">Chromium（推荐）</a-option>
+                  <a-option value="firefox">Firefox</a-option>
+                  <a-option value="webkit">WebKit</a-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="用例会话">
+                <a-select v-model="runnerConfig.sessionMode" :options="runnerSessionModeOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="实时画面质量">
+                <a-select v-model="runnerConfig.liveFrameQuality" :options="liveFrameQualityOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8"><a-form-item label="显示浏览器窗口"><a-switch v-model="runnerConfig.headed" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="忽略 HTTPS 错误"><a-switch v-model="runnerConfig.ignoreHttpsErrors" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="页面错误检测"><a-select v-model="runnerPageErrorPolicy" :options="playwrightRunnerPageErrorPolicyOptions" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="Trace 保留策略"><a-select v-model="runnerConfig.trace" :options="playwrightRunnerArtifactPolicyOptions" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="录屏保留策略"><a-select v-model="runnerConfig.video" :options="playwrightRunnerArtifactPolicyOptions" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="步骤超时（ms）"><a-input-number v-model="runnerConfig.stepTimeoutMs" :min="1000" :max="300000" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="用例超时（ms）"><a-input-number v-model="runnerConfig.caseTimeoutMs" :min="10000" :max="3600000" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="慢放时间（ms）"><a-input-number v-model="runnerConfig.slowMoMs" :min="0" :max="10000" /></a-form-item></a-col>
+            <a-col :span="8"><a-form-item label="结束停留（ms）"><a-input-number v-model="runnerConfig.finishDelayMs" :min="0" :max="600000" /></a-form-item></a-col>
+          </a-row>
+        </a-card>
       </section>
 
       <section class="form-section">
@@ -119,12 +157,20 @@
 import { type FormInstance, Message } from '@arco-design/web-vue'
 import CronParser from 'cron-parser'
 import dayjs from 'dayjs'
+import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
 import { type AutomationEnvironmentConfigResp, getAutomationEnvironmentConfigList } from '@/apis/automation/automationEnvironmentConfig'
 import { type ProjectEnvironmentConfigResp, getProjectEnvironmentConfigList } from '@/apis/project/projectEnvironmentConfig'
-import { type TestPlanResp, getTestPlanList } from '@/apis/test/testPlan'
+import { type TestExecutionEngine, type TestPlanResp, getTestPlanList } from '@/apis/test/testPlan'
 import { type TestTimedTaskReq, addTimedTask, getTimedTask, updateTimedTask } from '@/apis/test/timedTask'
 import CronModal from '@/components/GenCron/CronModal/index.vue'
-import { useUserStore } from '@/stores'
+import {
+  type PlaywrightRunnerPageErrorPolicy,
+  createDefaultPlaywrightRunnerOptions,
+  playwrightRunnerArtifactPolicyOptions,
+  playwrightRunnerLiveFrameQualityOptions,
+  playwrightRunnerPageErrorPolicyOptions,
+  playwrightRunnerSessionModeOptions,
+} from '@/utils/playwrightRunner'
 
 const props = defineProps<{ plans?: TestPlanResp[] }>()
 const emits = defineEmits<{ success: [] }>()
@@ -132,7 +178,6 @@ const emits = defineEmits<{ success: [] }>()
 type ScheduleMode = 'EVERY_30_MINUTES' | 'HOURLY' | 'DAILY' | 'WEEKDAY' | 'WEEKLY' | 'CUSTOM'
 interface DrawerForm extends TestTimedTaskReq { id?: string }
 
-const userStore = useUserStore()
 const visible = ref(false)
 const formRef = ref<FormInstance>()
 const cronModalRef = ref<InstanceType<typeof CronModal>>()
@@ -143,6 +188,14 @@ const scheduleMode = ref<ScheduleMode>('EVERY_30_MINUTES')
 const dailyTime = ref('09:00')
 const weekDay = ref('MON')
 const nextRuns = ref<string[]>([])
+const executionEngineOptions = [
+  { label: 'Selenium 自动化', value: 'SELENIUM' },
+  { label: 'Playwright Runner', value: 'PLAYWRIGHT_RUNNER' },
+]
+const liveFrameQualityOptions = playwrightRunnerLiveFrameQualityOptions
+const runnerSessionModeOptions = playwrightRunnerSessionModeOptions
+const runnerPageErrorPolicy = ref<PlaywrightRunnerPageErrorPolicy>('inherit')
+const runnerConfig = reactive<AutomationPlaywrightRunnerOptions>(createDefaultPlaywrightRunnerOptions())
 const weekOptions = [
   { label: '周一', value: 'MON' },
   { label: '周二', value: 'TUE' },
@@ -158,17 +211,24 @@ const emptyForm = (): DrawerForm => ({
   name: '',
   description: '',
   cronExpression: '0 */30 * * * ?',
+  executionEngine: 'SELENIUM' as TestExecutionEngine,
   allowConcurrent: 0,
   projectEnvironmentId: '',
   automationEnvironmentId: '',
-  notificationEmails: userStore.userInfo.email ? [userStore.userInfo.email] : [],
+  notificationEmails: [],
 })
 const form = reactive<DrawerForm>(emptyForm())
 
 const loadOptions = async () => {
   if (props.plans?.length) planOptions.value = props.plans
   else planOptions.value = (await getTestPlanList({ sort: ['createTime,desc'] })).data || []
-  automationEnvironments.value = (await getAutomationEnvironmentConfigList({ status: 1 })).data || []
+  await loadAutomationEnvironments()
+}
+
+const loadAutomationEnvironments = async () => {
+  automationEnvironments.value = form.executionEngine === 'SELENIUM'
+    ? (await getAutomationEnvironmentConfigList({ status: 1 })).data || []
+    : []
 }
 
 const loadProjectEnvironments = async () => {
@@ -180,6 +240,8 @@ const loadProjectEnvironments = async () => {
 
 const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
   Object.assign(form, emptyForm())
+  Object.assign(runnerConfig, createDefaultPlaywrightRunnerOptions())
+  runnerPageErrorPolicy.value = 'inherit'
   scheduleMode.value = 'EVERY_30_MINUTES'
   dailyTime.value = '09:00'
   weekDay.value = 'MON'
@@ -191,12 +253,25 @@ const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
       testPlanId: data.testPlanId,
       name: data.name,
       description: data.description || '',
+      executionEngine: data.executionEngine || 'SELENIUM',
+      executionConfig: data.executionConfig || undefined,
       cronExpression: data.cronExpression,
       allowConcurrent: data.allowConcurrent,
       projectEnvironmentId: data.projectEnvironmentId,
       automationEnvironmentId: data.automationEnvironmentId,
-      notificationEmails: data.notificationEmails || [],
+      // 脱敏邮箱不能作为收件人；兼容通知邮箱数组上线前的合法旧字段 executeEmail。
+      notificationEmails: data.notificationEmails?.filter(isValidEmail).length
+        ? data.notificationEmails.filter(isValidEmail)
+        : isValidEmail(data.executeEmail) ? [data.executeEmail] : [],
     })
+    deduplicateEmails()
+    if (data.executionConfig) {
+      Object.assign(runnerConfig, { ...createDefaultPlaywrightRunnerOptions(), ...data.executionConfig })
+      runnerPageErrorPolicy.value = data.executionConfig.pageErrorCheckEnabled === undefined
+        ? 'inherit'
+        : data.executionConfig.pageErrorCheckEnabled ? 'enabled' : 'disabled'
+    }
+    await loadAutomationEnvironments()
     parseScheduleMode(data.cronExpression)
   } else if (options?.plan) {
     form.testPlanId = options.plan.id
@@ -209,6 +284,15 @@ const open = async (options?: { id?: string, plan?: TestPlanResp }) => {
 const onPlanChange = async () => {
   form.projectEnvironmentId = ''
   await loadProjectEnvironments()
+}
+
+const onExecutionEngineChange = async (value: string | number | boolean) => {
+  form.automationEnvironmentId = ''
+  if (String(value) !== 'SELENIUM') {
+    automationEnvironments.value = []
+    return
+  }
+  await loadAutomationEnvironments()
 }
 
 const applyScheduleMode = () => {
@@ -266,12 +350,15 @@ const onCronSelected = (cron: string) => {
 }
 
 const deduplicateEmails = () => {
-  form.notificationEmails = [...new Set(form.notificationEmails.map((item) => item.trim().toLowerCase()).filter(Boolean))].slice(0, 20)
+  form.notificationEmails = [...new Set(form.notificationEmails.map((item) => item.trim().toLowerCase()).filter(Boolean))]
 }
+
+const isValidEmail = (email?: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email?.trim() || '')
 
 const submit = async (done: (closed: boolean) => void) => {
   deduplicateEmails()
-  if (!form.testPlanId || !form.name.trim() || !form.projectEnvironmentId || !form.automationEnvironmentId) {
+  const needsAutomationEnvironment = form.executionEngine === 'SELENIUM'
+  if (!form.testPlanId || !form.name.trim() || !form.projectEnvironmentId || (needsAutomationEnvironment && !form.automationEnvironmentId)) {
     Message.warning('请完整填写测试计划、任务名称和执行环境')
     done(false)
     return
@@ -281,18 +368,36 @@ const submit = async (done: (closed: boolean) => void) => {
     done(false)
     return
   }
-  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!form.notificationEmails.length || form.notificationEmails.some((item) => !emailPattern.test(item))) {
-    Message.warning('请填写 1–20 个有效通知邮箱')
+  if (form.notificationEmails.length > 20 || form.notificationEmails.some((item) => !isValidEmail(item))) {
+    Message.warning('请填写不超过 20 个有效通知邮箱')
     done(false)
     return
   }
-  const payload: TestTimedTaskReq = { ...form, name: form.name.trim() }
-  if (form.id) await updateTimedTask(payload, form.id)
-  else await addTimedTask(payload)
-  Message.success(form.id ? '定时任务已更新' : '定时任务已保存，当前为禁用状态')
-  emits('success')
-  done(true)
+  const payload: TestTimedTaskReq = {
+    ...form,
+    name: form.name.trim(),
+    automationEnvironmentId: needsAutomationEnvironment ? form.automationEnvironmentId : undefined,
+    executionConfig: form.executionEngine === 'PLAYWRIGHT_RUNNER'
+      ? {
+          ...runnerConfig,
+          ...(runnerPageErrorPolicy.value === 'inherit'
+            ? {}
+            : { pageErrorCheckEnabled: runnerPageErrorPolicy.value === 'enabled' }),
+        }
+      : undefined,
+  }
+  try {
+    if (form.id) await updateTimedTask(payload, form.id)
+    else await addTimedTask(payload)
+    Message.success(form.id ? '定时任务已更新' : '定时任务已保存，当前为禁用状态')
+    emits('success')
+    done(true)
+  } catch (error) {
+    // 请求失败必须显式结束 Arco 的 before-ok loading，避免确定按钮永久转圈。
+    const message = error instanceof Error ? error.message : '定时任务保存失败，请稍后重试'
+    Message.error(message)
+    done(false)
+  }
 }
 
 defineExpose({ open })

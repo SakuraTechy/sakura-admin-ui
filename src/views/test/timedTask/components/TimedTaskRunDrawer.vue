@@ -35,7 +35,8 @@
           </template>
           <template #links="{ record }">
             <a-space>
-              <a-link v-if="record.reportUrl" :href="record.reportUrl" target="_blank">报告</a-link>
+              <a-link v-if="record.testReportId" @click="openTestReport(record)">报告</a-link>
+              <a-link v-else-if="record.reportUrl" :href="record.reportUrl" target="_blank">报告</a-link>
               <span v-else>-</span>
               <a-link v-if="record.consoleUrl" :href="record.consoleUrl" target="_blank">Jenkins</a-link>
             </a-space>
@@ -55,6 +56,7 @@
 
 <script setup lang="ts">
 import type { TableInstance } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
 import {
   type TestTimedTaskLogResp,
   type TestTimedTaskResp,
@@ -64,6 +66,7 @@ import {
 } from '@/apis/test/timedTask'
 
 const visible = ref(false)
+const router = useRouter()
 const loading = ref(false)
 const activeTab = ref('runs')
 const task = ref<TestTimedTaskResp>()
@@ -138,6 +141,16 @@ const loadLogs = async () => {
   }
 }
 const loadActiveTab = () => activeTab.value === 'runs' ? loadRuns() : loadLogs()
+const openTestReport = async (record: TestTimedTaskRunResp) => {
+  if (!record.testReportId) return
+  await router.push({
+    path: '/test/testReport',
+    query: {
+      id: String(record.testReportId),
+      testPlanId: String(record.testPlanId),
+    },
+  })
+}
 const open = (record: TestTimedTaskResp) => {
   task.value = record
   activeTab.value = 'runs'

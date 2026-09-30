@@ -58,7 +58,7 @@
       >
         <template #columns>
           <template v-if="isSceneSelection">
-            <a-table-column title="场景 ID" data-index="sceneId" :width="170" ellipsis tooltip />
+            <a-table-column title="场景 ID" data-index="sceneId" :width="200" ellipsis tooltip />
             <a-table-column title="场景名称" data-index="sceneName" ellipsis tooltip />
             <a-table-column title="用例数" data-index="caseTotal" :width="82" align="center" />
           </template>
@@ -85,7 +85,7 @@
               <span v-else>未执行</span>
             </template>
           </a-table-column>
-          <a-table-column title="运行耗时" :width="105" align="center">
+          <a-table-column title="运行耗时" :width="120" align="center">
             <template #cell="{ record }">{{ formatExecutionDuration(record.duration) }}</template>
           </a-table-column>
           <a-table-column title="执行编号" data-index="executionId" :width="190" ellipsis tooltip />

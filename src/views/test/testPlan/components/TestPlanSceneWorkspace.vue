@@ -26,11 +26,11 @@
             :searchable="false"
             :tree-data="displayTreeList"
             :loading="treeLoading"
-            :selected-keys="selectedKeys"
+            :selected-keys="treeSelectedKeys"
             :multiple="false"
             :check-strictly="true"
             :draggable="false"
-            @update:selected-keys="(val) => (selectedKeys = val)"
+            @update:selected-keys="(val) => (treeSelectedKeys = val)"
             @node-click="onNodeClick"
           >
             <template #right-menu />
@@ -81,22 +81,22 @@
 
       <GiTable
         v-if="activeWorkspaceView === 'scenes'"
-        v-model:selected-keys="tableSelectedKeys"
+        v-model:selected-keys="selectedKeys"
         class="scene-table"
         size="medium"
         title=""
         row-key="id"
-        :data="allScenes"
+        :data="tableData"
         :columns="columns"
-        :loading="loading"
+        :loading="tableLoading"
         :pagination="pagination"
         :scroll="{ x: '100%', y: '100%'}"
         :row-selection="{ type: 'checkbox', showCheckedAll: true }"
         :show-selection-alert="true"
-        :selection-message="`已选择 ${tableSelectedKeys.length} 条记录`"
-        @select="onSelect"
-        @select-all="onSelectAll"
-        @refresh="fetchSceneList"
+        :selection-message="`已选择 ${selectedKeys.length} 条记录`"
+        @select="select"
+        @select-all="selectAll"
+        @refresh="refreshSceneList"
       >
         <template #top>
           <GiForm
@@ -126,14 +126,14 @@
         <template #toolbar-right>
           <a-button
             status="danger"
-            :disabled="!tableSelectedKeys.length"
+            :disabled="!selectedKeys.length"
             @click="onBatchRemove"
           >
             <template #icon><icon-delete /></template>
             批量删除
           </a-button>
           <a-dropdown trigger="click" @select="onBatchExecutionSelect">
-            <a-button type="primary" :disabled="!tableSelectedKeys.length">
+            <a-button type="primary" :disabled="!selectedKeys.length">
               <template #icon><icon-select-all /></template>
               批量执行
             </a-button>
@@ -257,8 +257,7 @@ import { mapWithConcurrency, requestOnce } from '@/views/automation/automationUi
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { TreeCateItem } from '@/stores/modules/uiStore'
 import { useDict } from '@/hooks/app'
-import { usePagination } from '@/hooks/modules/usePagination'
-import { useResetReactive } from '@/hooks'
+import { useResetReactive, useTable } from '@/hooks'
 import type { ColumnItem } from '@/components/GiForm'
 import type { LabelValueState } from '@/types/global'
 import { GiCellTag, GiCellTags } from '@/components/GiCell'
@@ -301,22 +300,21 @@ const uiStore = useUiStore()
 const { scene_level, status_type } = useDict('scene_level', 'status_type')
 
 const giTreeRef = ref()
-const selectedKeys = ref<string[]>([])
+const treeSelectedKeys = ref<string[]>([])
 const moduleId = ref('')
 const treeList = ref<TreeCateItem[]>([])
 const treeKeyword = ref('')
 const treeLoading = ref(false)
-const loading = ref(false)
-const allScenes = ref<PlanSceneRow[]>([])
-const tableSelectedKeys = ref<Array<string | number>>([])
 const projectIdStr = ref('')
 const versionIdStr = ref('')
 const planSceneIds = ref<string[]>([])
 const planSceneRowsCache = shallowRef<PlanSceneRow[]>([])
 const workspaceInitializing = ref(false)
 let planSceneRowsCacheKey = ''
-let sceneListGeneration = 0
-let sceneListController: AbortController | undefined
+let sceneRequestGeneration = 0
+let latestScenePageResult: ApiRes<PageRes<PlanSceneRow[]>> = {
+  data: { list: [], total: 0 },
+}
 
 const [queryForm, resetForm] = useResetReactive({
   sceneId: undefined as string | undefined,
@@ -385,7 +383,7 @@ const queryFormColumns = computed<ColumnItem[]>(() => [
 ])
 
 const columns: TableInstance['columns'] = [
-  { title: '场景 ID', dataIndex: 'sceneId', width: 170, fixed: 'left', ellipsis: true, tooltip: true },
+  { title: '场景 ID', dataIndex: 'sceneId', width: 200, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景名称', dataIndex: 'name', width: 330, ellipsis: true, tooltip: true },
   { title: '场景版本', dataIndex: 'versionName', width: 120, align: 'center', ellipsis: true, tooltip: true },
   { title: '场景等级', dataIndex: 'level', width: 90, align: 'center' },
@@ -421,14 +419,6 @@ const columns: TableInstance['columns'] = [
   { title: '结束时间', dataIndex: 'finishedAt', width: 180, align: 'center', render: ({ record }) => formatPlanSceneDateTime(getPlanRecordDisplayValue(record, ['finishedAt', 'durationEndTime'])) },
   { title: '操作', dataIndex: 'sceneAction', slotName: 'sceneAction', width: 300, align: 'center', fixed: 'right' },
 ]
-
-const { pagination, setTotal } = usePagination(() => {
-  void fetchSceneList()
-})
-
-const selectedSceneRows = computed(() =>
-  allScenes.value.filter((row) => tableSelectedKeys.value.map(String).includes(String(row.id))),
-)
 
 const ALL_HISTORY_SCENES = 'all'
 const activeWorkspaceView = ref<'scenes' | 'history'>('scenes')
@@ -482,7 +472,7 @@ const resolveExecutionType = (value: string | number | Record<string, any> | und
 
 const onBatchExecutionSelect = (value: string | number | Record<string, any> | undefined) => {
   const executionType = resolveExecutionType(value)
-  if (executionType) emit('batch-execute', selectedSceneRows.value, executionType)
+  if (executionType) emit('batch-execute', selectedRows.value, executionType)
 }
 
 const onExecuteAllSelect = (value: string | number | Record<string, any> | undefined) => {
@@ -613,14 +603,9 @@ const openLink = async (record: PlanSceneRow, key: string, errorMsg: string) => 
   }
 }
 
-const applyFilter = () => {
-  pagination.current = 1
-  void fetchSceneList()
-}
-
 const onFormSearch = () => {
   if (workspaceInitializing.value) return
-  applyFilter()
+  void refreshSceneList()
 }
 
 const resetQuery = async () => {
@@ -629,27 +614,18 @@ const resetQuery = async () => {
   queryForm.versionId = versionIdStr.value || undefined
   moduleId.value = ''
   uiStore.moduleId = ''
-  selectedKeys.value = []
+  treeSelectedKeys.value = []
   await nextTick()
   workspaceInitializing.value = false
-  pagination.current = 1
-  void fetchSceneList()
+  void refreshSceneList()
 }
 
 const onNodeClick = (data: any) => {
   const id = toIdString(data?.id || data?.node?.id)
   moduleId.value = id
   uiStore.moduleId = id
-  selectedKeys.value = id ? [id] : []
-  pagination.current = 1
-  void fetchSceneList()
-}
-
-const onSelect = (keys: Array<string | number>) => {
-  tableSelectedKeys.value = keys
-}
-const onSelectAll = (checked: boolean) => {
-  tableSelectedKeys.value = checked ? allScenes.value.map((row) => row.id) : []
+  treeSelectedKeys.value = id ? [id] : []
+  void refreshSceneList()
 }
 
 const resolveActiveVersionId = () => {
@@ -915,7 +891,7 @@ const openHistory = async (sceneId?: string) => {
 
 const showScenes = () => {
   activeWorkspaceView.value = 'scenes'
-  void fetchSceneList(true)
+  void refreshSceneList(true)
 }
 
 const openSceneHistory = async (record: PlanSceneRow) => {
@@ -1015,28 +991,28 @@ const containsIgnoreCase = (value: unknown, keyword?: string) => (
   !keyword?.trim() || String(value || '').toLowerCase().includes(keyword.trim().toLowerCase())
 )
 
-const matchesPlanSceneQuery = (row: PlanSceneRow) => {
-  if (!containsIgnoreCase(row.sceneId, queryForm.sceneId)) return false
-  if (!containsIgnoreCase(row.name, queryForm.name)) return false
-  if (queryForm.versionId && String(row.versionId) !== String(queryForm.versionId)) return false
-  if (moduleId.value && String(row.moduleId) !== String(moduleId.value)) return false
-  if (queryForm.level && String(row.level) !== String(queryForm.level)) return false
-  if (queryForm.executeStatus && String(row.planRecord?.executeStatus || '') !== String(queryForm.executeStatus)) return false
-  if (queryForm.executeResult && String(row.planRecord?.executeResult || '') !== String(queryForm.executeResult)) return false
-  const createUserLabel = selectedUserLabel(queryForm.createUser)
-  if (queryForm.createUser && (!createUserLabel || row.createUserString !== createUserLabel)) return false
-  const updateUserLabel = selectedUserLabel(queryForm.updateUser)
-  if (queryForm.updateUser && (!updateUserLabel || row.updateUserString !== updateUserLabel)) return false
-  if (queryForm.createTime?.length === 2) {
+const matchesPlanSceneQuery = (row: PlanSceneRow, query: Record<string, any>) => {
+  if (!containsIgnoreCase(row.sceneId, query.sceneId)) return false
+  if (!containsIgnoreCase(row.name, query.name)) return false
+  if (query.versionId && String(row.versionId) !== String(query.versionId)) return false
+  if (query.moduleId && String(row.moduleId) !== String(query.moduleId)) return false
+  if (query.level && String(row.level) !== String(query.level)) return false
+  if (query.executeStatus && pickPlanExecuteField(row, 'executeStatus') !== String(query.executeStatus)) return false
+  if (query.executeResult && pickPlanExecuteField(row, 'executeResult') !== String(query.executeResult)) return false
+  const createUserLabel = selectedUserLabel(query.createUser)
+  if (query.createUser && (!createUserLabel || row.createUserString !== createUserLabel)) return false
+  const updateUserLabel = selectedUserLabel(query.updateUser)
+  if (query.updateUser && (!updateUserLabel || row.updateUserString !== updateUserLabel)) return false
+  if (query.createTime?.length === 2) {
     const createdAt = new Date(row.createTime).getTime()
-    const startAt = new Date(queryForm.createTime[0]).getTime()
-    const endAt = new Date(queryForm.createTime[1]).getTime()
+    const startAt = new Date(query.createTime[0]).getTime()
+    const endAt = new Date(query.createTime[1]).getTime()
     if (!Number.isFinite(createdAt) || createdAt < startAt || createdAt > endAt) return false
   }
   return true
 }
 
-const loadPlanSceneRows = async (refresh: boolean, signal: AbortSignal) => {
+const loadPlanSceneRows = async (refresh: boolean, signal?: AbortSignal) => {
   const cacheKey = `${toIdString(props.plan.id)}:${planSceneIds.value.join(',')}`
   if (!refresh && planSceneRowsCacheKey === cacheKey) return planSceneRowsCache.value
   const chunks = Array.from(
@@ -1063,37 +1039,52 @@ const loadPlanSceneRows = async (refresh: boolean, signal: AbortSignal) => {
   return rows
 }
 
-const fetchSceneList = async (refreshIds = false) => {
-  sceneListController?.abort()
-  const controller = new AbortController()
-  sceneListController = controller
-  const generation = ++sceneListGeneration
-  loading.value = true
-  tableSelectedKeys.value = []
+const loadPlanScenePage = async ({ page, size }: { page: number, size: number }) => {
+  const query = { ...queryForm, moduleId: moduleId.value }
+  const generation = ++sceneRequestGeneration
   try {
-    await ensurePlanSceneIds(refreshIds)
-    if (generation !== sceneListGeneration || controller.signal.aborted) return
+    await ensurePlanSceneIds()
     if (!planSceneIds.value.length) {
-      allScenes.value = []
-      planSceneRowsCache.value = []
-      planSceneRowsCacheKey = ''
-      setTotal(0)
-      return
+      const emptyResult = { data: { list: [], total: 0 } } as ApiRes<PageRes<PlanSceneRow[]>>
+      latestScenePageResult = emptyResult
+      return emptyResult
     }
-    // 计划关联 ID 已由计划接口冻结；这里只批量读取窄摘要，不再回退到包含定义和历史的旧 /list。
-    const rows = await loadPlanSceneRows(refreshIds, controller.signal)
-    if (generation !== sceneListGeneration || controller.signal.aborted) return
-    const filteredRows = rows.filter(matchesPlanSceneQuery)
-    setTotal(filteredRows.length)
-    const start = (pagination.current - 1) * pagination.pageSize
-    allScenes.value = filteredRows.slice(start, start + pagination.pageSize)
+    const rows = await loadPlanSceneRows(false)
+    const filteredRows = rows.filter((row) => matchesPlanSceneQuery(row, query))
+    const start = (page - 1) * size
+    const result = {
+      data: {
+        list: filteredRows.slice(start, start + size),
+        total: filteredRows.length,
+      },
+    } as ApiRes<PageRes<PlanSceneRow[]>>
+    if (generation !== sceneRequestGeneration) return latestScenePageResult
+    latestScenePageResult = result
+    return result
   } catch (error: any) {
-    if (!controller.signal.aborted && !['CanceledError', 'AbortError'].includes(error?.name)) {
-      Message.error(error?.message || '读取测试计划场景失败')
-    }
-  } finally {
-    if (generation === sceneListGeneration) loading.value = false
+    Message.error(error?.message || '读取测试计划场景失败')
+    return latestScenePageResult
   }
+}
+
+const {
+  tableData,
+  loading: tableLoading,
+  pagination,
+  search,
+  select,
+  selectAll,
+  selectedKeys,
+} = useTable<PlanSceneRow>(loadPlanScenePage, { immediate: false })
+
+const selectedRows = computed(() =>
+  tableData.value.filter((row) => selectedKeys.value.map(String).includes(String(row.id))),
+)
+
+const refreshSceneList = async (refreshIds = false) => {
+  planSceneRowsCacheKey = ''
+  if (refreshIds) await ensurePlanSceneIds(true)
+  search()
 }
 
 const removeScenes = async (sceneIds: string[]) => {
@@ -1103,9 +1094,9 @@ const removeScenes = async (sceneIds: string[]) => {
   }
   await removeTestPlanScenes(props.plan.id, sceneIds)
   Message.success('取消关联成功')
-  tableSelectedKeys.value = []
+  selectedKeys.value = []
   pagination.current = 1
-  await fetchSceneList(true)
+  await refreshSceneList(true)
   if (historyLoaded.value) await fetchHistoryScenes()
   emit('refresh')
 }
@@ -1115,7 +1106,7 @@ const onBatchRemove = () => {
     title: '确认删除',
     content: '确认取消关联选中的测试场景吗？',
     hideCancel: false,
-    onOk: () => removeScenes(tableSelectedKeys.value.map((id) => toIdString(id))),
+    onOk: () => removeScenes(selectedKeys.value.map((id) => toIdString(id))),
   })
 }
 
@@ -1142,9 +1133,9 @@ const initWorkspace = async () => {
     queryForm.versionId = versionIdStr.value || undefined
     moduleId.value = ''
     uiStore.moduleId = ''
-    selectedKeys.value = []
+    treeSelectedKeys.value = []
     await refreshModuleTree()
-    await fetchSceneList(true)
+    await refreshSceneList(true)
   } finally {
     workspaceInitializing.value = false
   }
@@ -1175,9 +1166,9 @@ watch(
     }
     moduleId.value = ''
     uiStore.moduleId = ''
-    selectedKeys.value = []
+    treeSelectedKeys.value = []
     await refreshModuleTree({ force: true })
-    // 列表由 GiForm search-on-change -> onFormSearch -> fetchSceneList 触发，避免与 watch 重复请求
+    // 列表由查询按钮统一调度，避免版本切换 watch 与查询请求重复触发。
   },
   { flush: 'sync' },
 )
@@ -1196,12 +1187,11 @@ onMounted(() => {
 onUnmounted(() => {
   stopHistoryPolling()
   historyController?.abort()
-  sceneListController?.abort()
 })
 
 defineExpose({
   reload: async () => {
-    await fetchSceneList(true)
+    await refreshSceneList(true)
     if (historyLoaded.value || activeWorkspaceView.value === 'history') await fetchHistoryScenes()
   },
   openHistory,

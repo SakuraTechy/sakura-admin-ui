@@ -1,4 +1,6 @@
 import http from '@/utils/http'
+import type { AutomationPlaywrightRunnerOptions } from '@/apis/automation/automationPlaywrightRunner'
+import type { TestExecutionEngine } from './testPlan'
 
 const BASE_URL = '/test/timedTask'
 
@@ -19,11 +21,14 @@ export interface TestTimedTaskResp {
   projectName?: string
   name: string
   description?: string
+  executionEngine: TestExecutionEngine
+  executionConfig?: Record<string, unknown>
+  executeEmail?: string
   cronExpression: string
   allowConcurrent: number
   projectEnvironmentId: string
   projectEnvironmentName?: string
-  automationEnvironmentId: string
+  automationEnvironmentId?: string
   automationEnvironmentName?: string
   notificationEmails: string[]
   nextExecuteTime?: string
@@ -79,10 +84,12 @@ export interface TestTimedTaskReq {
   testPlanId: string
   name: string
   description?: string
+  executionEngine: TestExecutionEngine
+  executionConfig?: Partial<AutomationPlaywrightRunnerOptions>
   cronExpression: string
   allowConcurrent: number
   projectEnvironmentId: string
-  automationEnvironmentId: string
+  automationEnvironmentId?: string
   notificationEmails: string[]
 }
 

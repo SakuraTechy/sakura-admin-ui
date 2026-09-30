@@ -47,6 +47,18 @@ const normalizeErrorMessage = (msg: unknown) => {
   return '服务器端错误'
 }
 
+const getResponseErrorMessage = (data: unknown) => {
+  if (typeof data === 'string' && data.trim()) return data.trim()
+  if (!data || typeof data !== 'object') return undefined
+
+  const payload = data as Record<string, unknown>
+  for (const field of ['msg', 'message', 'error']) {
+    const message = payload[field]
+    if (typeof message === 'string' && message.trim()) return message.trim()
+  }
+  return undefined
+}
+
 const handleError = (msg: unknown) => {
   const message = normalizeErrorMessage(msg)
   if (message.length >= 15) {
@@ -149,7 +161,9 @@ http.interceptors.response.use(
     const status = error.response?.status
     const errorMsg = status === 401
       ? '登录已失效，请重新登录'
-      : StatusCodeMessage[status] || '服务器暂时未响应，请刷新页面并重试。若无法解决，请联系管理员'
+      : getResponseErrorMessage(error.response?.data)
+        || StatusCodeMessage[status]
+        || '服务器暂时未响应，请刷新页面并重试。若无法解决，请联系管理员'
     if (shouldHandleError(config)) handleError(errorMsg)
     return Promise.reject(error)
   },
