@@ -2,18 +2,46 @@
   <section class="report-assets" aria-label="当前用例执行产物">
     <a-alert v-if="record.artifactUploadError && record.artifactUploadError !== '-'" type="warning">产物上传失败：{{ record.artifactUploadError }}</a-alert>
     <div class="asset-toolbar">
-      <span class="asset-scope">当前用例 · {{ record.caseId }} · {{ record.executionId }}</span>
-      <a-button size="mini" :loading="indexLoading" @click="refreshIndex">刷新产物</a-button>
+      <!-- <span class="asset-scope">当前用例 · {{ record.caseId }} · {{ record.executionId }}</span> -->
+      <strong v-if="mode === 'video'" class="asset-toolbar-title">Runner 执行录屏</strong>
+      <a-button v-if="mode === 'artifacts'" size="mini" :loading="indexLoading" @click="refreshIndex">刷新产物</a-button>
       <div v-if="mode === 'artifacts'" class="asset-views" role="group" aria-label="执行产物视图">
-        <button v-for="view in views" :key="view.value" type="button" :aria-pressed="layout === view.value" @click="layout = view.value">{{ view.label }}</button>
+        <a-button v-for="view in views" :key="view.value" size="mini" :aria-pressed="layout === view.value" @click="layout = view.value">{{ view.label }}</a-button>
+      </div>
+      <div v-if="mode === 'video'" class="asset-preview-actions">
+        <a-button size="mini" :loading="indexLoading" @click="refreshIndex">刷新产物</a-button>
       </div>
     </div>
     <a-alert v-if="indexError" type="error">{{ indexError }}；可点击“刷新产物”重试。</a-alert>
 
     <template v-if="mode === 'artifacts'">
       <div v-if="layout === 'classic'" class="asset-classic">
-        <a-button v-for="item in reportItems" :key="item.kind" :type="item.kind === 'report' ? 'primary' : 'secondary'" :disabled="!item.url" :loading="pending[item.kind]" @click="openArtifact(item)">{{ classicLabels[item.kind] }}</a-button>
-        <span v-if="!reportItems[2].url" class="asset-muted">{{ reportItems[2].reason }}</span>
+        <div class="asset-classic-heading">
+          <strong>产物清单</strong>
+          <span class="asset-classic-count">{{ availableReportCount }} / {{ reportItems.length }} 项可用</span>
+        </div>
+        <div class="asset-classic-list">
+          <div v-for="item in reportItems" :key="item.kind" class="asset-classic-item" :class="{ 'asset-classic-item--missing': !item.url }">
+            <div class="asset-classic-item-info">
+              <div class="asset-classic-item-heading">
+                <strong>{{ item.title }}</strong>
+                <a-tag size="small" :color="item.url ? 'green' : item.state === 'expired' ? 'orange' : 'gray'">
+                  {{ stateLabel(item) }}
+                </a-tag>
+              </div>
+              <div class="asset-classic-item-description">{{ item.url ? item.description : item.reason }}</div>
+            </div>
+            <a-button
+              size="small"
+              :type="item.kind === 'report' ? 'primary' : 'secondary'"
+              :disabled="!item.url"
+              :loading="pending[item.kind]"
+              @click="openArtifact(item)"
+            >
+              {{ classicLabels[item.kind] }}
+            </a-button>
+          </div>
+        </div>
       </div>
       <div v-else-if="layout === 'cards'" class="asset-cards">
         <article v-for="item in reportItems" :key="item.kind" class="asset-card" :class="{ 'asset-card--missing': !item.url }">
@@ -46,11 +74,12 @@
       </div>
     </template>
     <section v-else class="asset-video" aria-label="当前用例执行录屏">
-      <a-empty v-if="!videoItem.url" :description="videoItem.reason" />
+      <div v-if="!videoItem.url" class="asset-video-empty">
+        <a-empty :description="videoItem.reason" />
+      </div>
       <template v-else>
-        <div class="asset-preview-heading"><strong>Runner 执行录屏</strong><a-button v-if="!objectUrls.video" type="primary" :loading="pending.video" @click="loadArtifact(videoItem).catch(() => {})">{{ errors.video ? '重试加载录屏' : '加载录屏' }}</a-button></div>
         <video v-if="objectUrls.video" ref="videoRef" :src="objectUrls.video" controls preload="metadata" @error="mediaError('video')" />
-        <span v-else class="asset-muted">录屏按需加载，不自动播放。</span>
+        <span v-else class="asset-muted">{{ errors.video ? '录屏加载失败，请点击“刷新产物”重试。' : '录屏加载中...' }}</span>
       </template>
     </section>
     <a-alert v-for="(message, kind) in visibleErrors" :key="kind" type="error">{{ message }}</a-alert>
@@ -70,7 +99,7 @@ const props = withDefaults(defineProps<{
   active?: boolean
 }>(), { mode: 'artifacts', active: true })
 const views = [{ value: 'classic', label: '经典' }, { value: 'cards', label: '卡片' }, { value: 'list', label: '列表' }, { value: 'split', label: '分栏' }] as const
-const layout = ref<(typeof views)[number]['value']>('cards')
+const layout = ref<(typeof views)[number]['value']>('classic')
 const selectedKind = ref<ExecutionArtifactKind>('report')
 const index = ref<AutomationUiExecutionArtifact[]>([])
 const indexLoading = ref(false)
@@ -86,6 +115,7 @@ let generation = 0
 let indexController: AbortController | undefined
 const items = computed(() => buildExecutionArtifacts(props.record, index.value))
 const reportItems = computed(() => items.value.filter((item) => item.kind !== 'video'))
+const availableReportCount = computed(() => reportItems.value.filter((item) => item.url).length)
 const videoItem = computed(() => items.value.find((item) => item.kind === 'video')!)
 const selectedItem = computed(() => items.value.find((item) => item.kind === selectedKind.value)!)
 const actionLabels = { report: '在线预览', trace: '查看 Trace', screenshot: '查看截图', video: '查看录屏' }
@@ -130,6 +160,7 @@ async function refreshIndex() {
     const result = await getExecutionCaseArtifacts(executionDbId, caseId, controller.signal)
     if (controller.signal.aborted) return
     index.value = result
+    autoLoadVideo()
   } catch (error) {
     if (!controller.signal.aborted) indexError.value = error instanceof Error ? error.message : '读取产物目录失败'
   } finally {
@@ -173,6 +204,11 @@ function loadArtifact(item: ExecutionArtifactItem): Promise<Blob> {
   })()
   requests.set(item.kind, request)
   return request
+}
+
+function autoLoadVideo() {
+  if (!props.active || props.mode !== 'video' || objectUrls.video || pending.video || !videoItem.value.url) return
+  void loadArtifact(videoItem.value).catch(() => {})
 }
 
 async function openArtifact(item: ExecutionArtifactItem) {
@@ -231,18 +267,31 @@ watch(() => items.value.map((item) => item.url).join('|'), () => {
 watch(() => [props.active, props.mode], () => {
   if (!props.active || props.mode !== 'video') videoRef.value?.pause()
 })
+watch(() => [props.active, props.mode, videoItem.value.url], autoLoadVideo, { immediate: true })
 onUnmounted(reset)
 </script>
 
 <style scoped lang="scss">
-.report-assets { min-width: 0; min-height: 0; padding: 12px; overflow: auto; color: var(--color-text-1); container-type: inline-size; }
-.asset-toolbar, .asset-views, .asset-classic, .asset-card-heading, .asset-preview-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.asset-toolbar { margin-bottom: 14px; }
+.report-assets { min-width: 0; min-height: 0; padding: 0px; overflow: auto; color: var(--color-text-1); container-type: inline-size; }
+.asset-toolbar, .asset-views, .asset-classic, .asset-card-heading, .asset-preview-heading { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
+.asset-toolbar { min-height: 40px; margin-bottom: 5px; box-sizing: border-box; }
+.asset-toolbar-title { margin-right: auto; }
+.asset-preview-actions { display: flex; align-items: center; }
 .asset-scope { flex: 1; overflow-wrap: anywhere; font-size: 12px; color: var(--color-text-3); }
 .asset-views { padding: 3px; border-radius: 5px; background: var(--color-fill-2); }
 .asset-views button { padding: 4px 10px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--color-text-2); cursor: pointer; }
 .asset-views button[aria-pressed=true] { border-color: var(--color-border-2); background: var(--color-bg-2); color: rgb(var(--primary-6)); }
-.asset-classic { padding: 12px; background: var(--color-fill-1); }
+.asset-classic { display: block; overflow: hidden; border: 1px solid var(--color-border-2); border-radius: 4px; background: var(--color-bg-2); }
+.asset-classic-heading { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 16px; border-bottom: 1px solid var(--color-border-2); }
+.asset-classic-count { color: var(--color-text-3); font-size: 12px; font-weight: 400; }
+.asset-classic-list { display: flex; flex-direction: column; }
+.asset-classic-item { display: flex; align-items: center; gap: 16px; min-height: 72px; padding: 12px 16px; border-bottom: 1px solid var(--color-border-2); }
+.asset-classic-item:last-child { border-bottom: 0; }
+.asset-classic-item--missing { background: var(--color-fill-1); }
+.asset-classic-item-info { min-width: 0; flex: 1; }
+.asset-classic-item-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.asset-classic-item-description { margin-top: 5px; overflow-wrap: anywhere; color: var(--color-text-3); font-size: 12px; line-height: 1.5; }
+.asset-classic-item > :deep(.arco-btn) { flex: 0 0 auto; }
 .asset-muted { color: var(--color-text-3); font-size: 12px; }
 .asset-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .asset-card { display: flex; flex-direction: column; align-items: flex-start; padding: 16px; border: 1px solid var(--color-border-2); border-radius: 6px; background: var(--color-bg-2); }
@@ -263,10 +312,13 @@ onUnmounted(reset)
 .asset-preview-heading { justify-content: space-between; margin-bottom: 12px; }
 .asset-preview iframe { width: 100%; height: 420px; border: 1px solid var(--color-border-2); background: var(--color-bg-2); }
 .asset-preview img { display: block; max-width: 100%; max-height: 420px; margin: auto; object-fit: contain; }
+.asset-video-empty { display: flex; min-height: 240px; align-items: center; justify-content: center; padding: 24px; }
 .asset-video video { display: block; width: 100%; max-height: 520px; background: #000; object-fit: contain; }
 .report-assets > :deep(.arco-alert) { margin-bottom: 12px; }
 @container (max-width: 680px) { .asset-cards { grid-template-columns: 1fr; } }
 @container (max-width: 520px) {
+  .asset-classic-item { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .asset-classic-item > :deep(.arco-btn) { align-self: flex-start; }
   .asset-split { grid-template-columns: minmax(0, 1fr); }
   .asset-nav { display: flex; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--color-border-2); }
   .asset-nav button { width: auto; flex: 1 1 100px; }

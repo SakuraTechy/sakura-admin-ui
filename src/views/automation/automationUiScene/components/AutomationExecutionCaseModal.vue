@@ -17,17 +17,17 @@
           <a-descriptions-item label="所属项目">{{ projectName }}</a-descriptions-item>
           <a-descriptions-item label="所属版本">{{ versionName }}</a-descriptions-item>
           <a-descriptions-item v-if="executionScenes.length" label="执行场景" :span="2">
-            <a-space wrap class="scene-selection-list">
+            <a-space wrap class="selection-list">
               <a-tag v-for="item in executionScenes" :key="item.id" color="arcoblue">
                 {{ item.sceneId }}：{{ item.name }}
               </a-tag>
             </a-space>
           </a-descriptions-item>
           <a-descriptions-item v-else label="执行用例" :span="2">
-            <a-space wrap>
+            <a-space wrap class="selection-list">
               <a-tag v-if="selectAllCases" color="arcoblue">当前定义的全部 {{ executionCaseCount }} 个可执行用例</a-tag>
               <a-tag v-for="item in selectedCaseRows" :key="item.caseId" color="arcoblue">
-                {{ item.name }}
+                {{ item.caseId }}：{{ item.name }}
               </a-tag>
             </a-space>
           </a-descriptions-item>
@@ -1655,7 +1655,7 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
   margin-top: -4px;
 }
 
-.scene-selection-list {
+.selection-list {
   max-height: 144px;
   overflow-y: auto;
 }

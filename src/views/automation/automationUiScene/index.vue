@@ -289,7 +289,7 @@ const refresh = async () => {
   }
 }
 const refreshSceneList = async () => {
-  await automationUiSceneRef.value?.search()
+  await automationUiSceneRef.value?.refresh()
 }
 const addTab = async (record?: any) => {
   tabListRef.value?.addTab(record)

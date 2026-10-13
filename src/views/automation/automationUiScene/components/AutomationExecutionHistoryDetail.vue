@@ -283,7 +283,7 @@ function navigationDecisionLabel(value: string) {
 </script>
 
 <style scoped lang="scss">
-.report-tabs { display: flex; flex: none; gap: 24px; border-bottom: 1px solid var(--color-border-2); margin-bottom: 12px; }
+.report-tabs { display: flex; flex: none; gap: 24px; border-bottom: 1px solid var(--color-border-2); margin-bottom: 10px; }
 .report-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2); cursor: pointer; }
 .report-tabs button[aria-selected=true] { border-bottom-color: rgb(var(--primary-6)); color: rgb(var(--primary-6)); }
 .report-tabs span { padding: 0 5px; border-radius: 3px; background: var(--color-fill-2); font-size: 12px; }

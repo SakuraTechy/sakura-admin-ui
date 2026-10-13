@@ -201,8 +201,8 @@
       </template>
     </GiTable>
 
-    <AutomationUiSceneAddModal ref="AutomationUiSceneAddModalRef" @save-success="search" />
-    <ChromeRecordingModal ref="chromeRecordingModalRef" :scene-options="tableData" @recording-finished="search" />
+    <AutomationUiSceneAddModal ref="AutomationUiSceneAddModalRef" @save-success="refresh" />
+    <ChromeRecordingModal ref="chromeRecordingModalRef" :scene-options="tableData" @recording-finished="refresh" />
     <AutomationExecutionCaseSelectModal ref="executionCaseSelectModalRef" :live-executions="sceneProps.liveExecutions" @next="openExecutionConfig" />
     <AutomationExecutionCaseModal
       ref="executionCaseModalRef"
@@ -519,7 +519,12 @@ watch(() => queryForm.versionId, async (newVersionId, oldVersionId) => {
 watch(() => uiStore.moduleId, async (newModuleId) => {
   queryForm.moduleId = undefined
   queryForm.moduleIds = uiStore.getSceneModuleIds(newModuleId)
-  search()
+  // 编辑场景 tab 可能因加载模块树更新 moduleId；列表未激活时不能因此重置历史页码。
+  if (uiStore.activeKey === '0') search()
+})
+
+watch(() => uiStore.activeKey, (activeKey, previousKey) => {
+  if (activeKey === '0' && previousKey && previousKey !== '0') refresh()
 })
 
 // useTable 的自动请求早于上面的 immediate watch，首次请求必须等版本条件同步后再发起。
@@ -962,6 +967,7 @@ const onChromeRecord = (record?: AutomationUiSceneResp) => {
 defineExpose({
   reset,
   search,
+  refresh,
   cancelExecutionRun,
 })
 </script>
