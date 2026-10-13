@@ -234,6 +234,7 @@ export interface FileStatisticsResp {
 }
 export interface FileQuery {
   name?: string
+  url?: string
   type?: string
   absPath?: string
   sort: Array<string>

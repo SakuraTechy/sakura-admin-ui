@@ -9,13 +9,21 @@
     <a-spin :loading="loading" style="width: 100%">
       <div class="execute-modal">
         <a-alert type="info" show-icon>
-          已选择 {{ executionCaseCount }} 个用例。请确认产品环境和执行参数，开始后请在执行历史中查看实时状态。
+          <template v-if="executionScenes.length">已选择 {{ executionScenes.length }} 个场景，共 {{ sceneSelectionCaseCount }} 个用例，将使用以下配置按场景顺序串行执行。</template>
+          <template v-else>已选择 {{ executionCaseCount }} 个用例。请确认产品环境和执行参数，开始后请在执行历史中查看实时状态。</template>
         </a-alert>
 
         <a-descriptions :column="2" bordered size="medium">
           <a-descriptions-item label="所属项目">{{ projectName }}</a-descriptions-item>
           <a-descriptions-item label="所属版本">{{ versionName }}</a-descriptions-item>
-          <a-descriptions-item label="执行用例" :span="2">
+          <a-descriptions-item v-if="executionScenes.length" label="执行场景" :span="2">
+            <a-space wrap class="scene-selection-list">
+              <a-tag v-for="item in executionScenes" :key="item.id" color="arcoblue">
+                {{ item.sceneId }}：{{ item.name }}
+              </a-tag>
+            </a-space>
+          </a-descriptions-item>
+          <a-descriptions-item v-else label="执行用例" :span="2">
             <a-space wrap>
               <a-tag v-if="selectAllCases" color="arcoblue">当前定义的全部 {{ executionCaseCount }} 个可执行用例</a-tag>
               <a-tag v-for="item in selectedCaseRows" :key="item.caseId" color="arcoblue">
@@ -79,7 +87,7 @@
               </div>
               <div class="effective-url">
                 <div class="summary-label">预览用例 {{ previewCaseId || '-' }} 起始地址</div>
-                <a-spin :loading="previewLoading" size="mini">
+                <a-spin :loading="previewLoading" :size="16">
                   <div class="effective-url-value" :class="[{ error: previewError }]">
                     {{ previewError || effectiveStartUrl || '请选择产品环境和用例' }}
                   </div>
@@ -451,10 +459,13 @@ const emit = defineEmits<{
   (e: 'finished', payload?: { cancelled?: boolean }): void
   (e: 'startup-failed', error: string): void
   (e: 'plan-start', payload: PlanExecutionStartPayload): void
+  (e: 'scene-start', payload: PlanExecutionStartPayload): void
+  (e: 'batch-created', payload: { sceneDbId: string, batchId: string }): void
   (e: 'back', payload: {
     scene: any
     executionType: Exclude<ExecutionType, 'jenkins'>
     caseIds: string[]
+    selectionDisabled: boolean
   } & ExecutionContext): void
   (e: 'batch-update', rows: LiveExecutionCase[]): void
 }>()
@@ -466,8 +477,10 @@ const userStore = useUserStore()
 const loading = ref(false)
 const previewLoading = ref(false)
 const scene = ref<any>()
+const sceneSelection = ref<any>()
 const executionContext = ref<ExecutionContext>({})
 const planExecutionMode = ref(false)
+const selectionDisabled = ref(false)
 const executionType = ref<Exclude<ExecutionType, 'jenkins'>>('extension-cdp')
 const selectedCaseKeys = ref<Array<string | number>>([])
 const selectAllCases = ref(false)
@@ -547,6 +560,13 @@ const selectedCaseRows = computed(() => {
 const executionCaseCount = computed(() => selectAllCases.value
   ? Number(scene.value?.__caseTotal || caseRows.value.length)
   : selectedCaseKeys.value.length)
+// 场景展示兼容计划聚合，但不改变计划执行与 UI 自动化执行各自的调度分支。
+const executionScenes = computed<any[]>(() => sceneSelection.value?.__planScenes
+  || (planExecutionMode.value && scene.value?.__planAggregate ? scene.value.__planScenes : []))
+const sceneSelectionCaseCount = computed(() => executionScenes.value
+  .reduce((total: number, item: any) => total + (item.__projectedDefinition
+    ? Number(item.__caseTotal || 0)
+    : (item.caseList || []).filter(isExecutableCase).length), 0))
 const cdpConfigValid = computed(() => (
   cdpConfig.windowSizeMode !== 'custom' || (
     cdpConfig.viewportWidth >= 320 && cdpConfig.viewportWidth <= 10000
@@ -739,15 +759,20 @@ const onOpen = async (
 ) => {
   if (running.value) {
     Message.warning('当前已有批次正在执行，请在执行历史中查看进度')
-    return
+    return false
   }
+  // 聚合场景仅用于范围确认；预览和每次创建批次仍使用真实场景数据库 ID。
+  sceneSelection.value = record?.__sceneAggregate ? record : undefined
+  record = sceneSelection.value?.__planScenes[0] || record
   executionType.value = type
   executionContext.value = {
+    runId: options.runId,
     recordSource: options.recordSource || 'debug',
     testPlanId: options.testPlanId,
     testReportId: options.testReportId,
   }
   planExecutionMode.value = Boolean(options.planExecution)
+  selectionDisabled.value = Boolean(options.selectionDisabled)
   selectedCaseKeys.value = []
   selectAllCases.value = Boolean(options.selectAllCases)
   expectedDefinitionVersion.value = options.expectedDefinitionVersion
@@ -761,7 +786,7 @@ const onOpen = async (
   resetRunnerConfig()
   resetCdpConfig()
   resetBatchState()
-  visible.value = true
+  visible.value = !options.autoStart
   loading.value = true
   try {
     if (type === 'extension-cdp') {
@@ -838,13 +863,24 @@ const onOpen = async (
       }
       Object.assign(cdpConfig, options.cdpOptions)
     }
-    if (options.autoStart && selectedCaseKeys.value.length) {
-      await startBatch(selectedCaseKeys.value.map(String))
+    if (options.runnerOptions) {
+      const { pageErrorCheckEnabled, ...config } = options.runnerOptions
+      Object.assign(runnerConfig, config)
+      runnerPageErrorPolicy.value = pageErrorCheckEnabled == null
+        ? 'inherit'
+        : pageErrorCheckEnabled ? 'enabled' : 'disabled'
     }
+    if (options.autoStart) {
+      if (options.shouldCancel?.()) return false
+      await startBatch(selectAllCases.value ? [] : selectedCaseKeys.value.map(String), options.shouldCancel)
+      return !cancelRequested.value
+    }
+    return true
   } catch (error: any) {
     const message = error?.message || '读取场景回放配置失败'
     Message.error(message)
     if (options.autoStart) emit('startup-failed', message)
+    return false
   } finally {
     loading.value = false
   }
@@ -868,6 +904,18 @@ const handleProjectEnvironmentChange = async (value: SelectChangeValue) => {
 }
 
 const startSelectedCases = async () => {
+  if (sceneSelection.value) {
+    emit('scene-start', {
+      scene: sceneSelection.value,
+      executionType: executionType.value,
+      caseIds: [],
+      projectEnvironmentId: form.projectEnvironmentId,
+      runnerOptions: executionType.value === 'playwright-runner' ? buildRunnerOptions() : undefined,
+      cdpOptions: executionType.value === 'extension-cdp' ? { ...cdpConfig } : undefined,
+    })
+    visible.value = false
+    return
+  }
   if (planExecutionMode.value) {
     emit('plan-start', {
       scene: scene.value,
@@ -889,15 +937,17 @@ const startSelectedCases = async () => {
 
 function backToCaseSelection() {
   emit('back', {
-    scene: scene.value,
+    scene: sceneSelection.value || scene.value,
     executionType: executionType.value,
     caseIds: selectedCaseKeys.value.map(String),
+    // 返回时保留入口确定的范围锁定标记，避免计划聚合被误识别为普通用例选择。
+    selectionDisabled: selectionDisabled.value,
     ...executionContext.value,
   })
   visible.value = false
 }
 
-async function startBatch(caseIds: string[]) {
+async function startBatch(caseIds: string[], shouldCancel?: () => boolean) {
   if (!selectAllCases.value && !caseIds.length) throw new Error('当前场景没有可执行用例')
   if (running.value) throw new Error('当前已有批次正在执行')
   try {
@@ -912,7 +962,12 @@ async function startBatch(caseIds: string[]) {
     throw new Error('用例总超时不能小于单步骤超时')
   }
 
+  if (shouldCancel?.()) {
+    cancelRequested.value = true
+    return
+  }
   const { data: createdBatch } = await createAutomationPlaywrightBatch({
+    runId: executionContext.value.runId,
     sceneKey: playbackSceneKey.value,
     executionType: executionType.value,
     caseIds,
@@ -928,6 +983,13 @@ async function startBatch(caseIds: string[]) {
       : buildRunnerOptions(),
     cdpOptions: executionType.value === 'extension-cdp' ? { ...cdpConfig } : undefined,
   })
+  emit('batch-created', { sceneDbId: playbackSceneKey.value, batchId: createdBatch.batchId })
+  // 取消可能发生在创建请求在途期间；必须取消真实子批次，且不能再启动 Runner/CDP。
+  if (shouldCancel?.()) {
+    cancelRequested.value = true
+    await cancelAutomationPlaywrightBatch(playbackSceneKey.value, createdBatch.batchId)
+    return
+  }
   const batchCases = new Map(createdBatch.cases.map((item) => [String(item.caseId), item]))
   const createdCaseIds = createdBatch.cases.map((item) => String(item.caseId))
   createdBatch.cases.forEach((item) => {
@@ -977,7 +1039,12 @@ async function startBatch(caseIds: string[]) {
     item.stepPass = 0
     item.stepFail = 0
     item.stepSkip = 0
-    item.status = createdCaseIds.includes(item.caseId) ? 'waiting' : 'idle'
+    // 服务端预检已结束的用例不能重新标成等待，否则场景汇总永远无法结束。
+    item.status = !batchCase
+      ? 'idle'
+      : terminalStatuses.includes(batchCase.status as CasePlaybackStatus)
+        ? batchCase.status as CasePlaybackStatus
+        : 'waiting'
     item.error = ''
     item.durationMs = undefined
     item.startedAt = undefined
@@ -1586,6 +1653,11 @@ defineExpose({ onOpen, cancelBatch, cancelActiveCase })
 
 .config-row {
   margin-top: -4px;
+}
+
+.scene-selection-list {
+  max-height: 144px;
+  overflow-y: auto;
 }
 
 .config-card {

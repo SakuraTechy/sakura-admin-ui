@@ -1,5 +1,5 @@
 <template>
-  <div ref="detailRef" :data-history-expand="batch.rowKey" class="batch-detail">
+  <div ref="detailRef" :data-history-expand="batch.rowKey" class="batch-detail" :class="{ 'batch-detail--embedded': embedded }">
     <a-spin v-if="loadingCases" class="batch-loading" />
     <a-alert v-else-if="loadError" type="error" class="batch-load-error">{{ loadError }}</a-alert>
     <div v-else class="batch-scene-list">
@@ -110,12 +110,23 @@
                   {{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}
                 </a-tag> -->
                 <a-space class="batch-case-actions" size="mini">
+                  <a-button
+                    v-if="embedded && ['waiting', 'queued', 'starting', 'running'].includes(String(record.executeStatus))"
+                    size="mini"
+                    status="danger"
+                    @click="emit('cancel-case', record)"
+                  >取消用例</a-button>
+                  <a-button v-if="record.executionType === 'playwright-runner'" size="mini"
+                    :type="expandedKey === record.rowKey && activeTab === 'split' ? 'primary' : 'secondary'"
+                    @click="selectContent(record, 'split')">
+                    双栏
+                  </a-button>
                   <a-button size="mini"
                     :type="expandedKey === record.rowKey && activeTab === 'log' ? 'primary' : 'secondary'"
                     @click="selectContent(record, 'log')">
                     日志
                   </a-button>
-                  <a-button size="mini"
+                  <a-button v-if="record.executionType === 'playwright-runner'" size="mini"
                     :type="expandedKey === record.rowKey && activeTab === 'live' ? 'primary' : 'secondary'"
                     @click="selectContent(record, 'live')">
                     实时画面
@@ -131,24 +142,38 @@
 
             <Transition name="batch-case-expand">
               <div v-if="expandedKey === record.rowKey" class="batch-case-content">
-                <AutomationExecutionLogViewer
-                  v-if="activeTab === 'log'"
-                  :job-id="record.jobId"
-                  :execution-db-id="record.recordTarget.executionDbId"
-                  :case-execution-db-id="record.caseExecutionDbId"
-                  :status="record.executeStatus"
-                  :artifact-url="record.executionLogArtifactUrl"
-                  :execution-id="record.executionId"
-                  :live-logs="record.liveLogs"
-                  :fallback-content="recordLogFallback(record)"
-                />
-                <AutomationExecutionLiveView
-                  v-else-if="activeTab === 'live' && record.executionType === 'playwright-runner'"
-                  :job-id="record.jobId"
-                  :status="record.executeStatus"
-                  :quality="record.liveFrameQuality"
-                />
-                <a-empty v-else-if="activeTab === 'live'" description="当前执行方式不支持实时画面" />
+                <AutomationExecutionWorkspace
+                  v-if="activeTab !== 'report'"
+                  v-model="activeTab"
+                  external-mode-controls
+                  :title="`${record.caseId} · ${record.caseName}`"
+                  :live-supported="record.executionType === 'playwright-runner'"
+                  @restore="ensureCaseVisible(record.rowKey)"
+                >
+                  <template #log="{ viewportControls }">
+                    <AutomationExecutionLogViewer
+                      embedded
+                      :viewport-controls="viewportControls"
+                      :job-id="record.jobId"
+                      :execution-db-id="record.recordTarget.executionDbId"
+                      :case-execution-db-id="record.caseExecutionDbId"
+                      :status="record.executeStatus"
+                      :artifact-url="record.executionLogArtifactUrl"
+                      :execution-id="record.executionId"
+                      :live-logs="record.liveLogs"
+                      :fallback-content="recordLogFallback(record)"
+                    />
+                  </template>
+                  <template #live="{ viewportControls }">
+                    <AutomationExecutionLiveView
+                      embedded
+                      :viewport-controls="viewportControls"
+                      :job-id="record.jobId"
+                      :status="record.executeStatus"
+                      :quality="record.liveFrameQuality"
+                    />
+                  </template>
+                </AutomationExecutionWorkspace>
                 <div v-else class="batch-report-content">
                   <!-- <AutomationExecutionArtifactActions
                     :report-url="record.artifactReportUrl"
@@ -188,6 +213,7 @@
 
 <script setup lang="ts">
 import type { ExecutionHistoryBatchRow, ExecutionHistoryCaseRow, ExecutionHistorySceneSummary, ExecutionHistoryStepRow } from '../execution'
+import { isExecutionFollowTerminal, useExecutionAutoFollow } from '../useExecutionAutoFollow'
 import {
   executionAggregateResultLabel,
   executionDisplayResultColor,
@@ -200,32 +226,39 @@ import AutomationExecutionHistoryDetail from './AutomationExecutionHistoryDetail
 import AutomationExecutionArtifactActions from './AutomationExecutionArtifactActions.vue'
 import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
 import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
+import AutomationExecutionWorkspace from './AutomationExecutionWorkspace.vue'
 import AutomationExecutionProgress from './AutomationExecutionProgress.vue'
 
 const props = withDefaults(defineProps<{
   batch: ExecutionHistoryBatchRow
   /** 聚合视图即使只有一个场景，也需保留场景分组层。 */
   forceSceneGroups?: boolean
+  /** 嵌入场景行时使用自然高度，避免多层滚动。 */
+  embedded?: boolean
+  /** 多场景任务仅对当前跟随场景自动展开用例。 */
+  autoPreview?: boolean
   loadCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
   loadSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
   loadStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>
-  /** 报告页定位用例；未指定时自动打开批次首个用例日志。 */
+  /** 报告页明确定位用例；未指定时只自动打开执行中的用例。 */
   autoExpandCaseId?: string
   autoExpandSceneId?: string
 }>(), {
   forceSceneGroups: false,
+  autoPreview: true,
 })
+const emit = defineEmits<{ (e: 'cancel-case', row: ExecutionHistoryCaseRow): void }>()
 const detailRef = ref<HTMLElement>()
 const expandedKey = ref('')
 const expandedSceneKeys = ref<string[]>([])
-const activeTab = ref<'log' | 'live' | 'report'>('log')
-const pendingAutoScrollKey = ref('')
+const activeTab = ref<'split' | 'log' | 'live' | 'report'>('split')
 const loadingCases = ref(false)
 const loadError = ref('')
 const loadingLogStepKeys = new Set<string>()
-const observedCaseStatuses = new Map<string, string>()
 const durationTick = ref(Date.now())
 let durationTimer: number | undefined
+let viewportObserver: ResizeObserver | undefined
+const viewportTimers = new Set<number>()
 const casePage = ref(props.batch.casePage || 1)
 const casePageSize = ref(props.batch.casePageSize || 20)
 const caseTotal = computed(() => props.batch.casePageTotal ?? props.batch.caseTotal)
@@ -234,11 +267,17 @@ onMounted(() => {
   durationTimer = window.setInterval(() => {
     durationTick.value = Date.now()
   }, 1000)
+  window.addEventListener('resize', refreshCaseViewport)
+  if (typeof ResizeObserver !== 'undefined') viewportObserver = new ResizeObserver(refreshCaseViewport)
 })
 
 onUnmounted(() => {
   if (durationTimer) window.clearInterval(durationTimer)
   durationTimer = undefined
+  window.removeEventListener('resize', refreshCaseViewport)
+  viewportObserver?.disconnect()
+  viewportTimers.forEach((timer) => window.clearTimeout(timer))
+  viewportTimers.clear()
 })
 
 async function fetchCases() {
@@ -262,6 +301,11 @@ watch(
   },
   { immediate: true },
 )
+
+watch(loadingCases, (loading) => {
+  // 轮询重载会重新创建卡片 DOM，需要恢复其高度预算和视口观察。
+  if (!loading && expandedKey.value) void ensureCaseVisible(expandedKey.value)
+}, { flush: 'post' })
 
 function changeCasePage(page: number) {
   casePage.value = page
@@ -336,63 +380,43 @@ function sessionModeLabel(value: string) {
 }
 
 watch(() => props.batch.rowKey, () => {
-  // 普通翻页只展示批次，不自动打开首条用例；实时执行有日志时由自动预览逻辑负责展开。
   expandedKey.value = ''
   expandedSceneKeys.value = []
-  activeTab.value = 'log'
-  pendingAutoScrollKey.value = ''
+  activeTab.value = 'split'
 }, { immediate: true })
 
-watch(sceneGroups, (groups) => {
-  const keys = groups.map(group => group.key)
+watch(() => sceneGroups.value.map(group => group.key).join('|'), () => {
+  const keys = sceneGroups.value.map(group => group.key)
   expandedSceneKeys.value = expandedSceneKeys.value.filter(key => keys.includes(key))
-  if (!expandedSceneKeys.value.length) expandedSceneKeys.value = keys
+  if (!expandedSceneKeys.value.length && keys.length) expandedSceneKeys.value = [keys[0]]
 }, { immediate: true })
 
-watch(
-  () => `${props.batch.casesLoaded === true}:${props.batch.cases.map(record => record.rowKey).join('|')}:${props.autoExpandCaseId || props.autoExpandSceneId || ''}`,
-  () => {
-    if (!props.batch.casesLoaded || expandedKey.value || !props.batch.cases.length) return
-    const target = props.autoExpandCaseId
-      ? props.batch.cases.find(record => record.caseId === props.autoExpandCaseId)
-      : props.autoExpandSceneId
-        ? props.batch.cases.find(record => record.sceneId === props.autoExpandSceneId || record.sceneKey === props.autoExpandSceneId)
-      : props.batch.cases.find(record => !isTerminalCase(record)) || props.batch.cases[0]
-    if (target) selectContent(target, 'log')
+useExecutionAutoFollow({
+  scope: () => `${props.batch.rowKey}:${props.batch.casePage || 1}:${props.autoExpandCaseId || props.autoExpandSceneId || ''}`,
+  enabled: () => props.autoPreview,
+  activeOnly: true,
+  rows: () => props.batch.casesLoaded === false ? [] : props.batch.cases.map(record => ({ key: record.rowKey, executeStatus: record.executeStatus, executeResult: record.executeResult })),
+  selectedKey: () => expandedKey.value,
+  // 场景定位只负责打开批次，不能让已完成批次隐式展开第一条用例。
+  preferredKey: () => props.autoExpandCaseId
+    ? props.batch.cases.find(record => record.caseId === props.autoExpandCaseId)?.rowKey
+    : undefined,
+  select: (key) => {
+    const record = props.batch.cases.find(item => item.rowKey === key)
+    if (record) selectContent(record, activeTab.value)
   },
-  { immediate: true, flush: 'post' },
-)
-
-watch(
-  () => props.batch.cases
-    .map((record) => (
-      `${record.rowKey}:${record.executeStatus}:${record.executeResult || ''}:${record.liveLogs?.length || 0}`
-    ))
-    .join('|'),
-  () => autoSelectNextRunningCase(),
-  { immediate: true, flush: 'post' },
-)
-
-watch(
-  () => props.batch.cases.map(record => `${record.rowKey}:${record.executeStatus}:${record.executeResult || ''}`).join('|'),
-  () => {
-    // 报告页也要在当前用例完成后继续跟随下一条用例；首次加载只建立状态快照，避免直接跳过首条。
-    const statusChangedToTerminal = props.batch.cases.some((record) => {
-      const current = caseStatus(record)
-      const previous = observedCaseStatuses.get(record.rowKey)
-      observedCaseStatuses.set(record.rowKey, current)
-      return previous !== undefined && previous !== current && isTerminalCase(record)
-        && record.rowKey === expandedKey.value
-    })
-    if (statusChangedToTerminal) advanceToNextCase()
+  nextPage: () => {
+    // 聚合批次的分页属于各子场景，不能拿首场景的 executionDbId 翻整个计划的页。
+    if ((props.batch.sceneCount || 1) === 1 && !loadingCases.value && props.loadCases && casePage.value * casePageSize.value < caseTotal.value) {
+      changeCasePage(casePage.value + 1)
+    }
   },
-  { immediate: true, flush: 'post' },
-)
+})
 
 watch(
   () => `${expandedKey.value}:${activeTab.value}:${props.batch.cases.map((record) => `${record.rowKey}:${record.stepsLoaded === true}`).join('|')}`,
   () => {
-    if (activeTab.value !== 'log' || !expandedKey.value || !props.loadSteps) return
+    if (!['split', 'log'].includes(activeTab.value) || !expandedKey.value || !props.loadSteps) return
     const record = props.batch.cases.find((item) => item.rowKey === expandedKey.value)
     if (!record || record.stepsLoaded || !record.caseExecutionDbId || loadingLogStepKeys.has(record.rowKey)) return
     loadingLogStepKeys.add(record.rowKey)
@@ -408,141 +432,110 @@ function toggleSceneGroup(key: string) {
 }
 
 function toggleCase(record: ExecutionHistoryCaseRow) {
-  pendingAutoScrollKey.value = ''
   if (expandedKey.value === record.rowKey) {
     expandedKey.value = ''
     return
   }
   expandedKey.value = record.rowKey
-  activeTab.value = 'log'
+  activeTab.value = record.executionType === 'playwright-runner' ? 'split' : 'log'
   ensureCaseVisible(record.rowKey)
 }
 
-function selectContent(record: ExecutionHistoryCaseRow, tab: 'log' | 'live' | 'report') {
-  pendingAutoScrollKey.value = ''
+function selectContent(record: ExecutionHistoryCaseRow, tab: 'split' | 'log' | 'live' | 'report') {
+  const group = sceneGroups.value.find(item => item.cases.some(item => item.rowKey === record.rowKey))
+  if (group && !expandedSceneKeys.value.includes(group.key)) expandedSceneKeys.value = [...expandedSceneKeys.value, group.key]
   expandedKey.value = record.rowKey
-  activeTab.value = tab
+  activeTab.value = tab === 'split' && record.executionType !== 'playwright-runner' ? 'log' : tab
   ensureCaseVisible(record.rowKey)
-}
-
-function autoSelectNextRunningCase() {
-  const cases = props.batch.cases
-  if (!cases.some(isCaseReadyForAutoPreview)) return
-
-  const currentIndex = cases.findIndex((record) => record.rowKey === expandedKey.value)
-  const current = cases[currentIndex]
-  if (current && isRunningCase(current)) {
-    if (isCaseReadyForAutoPreview(current)) {
-      if (pendingAutoScrollKey.value === current.rowKey) scrollBatchDetailToBottom(current.rowKey)
-      else ensureCaseVisible(current.rowKey)
-    }
-    return
-  }
-
-  const next = cases.slice(Math.max(0, currentIndex + 1)).find(isCaseReadyForAutoPreview)
-    || cases.find(isCaseReadyForAutoPreview)
-  if (!next) return
-
-  const group = sceneGroups.value.find((item) => item.cases.some((record) => record.rowKey === next.rowKey))
-  if (group && !expandedSceneKeys.value.includes(group.key)) {
-    expandedSceneKeys.value = [...expandedSceneKeys.value, group.key]
-  }
-  expandedKey.value = next.rowKey
-  activeTab.value = 'log'
-  pendingAutoScrollKey.value = next.rowKey
-  scrollBatchDetailToBottom(next.rowKey)
-}
-
-function caseStatus(record: ExecutionHistoryCaseRow) {
-  return `${String(record.executeStatus || '').toLowerCase()}:${String(record.executeResult || '').toLowerCase()}`
 }
 
 function isTerminalCase(record: ExecutionHistoryCaseRow) {
-  const status = String(record.executeStatus || '').toLowerCase()
-  const result = String(record.executeResult || '').toLowerCase()
-  return ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '已完成', '已取消'].includes(status)
-    || ['12', '14', '15', '16', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', '通过', '不通过', '已取消', '阻塞', '跳过'].includes(result)
+  return isExecutionFollowTerminal(record)
 }
 
-function advanceToNextCase() {
-  if (!props.autoExpandCaseId && !props.autoExpandSceneId) return
-  const currentIndex = props.batch.cases.findIndex(record => record.rowKey === expandedKey.value)
-  const next = props.batch.cases
-    .slice(Math.max(0, currentIndex + 1))
-    .find(record => !isTerminalCase(record))
-    || props.batch.cases.slice(Math.max(0, currentIndex + 1))[0]
-  if (!next) return
-  const group = sceneGroups.value.find(item => item.cases.some(record => record.rowKey === next.rowKey))
-  if (group && !expandedSceneKeys.value.includes(group.key)) {
-    expandedSceneKeys.value = [...expandedSceneKeys.value, group.key]
-  }
-  selectContent(next, 'log')
-}
-
-function isRunningCase(record: ExecutionHistoryCaseRow) {
-  return ['waiting', 'starting', 'queued', 'running'].includes(String(record.executeStatus || '').toLowerCase())
-}
-
-function isCaseReadyForAutoPreview(record: ExecutionHistoryCaseRow) {
-  // 只有执行弹窗推送的实时行才允许自动跟随；普通历史翻页中的排队/运行状态不应抢占展开态。
-  return record.live === true && isRunningCase(record) && Boolean(record.liveLogs?.length)
-}
-
-function findCaseSummary(rowKey: string) {
-  const caseElement = [...(detailRef.value?.querySelectorAll<HTMLElement>('[data-batch-case]') || [])]
+function findCaseElement(rowKey: string) {
+  return [...(detailRef.value?.querySelectorAll<HTMLElement>('[data-batch-case]') || [])]
     .find((element) => element.dataset.batchCase === rowKey)
-  return caseElement?.querySelector<HTMLElement>('.batch-case-summary') || caseElement
-}
-
-async function scrollBatchDetailToBottom(rowKey: string) {
-  await nextTick()
-  const scrollToBottom = () => {
-    if (!detailRef.value || pendingAutoScrollKey.value !== rowKey) return
-    // 自动切换后只滚动批次详情，不影响上方批次行。
-    detailRef.value.scrollTop = detailRef.value.scrollHeight
-    const summaryElement = findCaseSummary(rowKey)
-    const detailTop = detailRef.value.getBoundingClientRect().top + 12
-    if (summaryElement && summaryElement.getBoundingClientRect().top <= detailTop + 1) {
-      pendingAutoScrollKey.value = ''
-    }
-  }
-  window.setTimeout(scrollToBottom, 220)
-  window.setTimeout(scrollToBottom, 520)
 }
 
 async function ensureCaseVisible(rowKey: string) {
   await nextTick()
+  viewportTimers.forEach((timer) => window.clearTimeout(timer))
+  viewportTimers.clear()
+  viewportObserver?.disconnect()
+  const element = findCaseElement(rowKey)
+  if (!element) return
+  const summary = element?.querySelector<HTMLElement>('.batch-case-summary')
+  if (summary) viewportObserver?.observe(summary)
+  caseScrollContainers(element).forEach((container) => viewportObserver?.observe(container))
   const align = () => {
-    const summaryElement = findCaseSummary(rowKey)
-    if (!summaryElement) return
-    scrollSummaryIntoView(summaryElement)
+    if (expandedKey.value !== rowKey) return
+    refreshCaseViewport()
   }
-  window.setTimeout(align, 220)
-  // 表格展开行和日志容器会在首次渲染后再次调整高度，补一次校正确保摘要栏不被顶出视口。
-  window.setTimeout(align, 520)
+  align()
+  // 等待展开动画和异步明细布局完成，只校正本次选中的卡片，不跟随每条日志滚动外层页面。
+  ;[220, 520].forEach((delay) => {
+    const timer = window.setTimeout(() => {
+      viewportTimers.delete(timer)
+      align()
+    }, delay)
+    viewportTimers.add(timer)
+  })
 }
 
-function scrollSummaryIntoView(element: HTMLElement) {
-  const rootScroller = document.scrollingElement as HTMLElement | null
-  const scrollableAncestors: HTMLElement[] = []
+function caseScrollContainers(element: HTMLElement) {
+  const containers: HTMLElement[] = []
   let ancestor = element.parentElement
   while (ancestor) {
     const style = window.getComputedStyle(ancestor)
-    if (/(auto|scroll|overlay)/.test(style.overflowY) && ancestor.scrollHeight > ancestor.clientHeight) {
-      scrollableAncestors.push(ancestor)
+    if (/(auto|scroll|overlay)/.test(style.overflowY) && ancestor.clientHeight > 0
+      && ancestor.scrollHeight > ancestor.clientHeight + 1) {
+      containers.push(ancestor)
     }
     ancestor = ancestor.parentElement
   }
-  if (rootScroller && !scrollableAncestors.includes(rootScroller)) scrollableAncestors.push(rootScroller)
+  const rootScroller = document.scrollingElement as HTMLElement | null
+  if (rootScroller && !containers.includes(rootScroller)) containers.push(rootScroller)
+  return containers
+}
 
-  scrollableAncestors.forEach((container) => {
+function refreshCaseViewport() {
+  const element = findCaseElement(expandedKey.value)
+  if (!element || !element.getClientRects().length) return
+  // 沉浸/全屏由子组件接管视口；不能用历史行的高度限制它们。
+  if (document.fullscreenElement || document.querySelector('.execution-workspace--immersive, .execution-log-viewer--immersive, .live-view--immersive')) return
+  // 场景表格可能保留横向滚动宽度，但展开的操作栏和内容视口必须适配可见列宽。
+  let visibleRight = window.innerWidth
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    if (/(auto|scroll|hidden|clip)/.test(window.getComputedStyle(parent).overflowX)) {
+      visibleRight = Math.min(visibleRight, parent.getBoundingClientRect().left + parent.clientLeft + parent.clientWidth)
+    }
+  }
+  element.style.setProperty('--execution-case-width', `${Math.max(0, Math.floor(visibleRight - element.getBoundingClientRect().left))}px`)
+  const containers = caseScrollContainers(element)
+  const rootScroller = document.scrollingElement
+  const insetTop = (container: HTMLElement) => container === rootScroller
+    || container.matches('.detail-panel, .gi-page-layout__body')
+    ? 56
+    : 12
+  // 历史由内部工作区滚动时，外层可能没有溢出，但仍要与“本次执行”共享同一可用高度。
+  const workspace = element.closest<HTMLElement>('.detail-panel, .gi-page-layout__body')
+  const viewportContainers = workspace && workspace.clientHeight > 0 && !containers.includes(workspace)
+    ? [...containers, workspace]
+    : containers
+  const availableHeight = Math.min(...viewportContainers.map((container) => (
+    (container === rootScroller ? window.innerHeight : container.clientHeight) - insetTop(container) - 16
+  )))
+  const summaryHeight = element.querySelector<HTMLElement>('.batch-case-summary')?.getBoundingClientRect().height || 0
+  // 按最小外层滚动视口扣除标题、边框和留白，三个页签使用同一高度预算。
+  element.style.setProperty('--execution-content-height', `${Math.max(0, Math.floor(availableHeight - summaryHeight + 10))}px`)
+
+  containers.forEach((container) => {
     const targetRect = element.getBoundingClientRect()
     const bounds = container === rootScroller
       ? { top: 0, bottom: window.innerHeight }
-      : container.getBoundingClientRect()
-    const pageScroller = container === rootScroller
-      || container.matches('.detail-panel, .gi-page-layout__body')
-    const safeTop = bounds.top + (pageScroller ? 56 : 12)
+      : { top: container.getBoundingClientRect().top + container.clientTop, bottom: container.getBoundingClientRect().top + container.clientTop + container.clientHeight }
+    const safeTop = bounds.top + insetTop(container)
     const safeBottom = bounds.bottom - 16
     const topDelta = targetRect.top - safeTop
     const bottomDelta = targetRect.bottom - safeBottom
@@ -614,6 +607,15 @@ function numericValue(value: unknown) {
   min-height: 120px;
   padding-top: 48px;
   text-align: center;
+}
+
+.batch-detail--embedded {
+  max-height: none;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .batch-load-error {
@@ -736,6 +738,8 @@ function numericValue(value: unknown) {
 }
 
 .batch-case-card--expanded {
+  box-sizing: border-box;
+  max-width: var(--execution-case-width, 100%);
   border-color: rgb(var(--primary-3));
   box-shadow: 0 8px 22px rgb(0 0 0 / 6%);
 }
@@ -837,14 +841,29 @@ function numericValue(value: unknown) {
   border-top: 1px solid var(--color-border-2);
 }
 
+// 仅约束历史卡片内的普通视图；日志/画面全屏或沉浸后仍沿用原布局。
+.batch-case-content :deep(.execution-log-viewer:not(.execution-log-viewer--embedded):not(.execution-log-viewer--immersive):not(:fullscreen)),
+.batch-case-content :deep(.live-view:not(.live-view--embedded):not(.live-view--immersive):not(:fullscreen)) {
+  display: flex;
+  box-sizing: border-box;
+  max-height: calc(var(--execution-content-height, 600px) - 16px);
+  flex-direction: column;
+}
+
+.batch-case-content :deep(.log-console),
+.batch-case-content :deep(.live-stage) {
+  min-height: 0;
+  flex-shrink: 1;
+}
+
 .batch-case-content :deep(.step-history--embedded) {
   border-width: 0;
 }
 
 .batch-report-content {
   min-width: 0;
-  max-height: min(520px, calc(100vh - 280px));
-  max-height: min(520px, calc(100dvh - 280px));
+  height: min(666px, var(--execution-content-height, calc(100dvh - 280px)));
+  // height: min(72vh, 666px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: auto;
@@ -852,18 +871,27 @@ function numericValue(value: unknown) {
 }
 
 .batch-report-content :deep(.step-history--embedded) {
+  display: flex;
   box-sizing: border-box;
-  height: auto;
-  max-height: none;
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
-  overflow: visible;
+  flex-direction: column;
+  overflow: hidden;
   overscroll-behavior: auto;
 }
 
+.batch-report-content :deep(.session-audit),
+.batch-report-content :deep(.record-alert),
+.batch-report-content :deep(.step-pagination) {
+  flex-shrink: 0;
+}
+
 .batch-report-content :deep(.step-inspector) {
-  height: min(520px, calc(100dvh - 280px));
-  max-height: min(520px, calc(100dvh - 280px));
+  height: auto;
+  max-height: 100%;
   min-height: 0;
+  flex: 1;
   overflow: hidden;
 }
 

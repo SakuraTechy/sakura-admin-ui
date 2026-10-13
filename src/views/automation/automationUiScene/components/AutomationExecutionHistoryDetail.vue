@@ -40,6 +40,17 @@
       </a-space>
     </div>
 
+    <div v-if="record.executionType !== 'jenkins'" class="report-tabs" role="tablist" aria-label="执行报告内容">
+      <button v-for="tab in reportTabs" :key="tab.value" type="button" role="tab" :aria-selected="reportTab === tab.value" @click="reportTab = tab.value">{{ tab.label }}<span v-if="tab.value === 'steps'">{{ record.stepTotal }}</span></button>
+    </div>
+    <AutomationExecutionReportAssets
+      v-if="assetsVisited"
+      v-show="reportTab !== 'steps'"
+      :record="record"
+      :mode="reportTab === 'video' ? 'video' : 'artifacts'"
+      :active="reportTab !== 'steps'"
+    />
+    <div v-show="reportTab === 'steps'" class="report-steps">
     <div
       v-if="record.browserSessionSource !== '-' || record.sessionNavigationDecision !== '-'"
       class="session-audit"
@@ -152,6 +163,7 @@
       @change="changeStepPage"
       @page-size-change="changeStepPageSize"
     />
+    </div>
   </div>
 </template>
 
@@ -159,6 +171,7 @@
 import type { ExecutionHistoryCaseRow, ExecutionHistoryStepRow, ExecutionViewType } from '../execution'
 import { executionAggregateResultLabel, executionResultColor, executionResultLabel, formatExecutionDuration } from '../execution'
 import AutomationExecutionStepDiagnostic from './AutomationExecutionStepDiagnostic.vue'
+import AutomationExecutionReportAssets from './AutomationExecutionReportAssets.vue'
 
 const props = withDefaults(defineProps<{
   record: ExecutionHistoryCaseRow
@@ -172,6 +185,16 @@ const emit = defineEmits<{
   (e: 'open', record: ExecutionHistoryCaseRow, view: Exclude<ExecutionViewType, 'record'>): void
 }>()
 const activeStepKey = ref('')
+const reportTabs = [{ value: 'steps', label: '步骤明细' }, { value: 'artifacts', label: '执行产物' }, { value: 'video', label: '执行录屏' }] as const
+const reportTab = ref<(typeof reportTabs)[number]['value']>('steps')
+const assetsVisited = ref(false)
+watch(reportTab, (value) => {
+  if (value !== 'steps') assetsVisited.value = true
+})
+watch(() => props.record.rowKey, () => {
+  reportTab.value = 'steps'
+  assetsVisited.value = false
+})
 const loadingSteps = ref(false)
 const loadError = ref('')
 const loadingStepKeys = new Set<string>()
@@ -260,6 +283,12 @@ function navigationDecisionLabel(value: string) {
 </script>
 
 <style scoped lang="scss">
+.report-tabs { display: flex; flex: none; gap: 24px; border-bottom: 1px solid var(--color-border-2); margin-bottom: 12px; }
+.report-tabs button { display: inline-flex; align-items: center; gap: 6px; padding: 10px 0; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--color-text-2); cursor: pointer; }
+.report-tabs button[aria-selected=true] { border-bottom-color: rgb(var(--primary-6)); color: rgb(var(--primary-6)); }
+.report-tabs span { padding: 0 5px; border-radius: 3px; background: var(--color-fill-2); font-size: 12px; }
+.report-steps { display: flex; min-height: 0; min-width: 0; flex: 1; flex-direction: column; }
+.report-assets { flex: 1; }
 .step-history {
   padding: 16px 18px 18px;
   border: 1px solid var(--color-border-2);
@@ -410,8 +439,10 @@ function navigationDecisionLabel(value: string) {
 }
 
 .step-inspector__nav {
-  min-height: 0;
-  max-height: 480px;
+  // min-height: 0;
+  // max-height: 480px;
+  height: 100%;
+  max-height: none;
   overflow-x: hidden;
   overflow-y: auto;
   border-right: 1px solid var(--color-border-2);

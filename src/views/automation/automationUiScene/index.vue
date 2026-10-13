@@ -60,10 +60,17 @@
           @execute-all-scenes="executeAllScenes"
           @execution-started="openExecutionHistory"
           @batch-update="liveExecutions = $event"
+          @run-update="executionRun = $event"
+          @run-started="openExecutionRun"
         />
       </template>
       <template #history>
-        <AutomationUiSceneHistoryWorkspace ref="historyWorkspaceRef" :live-executions="liveExecutions" />
+        <AutomationUiSceneHistoryWorkspace
+          ref="historyWorkspaceRef"
+          :live-executions="liveExecutions"
+          :execution-run="executionRun"
+          @cancel-run="cancelExecutionRun"
+        />
       </template>
       <template #content="{ content }">
         <AddOrEditForm
@@ -95,6 +102,7 @@ import ExecuteSceneModal from './components/ExecuteSceneModal.vue'
 import { useUiStore } from '@/stores/modules/uiStore'
 import type { ColumnItem } from '@/components/GiForm'
 import type { LiveExecutionCase } from './execution'
+import type { ExecutionHistoryTarget, ExecutionRun } from './executionRun'
 import { type ProjectModuleConfigResp, addProjectModuleConfig, deleteProjectModuleConfig, dragProjectModuleConfig, updateProjectModuleConfig } from '@/apis/project/projectModuleConfig'
 
 defineOptions({ name: 'Ui' })
@@ -296,13 +304,23 @@ const updateTab = (record: any) => {
 const executeSceneModalRef = ref()
 const pendingHistorySceneId = ref<string | undefined>()
 const liveExecutions = ref<LiveExecutionCase[]>([])
-const historyWorkspaceRef = ref<{ openHistory: (sceneId?: string) => Promise<void> }>()
+const executionRun = ref<ExecutionRun>()
+const historyWorkspaceRef = ref<{ openHistory: (target: ExecutionHistoryTarget) => Promise<void> }>()
+const openExecutionRun = async (runId: string) => {
+  pendingHistorySceneId.value = undefined
+  tabListRef.value?.openHistoryTab()
+  await nextTick()
+  await historyWorkspaceRef.value?.openHistory({ kind: 'run', runId })
+}
+const cancelExecutionRun = async (runId: string) => {
+  await automationUiSceneRef.value?.cancelExecutionRun(runId)
+}
 const openExecutionHistory = async (sceneId?: string) => {
   const targetSceneId = sceneId ?? pendingHistorySceneId.value
   pendingHistorySceneId.value = undefined
   tabListRef.value?.openHistoryTab()
   await nextTick()
-  await historyWorkspaceRef.value?.openHistory(targetSceneId)
+  await historyWorkspaceRef.value?.openHistory(targetSceneId ? { kind: 'scene', sceneId: targetSceneId } : { kind: 'all' })
 }
 const executeScene = (record: any, executionType: string) => {
   if (executionType !== 'jenkins') return

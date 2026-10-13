@@ -3,7 +3,7 @@
     <section
       ref="viewerRef"
       class="execution-log-viewer"
-      :class="{ 'execution-log-viewer--immersive': isImmersive }"
+      :class="{ 'execution-log-viewer--immersive': isImmersive, 'execution-log-viewer--embedded': embedded }"
       :style="isFullscreen ? undefined : immersiveStyle"
     >
       <header class="log-toolbar">
@@ -14,28 +14,29 @@
         </div>
         <div class="log-actions">
           <div class="log-format">
-            <span>日志格式：</span>
+            <!-- <span class="log-format-label">日志格式：</span> -->
             <a-radio-group :model-value="format" type="button" size="mini" @change="setLogFormat">
               <a-radio value="compact">📊 简洁</a-radio>
               <a-radio value="detailed">📋 详细</a-radio>
             </a-radio-group>
           </div>
-          <a-tooltip :content="isImmersive ? '退出沉浸模式' : '沉浸模式（占满右侧详情区域）'">
+          <a-tooltip v-if="!embedded || viewportControls" :content="viewport.immersive ? '退出沉浸模式' : '沉浸模式（占满右侧详情区域）'">
             <a-button
               size="mini"
-              :type="isImmersive ? 'primary' : 'secondary'"
-              @click="toggleImmersive"
+              :type="viewport.immersive ? 'primary' : 'secondary'"
+              :aria-label="viewport.immersive ? '退出沉浸' : '沉浸'"
+              @click="viewport.toggleImmersive"
             >
               <template #icon>
-                <icon-shrink v-if="isImmersive" />
+                <icon-shrink v-if="viewport.immersive" />
                 <icon-expand v-else />
               </template>
             </a-button>
           </a-tooltip>
-          <a-tooltip :content="isFullscreen ? '退出全屏' : '全屏'">
-            <a-button size="mini" @click="toggleFullscreen">
+          <a-tooltip v-if="!embedded || viewportControls" :content="viewport.fullscreen ? '退出全屏' : '全屏'">
+            <a-button size="mini" :aria-label="viewport.fullscreen ? '退出全屏' : '全屏'" @click="viewport.toggleFullscreen">
               <template #icon>
-                <icon-fullscreen-exit v-if="isFullscreen" />
+                <icon-fullscreen-exit v-if="viewport.fullscreen" />
                 <icon-fullscreen v-else />
               </template>
             </a-button>
@@ -47,7 +48,7 @@
         <div v-if="loading && !visibleLogs.length" class="log-empty">正在读取执行日志...</div>
         <div v-else-if="!visibleLogs.length" class="log-empty">{{ error || '暂无执行日志' }}</div>
         <div v-for="item in visibleLogs" :key="item.sequence" class="log-line" :class="`log-line--${item.level}`">
-          <span class="log-time">{{ item.timestamp || '-' }}</span>
+          <span class="log-time" :title="item.timestamp">{{ embedded ? compactLogTimestamp(item.timestamp) : item.timestamp || '-' }}</span>
           <span class="log-icon">{{ levelIcon(item.level) }}</span>
           <span class="log-message">
             {{ displayMessage(item) }}
@@ -62,12 +63,17 @@
           </span>
         </div>
       </div>
+      <footer v-if="embedded" class="log-follow">
+        <label><input v-model="autoFollow" type="checkbox" @change="followLatest"> 自动跟随</label>
+        <span>{{ autoFollow ? '最新日志' : '已暂停跟随' }}</span>
+      </footer>
     </section>
   </Teleport>
 </template>
 
 <script setup lang="ts">
 import { onKeyStroke, useFullscreen, useResizeObserver } from '@vueuse/core'
+import type { ExecutionViewportControls } from './AutomationExecutionWorkspace.vue'
 import type { LiveExecutionLog } from '../execution'
 import type { AutomationPlaywrightRunnerLog } from '@/apis/automation/automationPlaywrightRunner'
 import {
@@ -86,6 +92,9 @@ const props = defineProps<{
   artifactUrl?: string
   fallbackContent?: string
   liveLogs?: LiveExecutionLog[]
+  /** 双栏容器统一管理高度和沉浸，子视图只保留内容操作。 */
+  embedded?: boolean
+  viewportControls?: ExecutionViewportControls
 }>()
 
 const maxMessageLength = 300
@@ -105,6 +114,12 @@ const isImmersive = ref(false)
 const immersiveContainer = shallowRef<HTMLElement>()
 const immersiveStyle = ref<Record<string, string>>()
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(viewerRef)
+const viewport = computed<ExecutionViewportControls>(() => props.viewportControls || {
+  immersive: isImmersive.value,
+  fullscreen: isFullscreen.value,
+  toggleImmersive,
+  toggleFullscreen,
+})
 let pollTimer: number | undefined
 let loadSequence = 0
 let artifactController: AbortController | undefined
@@ -519,6 +534,11 @@ function handleScroll() {
   autoFollow.value = element.scrollHeight - element.scrollTop - element.clientHeight < 48
 }
 
+function compactLogTimestamp(timestamp?: string) {
+  // 双栏只缩短时间展示，完整原始时间仍通过 title 保留。
+  return timestamp?.match(/[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?)/)?.[1] || timestamp || '-'
+}
+
 function followLatest() {
   if (!autoFollow.value) return
   requestAnimationFrame(() => {
@@ -635,7 +655,8 @@ function resolveProtectedUrl(url: string) {
 }
 
 .log-console {
-  max-height: min(58vh, 295px);
+  // max-height: min(58vh, 295px);
+  height: min(65vh, 1576px);
   padding: 14px 16px;
   overflow: auto;
   background: #101828;
@@ -690,6 +711,68 @@ function resolveProtectedUrl(url: string) {
   padding: 48px 16px;
   color: #667085;
   text-align: center;
+}
+
+.execution-log-viewer--embedded {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  margin: 0;
+  container-type: inline-size;
+}
+
+.execution-log-viewer--embedded .log-toolbar,
+.execution-log-viewer--embedded .log-actions,
+.execution-log-viewer--embedded .log-state {
+  flex-wrap: wrap;
+}
+
+.execution-log-viewer--embedded .log-console {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 8px;
+  overscroll-behavior: contain;
+}
+
+.execution-log-viewer--embedded .log-line {
+  grid-template-columns: 94px 16px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.execution-log-viewer--embedded .log-icon {
+  display: block;
+}
+
+.log-follow {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.log-follow label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+@container (max-width: 560px) {
+  .log-toolbar { gap: 6px; padding: 8px; }
+  .log-format-label { display: none; }
+}
+
+@container (max-width: 360px) {
+  .execution-log-viewer--embedded .log-line { grid-template-columns: 16px minmax(0, 1fr); gap: 0 6px; }
+  .log-time { grid-column: 1 / -1; }
 }
 
 .execution-log-viewer--immersive,

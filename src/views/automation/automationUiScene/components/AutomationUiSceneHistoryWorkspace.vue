@@ -1,16 +1,17 @@
 <template>
   <div class="scene-history-workspace">
-    <div v-if="sceneTotal > scenePageSize" class="scene-scope-pagination">
-      <a-pagination
-        v-model:current="scenePage"
-        size="small"
-        :total="sceneTotal"
-        :page-size="scenePageSize"
-        show-total
-        @change="changeScenePage"
-      />
-    </div>
+    <a-space v-if="executionRun" class="history-scope-switch">
+      <a-button :type="showExecutionRun ? 'primary' : 'secondary'" @click="openHistory({ kind: 'run', runId: executionRun.id })">本次执行</a-button>
+      <a-button :type="showExecutionRun ? 'secondary' : 'primary'" @click="openHistory({ kind: 'all' })">历史记录</a-button>
+    </a-space>
+    <AutomationUiExecutionRunPanel
+      v-if="showExecutionRun && executionRun"
+      :run="executionRun"
+      :live-executions="liveExecutions"
+      @cancel-run="emit('cancel-run', $event)"
+    />
     <AutomationExecutionHistoryPanel
+      v-if="!showExecutionRun"
       :scenes="displayScenes"
       record-source="debug"
       :multi-scene="displayScenes.length > 1"
@@ -20,7 +21,10 @@
       :execution-page="executionPage"
       :execution-page-size="executionPageSize"
       :execution-total="executionTotal"
-      :load-execution-page="sceneFilterValue ? loadExecutionPage : undefined"
+      :scope-summary="scopeSummary"
+      server-paged-scope
+      :load-execution-page="loadExecutionPage"
+      :load-execution-run-scenes="sceneFilterValue === ALL_SCENES ? loadExecutionRunScenes : undefined"
       :load-execution-cases="loadExecutionCases"
       :load-execution-steps="loadExecutionSteps"
       :load-execution-step-detail="loadExecutionStepDetail"
@@ -39,11 +43,16 @@
 <script setup lang="ts">
 import { Message, Modal } from '@arco-design/web-vue'
 import AutomationExecutionHistoryPanel from './AutomationExecutionHistoryPanel.vue'
+import AutomationUiExecutionRunPanel from './AutomationUiExecutionRunPanel.vue'
+import type { ExecutionHistoryTarget, ExecutionRun } from '../executionRun'
 import {
   type AutomationUiSceneSummary,
+  type AutomationUiExecutionHistoryQuery,
+  type AutomationUiExecutionHistorySummary,
   getAutomationUiExecutionCases,
-  getAutomationUiExecutions,
-  getAutomationUiExecutionRevisionsBatched,
+  getAutomationUiExecutionHistory,
+  getAutomationUiExecutionRunScenes,
+  getAutomationUiExecutionHistorySummary,
   getAutomationUiExecutionStep,
   getAutomationUiExecutionSteps,
   getAutomationUiSceneSummaryPage,
@@ -51,6 +60,7 @@ import {
 import {
   cancelAutomationPlaywrightBatch,
   cancelAutomationPlaywrightBatchCase,
+  cancelAutomationUiExecutionRun,
 } from '@/apis/automation/automationPlaywrightRunner'
 import {
   type ExecutionHistoryBatchRow,
@@ -58,33 +68,36 @@ import {
   type ExecutionHistoryStepRow,
   type LiveExecutionCase,
   buildLayeredExecutionBatchRow,
+  buildExecutionRunHistoryRow,
   buildLayeredExecutionCaseRow,
   buildLayeredExecutionStepRow,
   applyLayeredExecutionStepDetail,
 } from '../execution'
 import { useUiStore } from '@/stores/modules/uiStore'
-import { mapWithConcurrency, requestOnce } from '../queryCache'
+import { requestOnce } from '../queryCache'
 
-const props = withDefaults(defineProps<{ liveExecutions?: LiveExecutionCase[] }>(), {
+const props = withDefaults(defineProps<{ liveExecutions?: LiveExecutionCase[], executionRun?: ExecutionRun }>(), {
   liveExecutions: () => [],
 })
+const emit = defineEmits<{ (e: 'cancel-run', runId: string): void }>()
+const showExecutionRun = ref(false)
 const ALL_SCENES = ''
 const uiStore = useUiStore()
 const loading = ref(false)
 const sceneSummaries = shallowRef<AutomationUiSceneSummary[]>([])
 const executionBatches = ref<ExecutionHistoryBatchRow[]>([])
 const sceneFilterValue = ref(ALL_SCENES)
-const scenePage = ref(1)
-const scenePageSize = 20
-const sceneTotal = ref(0)
+const scopeSummary = ref<AutomationUiExecutionHistorySummary>()
 const executionPage = ref(1)
 const executionPageSize = ref(10)
 const executionTotal = ref(0)
-let revision = ''
+let loadedOptionsScope = ''
 let pollTimer: number | undefined
 let refreshing = false
+let refreshGeneration = 0
 let requestGeneration = 0
 let workspaceController: AbortController | undefined
+let batchSnapshots = new Map<string, string>()
 // 首次打开历史或刷新后自动展开目标场景的最新批次（跟随用户视角）。
 const historyAutoExpandSceneId = ref('')
 
@@ -95,7 +108,7 @@ const scenes = computed(() => sceneSummaries.value.map(scene => ({
 })))
 
 const sceneFilterOptions = computed(() => [
-  { label: '本页全部场景', value: ALL_SCENES },
+  { label: '全部场景', value: ALL_SCENES },
   ...scenes.value.map(scene => ({
     label: `${scene.sceneId || scene.id} - ${scene.name || '-'}`,
     value: String(scene.id),
@@ -105,95 +118,105 @@ const sceneFilterOptions = computed(() => [
 const displayScenes = computed(() => sceneFilterValue.value
   ? scenes.value.filter(scene => String(scene.id) === sceneFilterValue.value)
   : scenes.value)
-const displayBatches = computed(() => sceneFilterValue.value
-  ? executionBatches.value.filter(batch => batch.sceneKey === sceneFilterValue.value)
-  : executionBatches.value)
+// 场景范围与分页由服务端处理；全部场景下不能再用单个 sceneKey 丢弃整次任务。
+const displayBatches = computed(() => executionBatches.value)
 const liveExecutions = computed(() => props.liveExecutions)
 
-const sceneRevisionFingerprint = (items: Array<{ sceneDbId: string | number, updateTime?: string, globalExecutionRevision?: number }>) => items
-  .map(item => `${item.sceneDbId}:${item.updateTime || ''}:${item.globalExecutionRevision ?? 0}`)
-  .sort()
-  .join('|')
-
-const queryScenes = async () => {
-  const projectId = String(uiStore.projectId || '')
-  if (!projectId) {
-    sceneSummaries.value = []
-    executionBatches.value = []
-    revision = ''
-    return
+async function loadSceneOptions(query: AutomationUiExecutionHistoryQuery, signal: AbortSignal) {
+  const items: AutomationUiSceneSummary[] = []
+  for (let page = 1; ; page += 1) {
+    const { data } = await getAutomationUiSceneSummaryPage({ ...query, page, size: 50, sort: ['sceneId,asc', 'createTime,asc'] }, signal)
+    if (signal.aborted) return []
+    if (!data) throw new Error('场景选项响应不完整，请刷新后重试')
+    if (data.total > 10_000) throw new Error('场景范围超过 10000 个，请缩小项目版本或模块范围')
+    items.push(...data.list)
+    if (items.length >= data.total) break
+    if (!data.list.length) throw new Error('场景选项加载不完整，请刷新后重试')
   }
+  return items.sort((left, right) => String(left.sceneKey).localeCompare(String(right.sceneKey), 'zh-CN', { numeric: true }))
+}
+
+function clearHistory() {
+  executionBatches.value = []
+  batchSnapshots.clear()
+  executionTotal.value = 0
+  scopeSummary.value = undefined
+}
+
+const queryScenes = async (reloadOptions: boolean) => {
   workspaceController?.abort()
   const controller = new AbortController()
   workspaceController = controller
   const generation = ++requestGeneration
-  const summaryResponse = await getAutomationUiSceneSummaryPage({
-    projectId,
+  const range: AutomationUiExecutionHistoryQuery = {
+    projectId: String(uiStore.projectId || ''),
     versionId: uiStore.versionId || undefined,
-    moduleIds: uiStore.getSceneModuleIds(),
-    page: scenePage.value,
-    size: scenePageSize,
-    sort: ['updateTime,desc'],
-  }, controller.signal)
-  if (generation !== requestGeneration || controller.signal.aborted) return
-  const summaries = summaryResponse.data?.list || []
-  sceneTotal.value = summaryResponse.data?.total || 0
-  sceneSummaries.value = summaries
-  const sceneIds = summaries.map(scene => scene.sceneDbId)
-  if (!sceneIds.length) {
-    executionBatches.value = []
-    revision = ''
+    moduleIds: uiStore.getSceneModuleIds()?.slice(),
+  }
+  if (!range.projectId) {
+    sceneSummaries.value = []
+    loadedOptionsScope = ''
+    clearHistory()
     return
   }
-  if (sceneFilterValue.value && !summaries.some(scene => String(scene.sceneDbId) === sceneFilterValue.value)) {
-    sceneFilterValue.value = ALL_SCENES
-  }
-  const activeSummaries = sceneFilterValue.value
-    ? summaries.filter(scene => String(scene.sceneDbId) === sceneFilterValue.value)
-    : summaries
-  executionTotal.value = 0
-  const batches = await mapWithConcurrency(activeSummaries, 6, async (scene) => {
-    const response = await getAutomationUiExecutions({
-      sceneDbId: scene.sceneDbId,
-      recordSource: 'debug',
-      page: sceneFilterValue.value ? executionPage.value : 1,
-      size: sceneFilterValue.value ? executionPageSize.value : 20,
-      // 执行历史接口只允许按数据库创建时间排序；startedAt 是展示字段，不是服务端排序字段。
-      sort: ['createTime,desc'],
-    }, controller.signal)
-    if (sceneFilterValue.value) executionTotal.value = response.data?.mode === 'page' ? response.data.total : response.data?.list.length || 0
-    return (response.data?.list || []).map(record => buildLayeredExecutionBatchRow(record, scene))
+  const scopeKey = JSON.stringify(range)
+  const query = { ...range, sceneDbId: sceneFilterValue.value || undefined }
+  const page = executionPage.value
+  const size = executionPageSize.value
+  let [options, pageResponse, summaryResponse] = await Promise.all([
+    reloadOptions || loadedOptionsScope !== scopeKey ? loadSceneOptions(range, controller.signal) : Promise.resolve(sceneSummaries.value),
+    getAutomationUiExecutionHistory(query, page, size, controller.signal),
+    getAutomationUiExecutionHistorySummary(query, controller.signal),
+  ])
+  if (generation !== requestGeneration || controller.signal.aborted) return
+  if (!pageResponse.data || !summaryResponse.data) throw new Error('执行历史响应不完整，请确认 Admin 已更新后重试')
+  // 新增或删除场景后更新完整选项；轮询不会每次枚举所有场景。
+  if (!query.sceneDbId && options.length !== Number(summaryResponse.data.total)) options = await loadSceneOptions(range, controller.signal)
+  const lastPage = Math.max(1, Math.ceil(pageResponse.data.total / size))
+  if (page > lastPage) pageResponse = await getAutomationUiExecutionHistory(query, lastPage, size, controller.signal)
+  if (generation !== requestGeneration || controller.signal.aborted) return
+  if (!pageResponse.data) throw new Error('执行历史分页响应不完整')
+  sceneSummaries.value = options
+  loadedOptionsScope = scopeKey
+  executionPage.value = Math.min(page, lastPage)
+  executionTotal.value = pageResponse.data.total
+  scopeSummary.value = summaryResponse.data
+  const byId = new Map(options.map((scene) => [String(scene.sceneDbId), scene]))
+  const previousBatches = new Map(executionBatches.value.map(batch => [batch.runId ? `run:${batch.runId}` : String(batch.executionDbId), batch]))
+  const nextSnapshots = new Map<string, string>()
+  executionBatches.value = pageResponse.data.list.map((record) => {
+    const scene = byId.get(String(record.sceneDbId))
+      || { sceneDbId: record.sceneDbId, sceneKey: record.sceneKey, name: record.sceneKey } as AutomationUiSceneSummary
+    const key = record.runId ? `run:${record.runId}` : String(record.executionDbId)
+    const snapshot = JSON.stringify([record, scene.sceneKey, scene.name])
+    nextSnapshots.set(key, snapshot)
+    // 轮询摘要未变化时保留已加载的用例、步骤和子分页，避免查看报告时每三秒重新加载。
+    const previous = previousBatches.get(key)
+    return previous && batchSnapshots.get(key) === snapshot
+      ? previous
+      : buildExecutionRunHistoryRow({ ...record, sceneName: record.sceneName || scene.name })
   })
-  if (generation !== requestGeneration || controller.signal.aborted) return
-  executionBatches.value = batches.flat()
-    .sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
-  const { data: revisions } = await getAutomationUiExecutionRevisionsBatched(sceneIds)
-  if (generation !== requestGeneration || controller.signal.aborted) return
-  revision = sceneRevisionFingerprint(Array.isArray(revisions) ? revisions : [])
+  batchSnapshots = nextSnapshots
 }
 
-const refresh = async (silent = false) => {
-  if (refreshing) return
+const refresh = async (silent = false, force = false, reloadOptions = !silent) => {
+  if (showExecutionRun.value) return
+  if (refreshing && !force) return
+  const generation = ++refreshGeneration
   refreshing = true
   if (!silent) loading.value = true
   try {
-    await queryScenes()
+    await queryScenes(reloadOptions)
   } catch (error) {
     if (!silent && !(error instanceof Error && ['CanceledError', 'AbortError'].includes(error.name))) {
       Message.error(error instanceof Error ? error.message : '执行历史加载失败')
     }
   } finally {
-    if (!silent) loading.value = false
-    refreshing = false
+    if (generation === refreshGeneration) {
+      loading.value = false
+      refreshing = false
+    }
   }
-}
-
-const refreshWhenChanged = async () => {
-  const sceneIds = sceneSummaries.value.map(scene => scene.sceneDbId)
-  if (!sceneIds.length) return
-  const { data } = await getAutomationUiExecutionRevisionsBatched(sceneIds)
-  const nextRevision = sceneRevisionFingerprint(Array.isArray(data) ? data : [])
-  if (nextRevision !== revision) await refresh(true)
 }
 
 const stopPolling = () => {
@@ -203,14 +226,7 @@ const stopPolling = () => {
 
 const startPolling = () => {
   stopPolling()
-  pollTimer = window.setInterval(() => void refreshWhenChanged().catch(() => undefined), 3000)
-}
-
-const changeScenePage = async (page: number) => {
-  scenePage.value = page
-  sceneFilterValue.value = ALL_SCENES
-  executionPage.value = 1
-  await refresh()
+  pollTimer = window.setInterval(() => void refresh(true), 3000)
 }
 
 const onSceneChange = async (sceneId: string) => {
@@ -218,16 +234,16 @@ const onSceneChange = async (sceneId: string) => {
   historyAutoExpandSceneId.value = ''
   sceneFilterValue.value = sceneId || ALL_SCENES
   executionPage.value = 1
-  await refresh(true)
+  clearHistory()
+  await refresh(false, true, false)
 }
 
 const loadExecutionPage = async (page: number, size: number) => {
-  if (!sceneFilterValue.value) return
   // 用户主动翻页即接管展开态。
   historyAutoExpandSceneId.value = ''
   executionPage.value = page
   executionPageSize.value = size
-  await refresh(true)
+  await refresh(false, true, false)
 }
 
 const loadExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 50) => {
@@ -236,13 +252,33 @@ const loadExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, siz
     `execution-cases:${batch.executionDbId}:${page}:${size}`,
     () => getAutomationUiExecutionCases(batch.executionDbId!, page, size),
   )
-  const current = executionBatches.value.find(item => item.executionDbId === batch.executionDbId)
+  const current = executionBatches.value.find(item => item.executionDbId === batch.executionDbId) || batch
   if (!current || !response.data) return
   current.cases = response.data.list.map(record => buildLayeredExecutionCaseRow(record, current))
   current.casesLoaded = true
   current.casePage = page
   current.casePageSize = size
   current.casePageTotal = response.data.total
+}
+
+const loadExecutionRunScenes = async (batch: ExecutionHistoryBatchRow, page: number, size: number) => {
+  const response = await getAutomationUiExecutionRunScenes(batch.runId!, {
+    projectId: String(uiStore.projectId || ''),
+    versionId: uiStore.versionId || undefined,
+    moduleIds: uiStore.getSceneModuleIds()?.slice(),
+    sceneDbId: sceneFilterValue.value || undefined,
+  }, page, size)
+  if (!response.data) throw new Error('任务场景响应不完整，请刷新后重试')
+  return {
+    total: response.data.total,
+    list: response.data.list.map(record => {
+      const row = buildExecutionRunHistoryRow({ ...record, runId: undefined })
+      row.rowKey = `run-scene:${batch.runId}:${record.sceneDbId}`
+      row.executionDbId = record.executionDbId
+      row.historyRevision = JSON.stringify(record)
+      return row
+    }),
+  }
 }
 
 const loadExecutionSteps = async (record: ExecutionHistoryCaseRow, page = 1, size = 50) => {
@@ -269,12 +305,20 @@ const loadExecutionStepDetail = async (step: ExecutionHistoryStepRow) => {
   applyLayeredExecutionStepDetail(step, response.data)
 }
 
-function historyTime(value: unknown) {
-  const timestamp = value ? new Date(value as string | number).getTime() : 0
-  return Number.isFinite(timestamp) ? timestamp : 0
-}
-
 const cancelHistoryBatch = (batch: ExecutionHistoryBatchRow, markCancelling?: () => void) => {
+  if (batch.runId) {
+    Modal.warning({
+      title: '确认取消整次执行任务',
+      content: '将取消当前任务的运行中子批次，并停止全部尚未启动的场景。',
+      onOk: async () => {
+        markCancelling?.()
+        if (props.executionRun?.serverRunId === batch.runId) emit('cancel-run', props.executionRun.id)
+        await cancelAutomationUiExecutionRun(batch.runId!)
+        await refresh()
+      },
+    })
+    return
+  }
   if (!batch.sceneKey || !batch.batchId) return
   Modal.warning({
     title: '确认取消执行批次',
@@ -302,14 +346,23 @@ const cancelHistoryCase = (row: ExecutionHistoryCaseRow, markCancelling?: () => 
   })
 }
 
-const openHistory = async (sceneId?: string) => {
-  if (sceneId !== undefined && sceneFilterValue.value !== (sceneId || ALL_SCENES)) {
-    sceneFilterValue.value = sceneId || ALL_SCENES
-    executionPage.value = 1
+const openHistory = async (target: ExecutionHistoryTarget) => {
+  stopPolling()
+  workspaceController?.abort()
+  requestGeneration += 1
+  showExecutionRun.value = target.kind === 'run' && target.runId === props.executionRun?.id
+  if (showExecutionRun.value) {
+    loading.value = false
+    return
   }
+  const sceneId = target.kind === 'scene' ? target.sceneId : ''
+  // 显式区分全部、单场景与本次执行，不能保留上一次的筛选和分页。
+  sceneFilterValue.value = sceneId || ALL_SCENES
+  executionPage.value = 1
+  clearHistory()
   // 首次打开或刷新时标记场景以自动展开，保持用户工作连续（执行后跳转）。
   historyAutoExpandSceneId.value = sceneId || ''
-  await refresh()
+  await refresh(false, true)
   startPolling()
 }
 
@@ -320,22 +373,25 @@ onUnmounted(() => {
 })
 
 watch(() => uiStore.activeKey, (activeKey) => {
-  if (activeKey !== 'history') {
+  if (activeKey !== 'history' || showExecutionRun.value) {
     stopPolling()
     return
   }
-  if (sceneSummaries.value.length) {
-    startPolling()
-    void refreshWhenChanged().catch(() => undefined)
-  }
+  startPolling()
+  void refresh(true)
 })
 
 watch(
   () => `${uiStore.projectId || ''}:${uiStore.versionId || ''}:${uiStore.moduleId || ''}`,
   () => {
-    scenePage.value = 1
+    workspaceController?.abort()
+    requestGeneration += 1
+    loadedOptionsScope = ''
+    sceneSummaries.value = []
+    clearHistory()
     sceneFilterValue.value = ALL_SCENES
     executionPage.value = 1
+    if (uiStore.activeKey === 'history' && !showExecutionRun.value) void refresh(false, true)
   },
 )
 
@@ -351,9 +407,7 @@ defineExpose({ openHistory })
   box-sizing: border-box;
 }
 
-.scene-scope-pagination {
-  display: flex;
-  justify-content: flex-end;
-  padding: 4px 8px 0;
+.history-scope-switch {
+  margin-bottom: 12px;
 }
 </style>

@@ -1,4 +1,5 @@
 import type * as T from './type'
+import type { SilentAxiosRequestConfig } from '@/utils/http'
 import http from '@/utils/http'
 
 export type * from './type'
@@ -6,8 +7,8 @@ export type * from './type'
 const BASE_URL = '/system/file'
 
 /** @desc 查询文件列表 */
-export function listFile(query: T.FilePageQuery) {
-  return http.get<PageRes<T.FileItem[]>>(`${BASE_URL}`, query)
+export function listFile(query: T.FilePageQuery, config?: SilentAxiosRequestConfig) {
+  return http.get<PageRes<T.FileItem[]>>(`${BASE_URL}`, query, config)
 }
 
 /** @desc 修改文件 */

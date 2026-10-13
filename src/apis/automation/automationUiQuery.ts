@@ -72,6 +72,22 @@ export interface AutomationUiExecutionDetail extends AutomationUiExecutionSummar
   cancelRequested?: boolean
 }
 
+/** 整次任务不具有可执行的 executionDbId；子场景未启动时也没有执行记录。 */
+export interface AutomationUiExecutionRunSummary extends Omit<AutomationUiExecutionSummary, 'executionDbId' | 'sceneDbId'> {
+  executionDbId?: number
+  sceneDbId?: number
+  runId?: string
+  sceneName?: string
+  sceneOrder?: number
+  sceneTotal?: number
+  sceneCompleted?: number
+  scenePass?: number
+  sceneFail?: number
+  sceneCancelled?: number
+  sceneBlocked?: number
+  sceneSkip?: number
+}
+
 export interface AutomationUiExecutionCase {
   caseExecutionDbId: number
   executionDbId: number
@@ -286,6 +302,7 @@ export type AutomationUiExecutionPage = {
 export interface AutomationUiExecutionQuery {
   sceneDbId: string | number
   recordSource: AutomationUiRecordSource
+  batchId?: string
   executionEngine?: import('./automationUiScene').ExecutionType
   testPlanId?: string | number
   testReportId?: string | number
@@ -322,6 +339,26 @@ export interface AutomationUiSceneSummaryQuery {
   page?: number
   size?: number
   sort?: string[]
+}
+
+export interface AutomationUiExecutionHistoryQuery {
+  projectId: string | number
+  versionId?: string | number
+  moduleIds?: Array<string | number>
+  sceneDbId?: string | number
+}
+
+export interface AutomationUiExecutionHistorySummary {
+  /** 全部场景按场景统计；指定场景按各用例最新调试记录统计。 */
+  dimension?: 'scene' | 'case'
+  total: number
+  completed: number
+  passed: number
+  failed: number
+  blocked: number
+  cancelled: number
+  skipped: number
+  notExecuted: number
 }
 
 export interface AutomationUiSceneRevision {
@@ -381,6 +418,20 @@ export function getAutomationUiSceneSummaries(
 
 export function getAutomationUiSceneSummaryPage(query: AutomationUiSceneSummaryQuery, signal?: AbortSignal) {
   return rawGet<AutomationUiPage<AutomationUiSceneSummary>>(`${SCENE_URL}/summaries/page`, query, signal)
+}
+
+export function getAutomationUiExecutionHistory(query: AutomationUiExecutionHistoryQuery, page = 1, size = 10, signal?: AbortSignal) {
+  // 单场景恢复真实场景子批次，不能把整次任务 ID 当作该场景的执行批次。
+  const endpoint = query.sceneDbId ? `${EXECUTION_URL}/history` : `${EXECUTION_URL}/history/runs`
+  return rawGet<AutomationUiPage<AutomationUiExecutionRunSummary>>(endpoint, { ...query, page, size, sort: ['createTime,desc'] }, signal)
+}
+
+export function getAutomationUiExecutionRunScenes(runId: string, query: AutomationUiExecutionHistoryQuery, page = 1, size = 50, signal?: AbortSignal) {
+  return rawGet<AutomationUiPage<AutomationUiExecutionRunSummary>>(`${EXECUTION_URL}/history/runs/${encodeURIComponent(runId)}/scenes`, { ...query, page, size }, signal)
+}
+
+export function getAutomationUiExecutionHistorySummary(query: AutomationUiExecutionHistoryQuery, signal?: AbortSignal) {
+  return rawGet<AutomationUiExecutionHistorySummary>(`${EXECUTION_URL}/history/summary`, query, signal)
 }
 
 /**

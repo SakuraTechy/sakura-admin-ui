@@ -6,7 +6,7 @@
     unmount-on-close
   >
     <template #title>
-      {{ executionViewLabels[viewType] }} · {{ executionTypeLabel(executionType) }}
+      {{ executionType === 'playwright-runner' && ['log', 'live'].includes(viewType) ? '执行视图' : executionViewLabels[viewType] }} · {{ executionTypeLabel(executionType) }}
     </template>
 
     <a-spin :loading="loading" style="width: 100%">
@@ -41,7 +41,34 @@
               产物上传失败：{{ artifactUploadErrors.map(item => item.error || item).join('；') }}
             </a-alert>
 
-            <template v-if="viewType === 'log'">
+            <AutomationExecutionWorkspace
+              v-if="executionType === 'playwright-runner' && ['log', 'live'].includes(viewType)"
+              :key="selectedExecutionId"
+              :title="`${caseResult.case_name || selectedRecord.caseName || '执行视图'} · ${selectedExecutionId || '-'}`"
+            >
+              <template #log="{ viewportControls }">
+                <AutomationExecutionLogViewer
+                  embedded
+                  :viewport-controls="viewportControls"
+                  :job-id="selectedJobId"
+                  :execution-id="selectedExecutionId"
+                  :status="caseResult.status || selectedRecord.executeStatus"
+                  :artifact-url="executionLogArtifactUrl"
+                  :fallback-content="logContent"
+                />
+              </template>
+              <template #live="{ viewportControls }">
+                <AutomationExecutionLiveView
+                  embedded
+                  :viewport-controls="viewportControls"
+                  :job-id="selectedJobId"
+                  :status="caseResult.status || selectedRecord.executeStatus"
+                  :quality="selectedLiveFrameQuality"
+                />
+              </template>
+            </AutomationExecutionWorkspace>
+
+            <template v-else-if="viewType === 'log'">
               <a-card v-if="executionType === 'jenkins'" title="Jenkins 控制台日志" size="small">
                 <a-button type="primary" :disabled="!selectedRecord.consoleUrl" @click="openExternal(selectedRecord.consoleUrl)">
                   打开控制台日志
@@ -85,19 +112,25 @@
                     </a-descriptions-item>
                     <a-descriptions-item label="通过率">{{ selectedCasePassRate }}</a-descriptions-item>
                   </a-descriptions>
-                  <a-space v-if="executionType === 'playwright-runner'" wrap style="margin-top: 12px">
-                    <a-button v-if="reportArtifactUrl" type="primary" @click="openHtmlReport">在线预览 HTML report</a-button>
-                    <a-button v-if="traceArtifactUrl" @click="openTracePreview">在线查看 Trace</a-button>
-                    <a-button v-if="screenshotArtifactUrl" @click="openScreenshotPreview">在线查看失败截图</a-button>
-                  </a-space>
                 </a-card>
+                <div class="report-content-tabs" role="tablist" aria-label="执行报告内容">
+                  <button v-for="tab in reportTabs" :key="tab.value" type="button" role="tab" :aria-selected="reportTab === tab.value" @click="reportTab = tab.value">{{ tab.label }}</button>
+                </div>
                 <a-table
+                  v-show="reportTab === 'steps'"
                   :data="stepResults"
                   :columns="stepColumns"
                   :pagination="false"
                   row-key="step_index"
                   size="small"
                   :scroll="{ x: 900 }"
+                />
+                <AutomationExecutionReportAssets
+                  v-if="reportAssetsVisited"
+                  v-show="reportTab !== 'steps'"
+                  :record="reportAssetContext"
+                  :mode="reportTab === 'video' ? 'video' : 'artifacts'"
+                  :active="visible && viewType === 'report' && reportTab !== 'steps'"
                 />
               </template>
             </template>
@@ -148,6 +181,8 @@ import {
 } from '../execution'
 import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
 import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
+import AutomationExecutionWorkspace from './AutomationExecutionWorkspace.vue'
+import AutomationExecutionReportAssets from './AutomationExecutionReportAssets.vue'
 import { getAutomationUiScene } from '@/apis/automation/automationUiScene'
 import {
   type AutomationUiExecutionStep,
@@ -173,6 +208,12 @@ const viewType = ref<ExecutionViewType>('record')
 const selectedRecordKey = ref('')
 const targetCaseId = ref('')
 const videoObjectUrl = ref('')
+const reportTabs = [{ value: 'steps', label: '步骤明细' }, { value: 'artifacts', label: '执行产物' }, { value: 'video', label: '执行录屏' }] as const
+const reportTab = ref<(typeof reportTabs)[number]['value']>('steps')
+const reportAssetsVisited = ref(false)
+watch(reportTab, (value) => {
+  if (value !== 'steps') reportAssetsVisited.value = true
+})
 
 const records = computed(() => getExecutionRecords(scene.value, executionType.value, recordScope.value, testPlanId.value))
 const selectedRecord = computed<any>(() => records.value.find((item) => item.__key === selectedRecordKey.value) || records.value[0])
@@ -255,6 +296,20 @@ const reportArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'r
 const videoArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'video', 'videos'))
 const traceArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'trace'))
 const screenshotArtifactUrl = computed(() => getArtifactUrl(artifactRecord.value, 'failure_screenshot', 'screenshot', 'screenshots'))
+const reportAssetContext = computed(() => ({
+  rowKey: `${selectedRecordKey.value}:${caseResult.value.case_id || ''}`,
+  caseId: String(caseResult.value.case_id || selectedRecord.value?.caseId || '-'),
+  executionId: String(selectedExecutionId.value),
+  executionType: executionType.value,
+  recordTarget: { executionDbId: selectedRecord.value?.executionDbId },
+  caseExecutionDbId: caseResult.value.caseExecutionDbId,
+  executeStatus: caseResult.value.status || selectedRecord.value?.executeStatus,
+  artifactReportUrl: reportArtifactUrl.value,
+  artifactTraceUrl: traceArtifactUrl.value,
+  artifactScreenshotUrl: screenshotArtifactUrl.value,
+  artifactVideoUrl: videoArtifactUrl.value,
+  artifactUploadError: artifactUploadErrors.value.map(item => item.error || item).join('；'),
+}))
 const jenkinsVideoUrl = computed(() => resolveJenkinsVideoUrl(selectedRecord.value, String(scene.value?.sceneId || '')))
 const runnerVideoEmptyText = computed(() => {
   const policy = selectedPlaywrightResult.value?.raw?.video_policy
@@ -443,6 +498,7 @@ const loadLayeredExecutionRecord = async (
     error: step.errorMessage,
   }))
   const caseResult = executionCase ? {
+    caseExecutionDbId: executionCase.caseExecutionDbId,
     case_id: executionCase.definitionCaseId || executionCase.caseKey,
     case_name: executionCase.caseName,
     execution_id: executionCase.caseExecutionKey || detail.executionKey,
@@ -458,6 +514,7 @@ const loadLayeredExecutionRecord = async (
     steps,
   } : undefined
   const record = {
+    executionDbId: detail.executionDbId,
     __key: `execution:${detail.executionDbId}`,
     executionType: type,
     executionId: detail.executionKey,
@@ -654,6 +711,8 @@ function resolveArtifactRequestUrl(url: string) {
 
 watch(selectedRecordKey, () => {
   releaseVideoUrl()
+  reportTab.value = 'steps'
+  reportAssetsVisited.value = false
 })
 onUnmounted(releaseVideoUrl)
 
@@ -665,6 +724,9 @@ defineExpose({ onOpen })
 </script>
 
 <style scoped lang="scss">
+.report-content-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--color-border-2); }
+.report-content-tabs button { padding: 10px 0; border: 0; border-bottom: 2px solid transparent; color: var(--color-text-2); background: transparent; cursor: pointer; }
+.report-content-tabs button[aria-selected=true] { color: rgb(var(--primary-6)); border-bottom-color: rgb(var(--primary-6)); }
 .summary-card {
   background: var(--color-fill-1);
 }

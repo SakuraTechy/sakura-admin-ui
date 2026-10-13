@@ -4,6 +4,7 @@ import type {
   AutomationUiExecutionCase,
   AutomationUiExecutionStep,
   AutomationUiExecutionSummary,
+  AutomationUiExecutionRunSummary,
   AutomationUiSceneSummary,
 } from '@/apis/automation/automationUiQuery'
 
@@ -13,6 +14,7 @@ export type ExecutionRecordSource = 'debug' | 'test'
 export type ExecutionRecordScope = ExecutionRecordSource | 'all'
 
 export interface ExecutionContext {
+  runId?: string
   recordSource?: ExecutionRecordSource
   testPlanId?: string
   testReportId?: string
@@ -33,6 +35,9 @@ export interface ExecutionCaseOpenOptions extends ExecutionContext {
   planExecution?: boolean
   projectEnvironmentId?: string
   autoStart?: boolean
+  /** 本地跨场景队列取消后，禁止配置等待期间或批次创建后继续启动用例。 */
+  shouldCancel?: () => boolean
+  runnerOptions?: import('@/apis/automation/automationPlaywrightRunner').AutomationPlaywrightRunnerOptions
   cdpOptions?: import('@/apis/automation/automationPlaywrightRunner').AutomationCdpPlaybackOptions
 }
 
@@ -167,6 +172,8 @@ export interface ExecutionHistorySceneSummary {
 }
 
 export interface ExecutionHistoryBatchRow {
+  runId?: string
+  historyRevision?: string
   executionDbId?: number
   casesLoaded?: boolean
   casePage?: number
@@ -674,12 +681,40 @@ export const aggregateExecutionBatchRows = (
   const groups = new Map<string, ExecutionHistoryBatchRow[]>()
   rows.forEach((row) => {
     const reportId = String(row.testReportId || '').trim()
-    const key = reportId
+    const key = row.runId ? `run:${row.runId}` : reportId
       ? `report:${reportId}`
       : `scene:${row.sceneKey || ''}:batch:${row.batchId}`
     groups.set(key, [...(groups.get(key) || []), row])
   })
-  return [...groups.entries()].map(([key, items]) => mergeExecutionBatchRows(key, items))
+  return [...groups.entries()].map(([key, items]) => items[0].runId ? items[0] : mergeExecutionBatchRows(key, items))
+}
+
+/** 服务端已按完整任务分页，不能再用当前页子场景数重算任务统计。 */
+export function buildExecutionRunHistoryRow(record: AutomationUiExecutionRunSummary): ExecutionHistoryBatchRow {
+  const row = buildLayeredExecutionBatchRow({ ...record, executionDbId: record.executionDbId || 0, sceneDbId: record.sceneDbId || 0 }, {
+    sceneDbId: record.sceneDbId || 0, sceneKey: record.sceneKey, name: record.sceneName || record.sceneKey,
+  } as AutomationUiSceneSummary)
+  row.historyRevision = record.updateTime
+  if (!record.runId) return row
+  return {
+    ...row,
+    runId: record.runId,
+    rowKey: `ui-run:${record.runId}`,
+    executionDbId: undefined,
+    recordTarget: {},
+    casesLoaded: true,
+    sceneTotal: record.sceneTotal || 0,
+    sceneCount: record.sceneTotal || 0,
+    sceneCompleted: record.sceneCompleted || 0,
+    scenePass: record.scenePass || 0,
+    sceneFail: record.sceneFail || 0,
+    sceneCancelled: record.sceneCancelled || 0,
+    sceneBlocked: record.sceneBlocked || 0,
+    sceneSkip: record.sceneSkip || 0,
+    progress: record.sceneTotal ? (record.sceneCompleted || 0) * 100 / record.sceneTotal : 0,
+    progressIndeterminate: false,
+    sceneSummaries: [],
+  }
 }
 
 function getHistoryRecords(scene: any, source: ExecutionRecordSource, testPlanId?: string) {
@@ -733,6 +768,8 @@ function attachSceneIdentity<T extends ExecutionHistoryCaseRow | ExecutionHistor
 }
 
 function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRow[]): ExecutionHistoryBatchRow {
+  // 历史批次列表为倒序；批次内部按实际启动先后跟随，不能把后启动的场景插到首条。
+  rows = [...rows].sort((left, right) => historyTimestamp(left.startedAt) - historyTimestamp(right.startedAt))
   const first = rows[0]
   const reportId = String(first.testReportId || '').trim()
   const cases = rows.flatMap(row => row.cases)
@@ -786,6 +823,7 @@ function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRo
     duration,
     caseDurationTotal,
     cases,
+    casesLoaded: rows.every(row => row.casesLoaded !== false),
     sceneCount: sceneSummaries.length,
     sceneTotal: sceneSummaries.length,
     sceneCompleted,

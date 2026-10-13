@@ -6,7 +6,7 @@
       size="medium"
       title=""
       row-key="id"
-      :data="tableData"
+      :data="displayTableData"
       :columns="columns"
       :loading="loading"
       :scroll="{ x: '100%', y: '100%'}"
@@ -208,9 +208,11 @@
       ref="executionCaseModalRef"
       @back="reopenExecutionCaseSelect"
       @batch-update="onBatchUpdate"
+      @batch-created="onBatchCreated"
       @started="onCaseExecutionStarted"
-      @finished="onCaseExecutionFinished"
-      @success="search"
+      @scene-start="startSceneExecution"
+      @startup-failed="onSceneStartupFailed"
+      @success="refresh"
     />
     <AutomationExecutionResultDrawer ref="executionResultDrawerRef" />
   </div>
@@ -238,7 +240,8 @@ import {
   getAutomationUiSceneSummaryPage,
 } from '@/apis/automation/automationUiQuery'
 import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
-import { mapDebugSceneSummary } from '../sceneSummary'
+import { type SceneExecutionProgress, liveSceneProgress, mapDebugSceneSummary, queuedSceneProgress, withSceneExecutionProgress } from '../sceneSummary'
+import { type ExecutionRun, createExecutionRun } from '../executionRun'
 import { useResetReactive, useTable } from '@/hooks'
 import { useDict } from '@/hooks/app'
 import { isMobile } from '@/utils'
@@ -247,6 +250,7 @@ import { GiCellTag, GiCellTags } from '@/components/GiCell'
 import type { ColumnItem } from '@/components/GiForm'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { formatDuration } from '@/utils/sakura'
+import { createAutomationUiExecutionRun, finishAutomationUiExecutionRun, cancelAutomationUiExecutionRun } from '@/apis/automation/automationPlaywrightRunner'
 import { filterSceneResultOptions, filterSceneStatusOptions, pickSceneExecuteField } from '@/utils/automationUiSceneStatus'
 import {
   type ExecutionCaseOpenOptions,
@@ -256,6 +260,8 @@ import {
   type ExecutionViewType,
   executionTypeOptions,
   executionViewLabels,
+  executionStatusColor,
+  executionStatusLabel,
   isExecutableCase,
 } from '../execution'
 
@@ -271,6 +277,8 @@ const emit = defineEmits<{
   (e: 'execute-all-scenes', records: any[], query: any, executionType: ExecutionType): void
   (e: 'execution-started', sceneId?: string): void
   (e: 'batch-update', rows: LiveExecutionCase[]): void
+  (e: 'run-update', run: ExecutionRun): void
+  (e: 'run-started', runId: string): void
 }>()
 
 const uiStore = useUiStore()
@@ -313,12 +321,16 @@ const {
   loading,
   pagination,
   search,
+  refresh,
   select,
   selectAll,
   selectedKeys,
   handleDelete,
   handleExport,
 } = useTable<AutomationUiSceneResp>(loadSceneSummaryPage, { immediate: false })
+
+const sceneProgress = reactive(new Map<string, SceneExecutionProgress>())
+const displayTableData = computed(() => tableData.value.map((scene) => withSceneExecutionProgress(scene, sceneProgress.get(String(scene.id)))))
 
 const queryGridProps = { cols: 24, colGap: 16, rowGap: 0 }
 const queryFieldSpan = { xs: 24, sm: 8, xxl: 8 }
@@ -414,7 +426,17 @@ const columns: TableInstance['columns'] = [
     width: 100,
     align: 'center',
     render: ({ record }) => {
+      if (record.__localExecutionStatus) {
+        const status = record.__localExecutionStatus
+        return (
+          <a-tag color={status === 'startup-failed' ? 'red' : executionStatusColor(status)}>
+            {status === 'startup-failed' ? '启动失败' : executionStatusLabel(status)}
+          </a-tag>
+        )
+      }
       const value = pickSceneExecuteField(record, 'executeStatus', status_type.value, 'debug')
+      // 取消的实时态与落库字典态使用同一颜色，不能在轮询后从橙色跳回灰色。
+      if (value === '17') return <a-tag color={executionStatusColor(value)}>{executionStatusLabel(value)}</a-tag>
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -426,6 +448,7 @@ const columns: TableInstance['columns'] = [
     align: 'center',
     render: ({ record }) => {
       const value = pickSceneExecuteField(record, 'executeResult', status_type.value, 'debug')
+      if (value === '17') return <a-tag color={executionStatusColor(value)}>{executionStatusLabel(value)}</a-tag>
       return value ? <GiCellTag value={value} dict={status_type.value} /> : '-'
     },
   },
@@ -557,7 +580,10 @@ const onBatchExecute = async (executionType: ExecutionType) => {
     emit('execute-scenes', records, executionType)
     return
   }
-  void beginQueuedCaseExecution(records, executionType)
+  // 表格支持跨页勾选，不能仅从当前页取场景；缺失行按数据库 ID 读取定义后再确认范围。
+  const recordsById = new Map(records.map((record) => [String(record.id), record]))
+  const selectedRecords = [...selected].map((id) => recordsById.get(id) || { id } as AutomationUiSceneResp)
+  await beginQueuedCaseExecution(selectedRecords, executionType, true)
 }
 
 const loadSummaryRows = async (query: AutomationUiSceneSummaryQuery, loadAll: boolean) => {
@@ -618,9 +644,12 @@ const onExecuteAllSelect = (value: string | number | Record<string, any> | undef
 }
 
 const onClearResults = async () => {
-  return handleDelete(() => clearAutomationUiSceneResults({
-    sceneIds: selectedKeys.value.map(id => String(id)),
-  }), {
+  const sceneIds = selectedKeys.value.map(String)
+  return handleDelete(async () => {
+    const response = await clearAutomationUiSceneResults({ sceneIds })
+    if (response.success) sceneIds.forEach((id) => sceneProgress.delete(id))
+    return response
+  }, {
     content: '确认清空所选场景的执行结果吗？',
     successTip: '清空成功',
     showModal: true,
@@ -663,6 +692,11 @@ interface ExecutionCaseSelection extends ExecutionContext {
   caseIds: string[]
   sceneIds?: string[]
 }
+interface SceneExecutionStart extends ExecutionCaseSelection {
+  projectEnvironmentId: string
+  runnerOptions?: ExecutionCaseOpenOptions['runnerOptions']
+  cdpOptions?: ExecutionCaseOpenOptions['cdpOptions']
+}
 
 const executionCaseSelectModalRef = ref<{
   onOpen: (
@@ -672,11 +706,12 @@ const executionCaseSelectModalRef = ref<{
   ) => void
 }>()
 const executionCaseModalRef = ref<{
+  cancelBatch: () => Promise<void>
   onOpen: (
     record: any,
     type: Exclude<ExecutionType, 'jenkins'>,
     options?: ExecutionCaseOpenOptions,
-  ) => void
+  ) => Promise<boolean>
 }>()
 const executionResultDrawerRef = ref<{
   onOpen: (sceneId: string, type: ExecutionType, view: ExecutionViewType) => void
@@ -689,23 +724,51 @@ const onExecutionSelect = (record: AutomationUiSceneResp, value: string | number
     onExecute(record, type)
     return
   }
+  if (sceneExecutionRunning.value) {
+    Message.warning('当前场景队列正在执行，请等待完成或取消后再执行')
+    return
+  }
   queuedSceneIds.value = [String(record.id)]
   executionCaseSelectModalRef.value?.onOpen(record, type)
 }
 
-const executionQueue = ref<Array<{
-  scene: AutomationUiSceneResp
-  executionType: Exclude<ExecutionType, 'jenkins'>
-  caseIds: string[]
-  selectAllCases?: boolean
-  expectedDefinitionVersion?: number
-}>>([])
+const sceneExecutionRunning = ref(false)
 const queuedSceneIds = ref<string[]>([])
+const activeQueuedSceneId = ref('')
+const currentExecutionRun = ref<ExecutionRun>()
+
+function publishExecutionRun() {
+  const run = currentExecutionRun.value
+  if (!run) return
+  run.scenes = run.scenes.map((scene) => ({ ...scene, ...sceneProgress.get(scene.sceneDbId) }))
+  emit('run-update', { ...run, scenes: run.scenes.map((scene) => ({ ...scene })) })
+}
+
+async function cancelExecutionRun(runId: string) {
+  const run = currentExecutionRun.value
+  if (!run || run.id !== runId || run.finishedAt) return
+  run.cancelRequested = true
+  run.scenes.forEach((scene) => {
+    const progress = sceneProgress.get(scene.sceneDbId)
+    if (progress?.executeStatus === 'queued') {
+      progress.executeStatus = 'cancelled'
+      progress.executeResult = 'cancelled'
+    }
+  })
+  publishExecutionRun()
+  await executionCaseModalRef.value?.cancelBatch()
+  if (run.serverRunId) await cancelAutomationUiExecutionRun(run.serverRunId)
+}
 
 const beginQueuedCaseExecution = async (
   records: AutomationUiSceneResp[],
   executionType: Exclude<ExecutionType, 'jenkins'>,
+  sortScenes = false,
 ) => {
+  if (sceneExecutionRunning.value) {
+    Message.warning('当前场景队列正在执行，请等待完成或取消后再执行')
+    return
+  }
   if (!records.length) {
     Message.warning('当前范围内没有可执行场景')
     return
@@ -718,6 +781,7 @@ const beginQueuedCaseExecution = async (
         projectedPageSize: 20,
       }) as Promise<AutomationUiSceneResp>
     ))
+    if (sortScenes) executionScenes.sort((left, right) => left.sceneId.localeCompare(right.sceneId))
     if (!executionScenes.length) throw new Error('未读取到可执行场景')
   } catch (error: any) {
     Message.error(error?.message || '读取场景 Definition 失败，请刷新后重试')
@@ -746,41 +810,120 @@ const queueSelectedScenes = (payload: ExecutionCaseSelection) => {
     Message.warning('请选择至少一个可执行场景')
     return
   }
-  queuedSceneIds.value = selectedScenes.map(scene => String(scene.id))
-  executionQueue.value = selectedScenes.map(scene => ({
-    scene,
-    executionType: payload.executionType,
-    caseIds: (scene as any).__projectedDefinition
-      ? []
-      : (Array.isArray(scene.caseList) ? scene.caseList : [])
-          .filter(isExecutableCase)
-          .map(caseItem => String(caseItem.id)),
-    selectAllCases: Boolean((scene as any).__projectedDefinition),
-    expectedDefinitionVersion: Number((scene as any).definitionVersion || 0) || undefined,
-  }))
-  openNextQueuedCaseExecution()
+  executionCaseModalRef.value?.onOpen(
+    buildSceneSelectionRecord(selectedScenes),
+    payload.executionType,
+    sceneExecutionOptions(selectedScenes[0]),
+  )
 }
 
-const openNextQueuedCaseExecution = () => {
-  const next = executionQueue.value.shift()
-  if (!next) return
-  executionCaseModalRef.value?.onOpen(next.scene, next.executionType, {
-    caseIds: next.caseIds,
-    selectAllCases: next.selectAllCases,
-    expectedDefinitionVersion: next.expectedDefinitionVersion,
-  })
+const sceneExecutionOptions = (scene: any): ExecutionCaseOpenOptions => ({
+  caseIds: scene.__projectedDefinition
+    ? []
+    : (Array.isArray(scene.caseList) ? scene.caseList : []).filter(isExecutableCase).map((item) => String(item.id)),
+  selectAllCases: Boolean(scene.__projectedDefinition),
+  expectedDefinitionVersion: Number(scene.definitionVersion || 0) || undefined,
+})
+
+const startSceneExecution = async (payload: SceneExecutionStart) => {
+  if (sceneExecutionRunning.value) return
+  const scenes: AutomationUiSceneResp[] = payload.scene.__planScenes
+  sceneExecutionRunning.value = true
+  queuedSceneIds.value = scenes.map((scene) => String(scene.id))
+  scenes.forEach((scene) => sceneProgress.set(String(scene.id), queuedSceneProgress(scene)))
+  currentExecutionRun.value = createExecutionRun(scenes, payload.executionType)
+  publishExecutionRun()
+  emit('run-started', currentExecutionRun.value.id)
+  try {
+    const { data } = await createAutomationUiExecutionRun({
+      sceneIds: scenes.map(scene => String(scene.id)),
+      projectEnvironmentId: payload.projectEnvironmentId,
+      executionType: payload.executionType,
+    })
+    if (!data?.runId) throw new Error('未取得服务端执行任务，请更新 Admin 后重试')
+    currentExecutionRun.value.serverRunId = data.runId
+    publishExecutionRun()
+    // 一次确认后复用相同配置，等待当前场景真正结束再启动下一场景；取消或启动失败即停止队列。
+    for (const scene of scenes) {
+      if (currentExecutionRun.value.cancelRequested) break
+      activeQueuedSceneId.value = String(scene.id)
+      const progress = sceneProgress.get(activeQueuedSceneId.value) || queuedSceneProgress(scene)
+      progress.executeStatus = 'starting'
+      sceneProgress.set(activeQueuedSceneId.value, progress)
+      publishExecutionRun()
+      const completed = await executionCaseModalRef.value?.onOpen(scene, payload.executionType, {
+        runId: currentExecutionRun.value.serverRunId,
+        ...sceneExecutionOptions(scene),
+        projectEnvironmentId: payload.projectEnvironmentId,
+        runnerOptions: payload.runnerOptions,
+        cdpOptions: payload.cdpOptions,
+        autoStart: true,
+        shouldCancel: () => Boolean(currentExecutionRun.value?.cancelRequested),
+      })
+      if (!completed) break
+    }
+  } catch (error: any) {
+    Message.error(error?.message || '创建执行任务失败，本次执行已停止')
+  } finally {
+    const run = currentExecutionRun.value
+    if (run.serverRunId) {
+      const failed = [...sceneProgress.entries()].find(([id, progress]) => queuedSceneIds.value.includes(id) && progress.executeStatus === 'startup-failed')
+      await finishAutomationUiExecutionRun(run.serverRunId, failed?.[0]).catch(() => Message.error('执行任务收尾失败，请在历史记录中重试取消未启动场景'))
+    }
+    // 未启动的后续场景也要结束本地排队状态，不能永久显示等待或还原成上次成功。
+    queuedSceneIds.value.forEach((id) => {
+      const progress = sceneProgress.get(id)
+      if (progress && ['queued', 'starting'].includes(progress.executeStatus)) {
+        progress.executeStatus = 'cancelled'
+        progress.executeResult = 'cancelled'
+      }
+    })
+    activeQueuedSceneId.value = ''
+    currentExecutionRun.value.finishedAt = Date.now()
+    publishExecutionRun()
+    sceneExecutionRunning.value = false
+    queuedSceneIds.value = []
+  }
 }
 
 const onCaseExecutionStarted = () => {
+  // 后续场景在后台推进，不能反复切换到历史页打断用户查看列表实时状态。
+  if (sceneExecutionRunning.value) return
   emit('execution-started', queuedSceneIds.value.length === 1 ? queuedSceneIds.value[0] : undefined)
 }
 
-const onCaseExecutionFinished = () => {
-  openNextQueuedCaseExecution()
+const onBatchUpdate = (rows: LiveExecutionCase[]) => {
+  const groups = new Map<string, LiveExecutionCase[]>()
+  rows.filter((item) => item.sceneKey && (item.recordSource || 'debug') === 'debug').forEach((item) => {
+    const id = String(item.sceneKey)
+    const items = groups.get(id) || []
+    items.push(item)
+    groups.set(id, items)
+  })
+  groups.forEach((items, id) => {
+    const previous = sceneProgress.get(id)
+    const requestedAt = previous && ((!previous.batchId && ['queued', 'starting'].includes(previous.executeStatus)) || previous.batchId === items[0].batchId)
+      ? previous.requestedAt
+      : Date.now()
+    sceneProgress.set(id, liveSceneProgress(items, requestedAt))
+  })
+  if (sceneExecutionRunning.value) publishExecutionRun()
+  emit('batch-update', rows)
 }
 
-const onBatchUpdate = (rows: LiveExecutionCase[]) => {
-  emit('batch-update', rows)
+const onBatchCreated = ({ sceneDbId, batchId }: { sceneDbId: string, batchId: string }) => {
+  const progress = sceneProgress.get(sceneDbId)
+  if (!progress || !sceneExecutionRunning.value) return
+  progress.batchId = batchId
+  publishExecutionRun()
+}
+
+const onSceneStartupFailed = (error: string) => {
+  const progress = sceneProgress.get(activeQueuedSceneId.value)
+  if (!progress || progress.batchId) return
+  progress.executeStatus = 'startup-failed'
+  progress.error = error
+  publishExecutionRun()
 }
 
 function openExecutionConfig(payload: ExecutionCaseSelection) {
@@ -800,6 +943,9 @@ function reopenExecutionCaseSelect(payload: ExecutionCaseSelection) {
     caseIds: payload.caseIds,
     recordSource: payload.recordSource,
     testPlanId: payload.testPlanId,
+    sceneSelection: Boolean(payload.scene?.__sceneAggregate),
+    selectionDisabled: Boolean(payload.scene?.__sceneAggregate),
+    sceneSelectionSummary: payload.scene?.__sceneAggregate ? '本次将执行当前范围内的' : undefined,
   })
 }
 
@@ -816,6 +962,7 @@ const onChromeRecord = (record?: AutomationUiSceneResp) => {
 defineExpose({
   reset,
   search,
+  cancelExecutionRun,
 })
 </script>
 

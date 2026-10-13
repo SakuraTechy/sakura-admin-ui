@@ -463,6 +463,7 @@ import {
   mapWithConcurrency,
 } from '../queryCache'
 import { getProjectEnvironmentConfigList, getProjectEnvironmentRuntimeStatus } from '@/apis/project/projectEnvironmentConfig'
+import { listFile } from '@/apis/system/file'
 import { useUiStore } from '@/stores/modules/uiStore'
 import { getToken } from '@/utils/auth'
 import { getConfigValue } from '@/utils/config'
@@ -1359,6 +1360,26 @@ const downloadExtension = async () => {
     return
   }
   try {
+    let fileName = ''
+    try {
+      // 优先使用 sys_file.name，文件记录不可用时仍允许按原下载地址下载。
+      const { data } = await listFile({
+        url: extensionDownloadUrl,
+        page: 1,
+        size: 1,
+        sort: ['createTime,desc'],
+      }, { silentError: true })
+      const file = data.list.find((item) => item.url === extensionDownloadUrl)
+      if (file?.name?.trim()) {
+        const extension = file.extension || 'zip'
+        fileName = file.name.toLowerCase().endsWith(`.${extension.toLowerCase()}`)
+          ? file.name
+          : `${file.name}.${extension}`
+      }
+    } catch {
+      // 文件名查询失败不阻断下载，继续使用 URL 末段作为文件名。
+    }
+    fileName ||= decodeURIComponent(new URL(extensionDownloadUrl, window.location.href).pathname.split('/').pop() || 'cuecast-extension.zip')
     const response = await fetch(extensionDownloadUrl, { credentials: 'same-origin' })
     if (!response.ok) {
       throw new Error(`下载地址响应异常（HTTP ${response.status}）`)
@@ -1401,10 +1422,9 @@ const downloadExtension = async () => {
     }
 
     const blob = new Blob([buffer], { type: contentType || 'application/zip' })
-    const fileName = decodeURIComponent(new URL(extensionDownloadUrl, window.location.href).pathname.split('/').pop() || 'cuecast-extension.zip')
     const link = document.createElement('a')
     link.href = URL.createObjectURL(blob)
-    link.download = 'cuecast-extension.zip'
+    link.download = fileName
     link.style.display = 'none'
     document.body.appendChild(link)
     link.click()

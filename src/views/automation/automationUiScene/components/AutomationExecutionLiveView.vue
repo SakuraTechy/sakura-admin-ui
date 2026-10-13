@@ -7,6 +7,7 @@
         'live-view--immersive': isImmersive,
         'live-view--original': isOriginalScale,
         'live-view--detail': detailPreviewEnabled,
+        'live-view--embedded': embedded,
       }"
       :style="isFullscreen ? undefined : immersiveStyle"
     >
@@ -40,22 +41,23 @@
               1:1
             </a-button>
           </a-tooltip>
-          <a-tooltip :content="isImmersive ? '退出沉浸模式' : '沉浸模式（占满右侧详情区域）'">
+          <a-tooltip v-if="!embedded || viewportControls" :content="viewport.immersive ? '退出沉浸模式' : '沉浸模式（占满右侧详情区域）'">
             <a-button
               size="mini"
-              :type="isImmersive ? 'primary' : 'secondary'"
-              @click="toggleImmersive"
+              :type="viewport.immersive ? 'primary' : 'secondary'"
+              :aria-label="viewport.immersive ? '退出沉浸' : '沉浸'"
+              @click="viewport.toggleImmersive"
             >
               <template #icon>
-                <icon-shrink v-if="isImmersive" />
+                <icon-shrink v-if="viewport.immersive" />
                 <icon-expand v-else />
               </template>
             </a-button>
           </a-tooltip>
-          <a-tooltip :content="isFullscreen ? '退出全屏' : '全屏'">
-            <a-button size="mini" @click="toggleFullscreen">
+          <a-tooltip v-if="!embedded || viewportControls" :content="viewport.fullscreen ? '退出全屏' : '全屏'">
+            <a-button size="mini" :aria-label="viewport.fullscreen ? '退出全屏' : '全屏'" @click="viewport.toggleFullscreen">
               <template #icon>
-                <icon-fullscreen-exit v-if="isFullscreen" />
+                <icon-fullscreen-exit v-if="viewport.fullscreen" />
                 <icon-fullscreen v-else />
               </template>
             </a-button>
@@ -110,6 +112,7 @@
 
 <script setup lang="ts">
 import { onKeyStroke, useFullscreen, useResizeObserver } from '@vueuse/core'
+import type { ExecutionViewportControls } from './AutomationExecutionWorkspace.vue'
 import { getAutomationPlaywrightRunnerLiveUrl } from '@/apis/automation/automationPlaywrightRunner'
 import actionCursorUrl from '@/assets/images/playwright-action-cursor.png'
 import { getToken } from '@/utils/auth'
@@ -118,6 +121,9 @@ const props = defineProps<{
   jobId?: string
   status?: unknown
   quality?: unknown
+  /** 双栏容器统一管理高度和沉浸，保留细节放大及 1:1 查看。 */
+  embedded?: boolean
+  viewportControls?: ExecutionViewportControls
 }>()
 
 interface LiveFramePresentation {
@@ -181,6 +187,12 @@ let rippleDelayTimer: number | undefined
 let rippleHideTimer: number | undefined
 let pointerActivationPending = false
 const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(viewerRef)
+const viewport = computed<ExecutionViewportControls>(() => props.viewportControls || {
+  immersive: isImmersive.value,
+  fullscreen: isFullscreen.value,
+  toggleImmersive,
+  toggleFullscreen,
+})
 
 onKeyStroke('Escape', () => {
   if (!isFullscreen.value) exitImmersive()
@@ -647,7 +659,7 @@ function clamp(value: number, min: number, max: number) {
 .live-stage {
   position: relative;
   display: flex;
-  height: min(65vh, 680px);
+  height: min(65vh, 650px);
   min-height: 420px;
   align-items: center;
   justify-content: center;
@@ -784,6 +796,36 @@ function clamp(value: number, min: number, max: number) {
   font-size: 12px;
 }
 
+.live-view--embedded {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  margin: 0;
+}
+
+.live-view--embedded .live-header,
+.live-view--embedded .live-status,
+.live-view--embedded .live-actions {
+  flex-wrap: wrap;
+}
+
+.live-view--embedded .live-stage {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  overscroll-behavior: contain;
+}
+
+.live-view--embedded .live-placeholder {
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 16px;
+}
+
 .live-view--immersive,
 .live-view:fullscreen {
   position: fixed;
@@ -794,6 +836,8 @@ function clamp(value: number, min: number, max: number) {
   width: 100vw;
   height: 100vh;
   flex-direction: column;
+  // 固定定位已按容器或视口撑满，不能叠加普通视图的外边距。
+  margin: 0;
   border: 0;
   border-radius: 0;
   overscroll-behavior: contain;

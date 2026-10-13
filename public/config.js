@@ -2,7 +2,7 @@
 window.config = {
   cuecast: {
     // CueCast Chrome 扩展安装包下载地址。
-    extensionDownloadUrl: 'http://172.19.5.228:5183/file/2026/9/16/6aaa55b7e4b02e1be4a6ccc3.zip',
+    extensionDownloadUrl: 'http://172.19.5.228:5183/file/2026/9/30/6abcde76e4b02e1b1cb20af3.zip',
   },
   gitee: {
     baseURL: 'https://gitee.com',

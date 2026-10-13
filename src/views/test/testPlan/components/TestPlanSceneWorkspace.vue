@@ -4,7 +4,7 @@
     :default-collapsed="true"
     :margin="false"
     :padding="false"
-    :left-style="{ width: 280 }"
+    :left-style="{ width: 300 }"
     class="test-plan-scene-workspace"
   >
     <template #left>
@@ -184,9 +184,18 @@
               </template>
             </a-dropdown>
             <a-link @click="openSceneHistory(record)">历史</a-link>
-            <a-link @click="openLink(record, 'consoleUrl', '获取控制台日志失败，请先执行场景')">日志</a-link>
-            <a-link @click="openLink(record, 'testReportUrl', '获取测试报告失败，请先执行场景')">报告</a-link>
-            <a-link @click="openLink(record, 'videoUrl', '获取测试视频失败，请先执行场景')">回放</a-link>
+            <a-dropdown>
+              <a-button type="text" size="mini" title="更多" aria-label="更多">
+                <template #icon>
+                  <icon-more :size="16" />
+                </template>
+              </a-button>
+              <template #content>
+                <a-doption @click="openLink(record, 'consoleUrl', '获取控制台日志失败，请先执行场景')">日志</a-doption>
+                <a-doption @click="openLink(record, 'testReportUrl', '获取测试报告失败，请先执行场景')">报告</a-doption>
+                <a-doption @click="openLink(record, 'videoUrl', '获取测试视频失败，请先执行场景')">回放</a-doption>
+              </template>
+            </a-dropdown>
           </a-space>
         </template>
       </GiTable>
@@ -417,7 +426,7 @@ const columns: TableInstance['columns'] = [
   { title: '执行人', dataIndex: 'executeName', width: 110, align: 'center', render: ({ record }) => getPlanRecordDisplayValue(record, ['executeName', 'executeUsername', 'executor']) },
   { title: '开始时间', dataIndex: 'startedAt', width: 180, align: 'center', render: ({ record }) => formatPlanSceneDateTime(getPlanRecordDisplayValue(record, ['startedAt', 'durationStartTime'])) },
   { title: '结束时间', dataIndex: 'finishedAt', width: 180, align: 'center', render: ({ record }) => formatPlanSceneDateTime(getPlanRecordDisplayValue(record, ['finishedAt', 'durationEndTime'])) },
-  { title: '操作', dataIndex: 'sceneAction', slotName: 'sceneAction', width: 300, align: 'center', fixed: 'right' },
+  { title: '操作', dataIndex: 'sceneAction', slotName: 'sceneAction', width: 200, align: 'center', fixed: 'right' },
 ]
 
 const ALL_HISTORY_SCENES = 'all'
@@ -444,10 +453,13 @@ const historyScenes = computed(() => historySceneSummaries.value.map(scene => ({
 })))
 const historySceneOptions = computed(() => [
   { label: '全部场景', value: ALL_HISTORY_SCENES },
-  ...historyScenes.value.map(scene => ({
-    label: `${scene.sceneId || scene.id} - ${scene.name || '-'}`,
-    value: toIdString(scene.id),
-  })),
+  // 仅排序下拉选项副本，保持历史场景数据和选项值不变。
+  ...historyScenes.value.slice()
+    .sort((left, right) => left.sceneId.localeCompare(right.sceneId))
+    .map(scene => ({
+      label: `${scene.sceneId || scene.id} - ${scene.name || '-'}`,
+      value: toIdString(scene.id),
+    })),
 ])
 const displayHistoryScenes = computed(() => historySceneKey.value === ALL_HISTORY_SCENES
   ? historyScenes.value
@@ -1033,7 +1045,8 @@ const loadPlanSceneRows = async (refresh: boolean, signal?: AbortSignal) => {
     .map((sceneId) => summaryMap.get(sceneId))
     .filter((summary): summary is AutomationUiSceneSummary => Boolean(summary))
     .map(mapPlanSceneSummary)
-    .sort((left, right) => new Date(right.updateTime || 0).getTime() - new Date(left.updateTime || 0).getTime())
+    // 分页前按业务场景 ID 升序，避免更新时间变化导致列表顺序漂移。
+    .sort((left, right) => left.sceneId.localeCompare(right.sceneId))
   planSceneRowsCache.value = rows
   planSceneRowsCacheKey = cacheKey
   return rows
@@ -1077,9 +1090,11 @@ const {
   selectedKeys,
 } = useTable<PlanSceneRow>(loadPlanScenePage, { immediate: false })
 
-const selectedRows = computed(() =>
-  tableData.value.filter((row) => selectedKeys.value.map(String).includes(String(row.id))),
-)
+const selectedRows = computed(() => {
+  const selectedIds = new Set(selectedKeys.value.map(String))
+  // 勾选可跨页，必须从完整计划场景缓存匹配，不能仅使用当前页数据。
+  return planSceneRowsCache.value.filter((row) => selectedIds.has(String(row.id)))
+})
 
 const refreshSceneList = async (refreshIds = false) => {
   planSceneRowsCacheKey = ''

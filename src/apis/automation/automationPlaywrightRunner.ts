@@ -16,6 +16,7 @@ export interface AutomationPlaywrightRunnerJobReq {
 
 export interface AutomationPlaywrightBatchCreateReq {
   sceneKey: string
+  runId?: string
   executionType: 'playwright-runner' | 'extension-cdp'
   caseIds: string[]
   /** 超大场景由 Admin 按冻结定义解析全部用例，避免浏览器下载完整 ID 集合。 */
@@ -135,6 +136,18 @@ export function createAutomationPlaywrightRunnerJob(req: AutomationPlaywrightRun
 
 export function createAutomationPlaywrightBatch(req: AutomationPlaywrightBatchCreateReq) {
   return http.post<AutomationPlaywrightBatchResp>('/automation/playwright/execution-batches', req)
+}
+
+export function createAutomationUiExecutionRun(req: { sceneIds: string[], projectEnvironmentId: string, executionType: 'playwright-runner' | 'extension-cdp' }) {
+  return http.post<{ runId: string }>('/automation/execution-runs', req)
+}
+
+export function finishAutomationUiExecutionRun(runId: string, failedSceneId?: string) {
+  return http.post<void>(`/automation/execution-runs/${encodeURIComponent(runId)}/finish`, undefined, { params: { failedSceneId } })
+}
+
+export function cancelAutomationUiExecutionRun(runId: string) {
+  return http.post<void>(`/automation/execution-runs/${encodeURIComponent(runId)}/cancel`)
 }
 
 export function getAutomationCdpPlaybackAvailability() {

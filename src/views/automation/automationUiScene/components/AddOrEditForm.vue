@@ -278,6 +278,7 @@
         </a-tab-pane>
         <a-tab-pane key="5" title="执行历史">
           <AutomationExecutionHistoryPanel
+            scroll-with-parent
             :scene="sceneDetail"
             :execution-batches="sceneExecutionBatches"
             :execution-page="sceneExecutionPage"

@@ -1,5 +1,5 @@
 <template>
-  <div ref="panelRef" class="execution-history-panel">
+  <div ref="panelRef" class="execution-history-panel" :class="{ 'execution-history-panel--embedded': embedded, 'execution-history-panel--page-scroll': useParentScroll }">
     <!-- <GiForm
       v-model="queryForm"
       :columns="queryFormColumns"
@@ -15,7 +15,7 @@
       @reset="reset"
     /> -->
 
-    <div class="history-view-toolbar">
+    <div v-if="!embedded" class="history-view-toolbar">
       <div>
         <div class="history-title">历史列表</div>
         <div class="history-description">
@@ -87,7 +87,7 @@
         </a-button-group>
       </div>
     </div>
-    <section class="history-summary" aria-label="执行历史汇总">
+    <section v-if="!embedded" class="history-summary" aria-label="执行历史汇总">
       <!-- <div class="history-summary__header">
         <strong>执行汇总</strong>
         <span>{{ summaryScopeDescription }}</span>
@@ -98,14 +98,28 @@
         </div>
       </div>
     </section>
+    <div v-if="embedded" class="embedded-batch-details">
+      <AutomationExecutionBatchDetail
+        v-for="record in filteredBatchRows"
+        :key="record.rowKey"
+        :batch="record"
+        embedded
+        :auto-expand-case-id="autoExpandCaseId"
+        :auto-expand-scene-id="autoExpandSceneId"
+        :load-cases="loadExecutionCases"
+        :load-steps="loadExecutionSteps"
+        :load-step-detail="loadExecutionStepDetail"
+        @cancel-case="requestCaseCancel"
+      />
+    </div>
     <GiTable
-      v-if="viewMode === 'table' && tableBatchMode"
+      v-else-if="viewMode === 'table' && tableBatchMode"
       :key="aggregatePlanBatches ? 'plan-batch-history' : 'scene-batch-history'"
       :data="pagedBatchRows"
       :columns="batchColumns"
       :loading="loading"
       :pagination="pagination"
-      :scroll="{ y: 560 }"
+      :scroll="useParentScroll ? { x: '100%' } : { y: 560 }"
       :expanded-keys="expandedKeys"
       :expandable="{ width: 48 }"
       :row-class="batchRowClass"
@@ -119,9 +133,18 @@
       @refresh="emit('refresh')"
     >
       <template #expand-row="{ record }">
-        <AutomationExecutionBatchDetail
+        <AutomationExecutionRunDetail
+          v-if="record.runId && loadExecutionRunScenes"
           :batch="record"
-          :force-scene-groups="aggregatePlanBatches"
+          :load-scenes="loadExecutionRunScenes"
+          :load-cases="loadExecutionCases"
+          :load-steps="loadExecutionSteps"
+          :load-step-detail="loadExecutionStepDetail"
+        />
+        <AutomationExecutionBatchDetail
+          v-else
+          :batch="record"
+          :force-scene-groups="aggregatePlanBatches || serverPagedScope"
           :load-cases="loadExecutionCases"
           :load-steps="loadExecutionSteps"
           :load-step-detail="loadExecutionStepDetail"
@@ -137,7 +160,7 @@
       :columns="columns"
       :loading="loading"
       :pagination="pagination"
-      :scroll="{ y: 560 }"
+      :scroll="useParentScroll ? { x: '100%' } : { y: 560 }"
       :expanded-keys="expandedKeys"
       :expandable="{ width: 48 }"
       :row-class="historyRowClass"
@@ -159,6 +182,26 @@
       </template>
     </GiTable>
 
+    <a-spin v-else-if="serverPagedScope && loadExecutionRunScenes" :loading="loading" class="history-alternative-view">
+      <a-empty v-if="!pagedBatchRows.length" description="暂无符合条件的执行任务" />
+      <div class="run-history-list" :class="`run-history-list--${viewMode}`">
+        <section v-for="record in pagedBatchRows" :key="record.rowKey" class="run-history-item">
+          <div class="run-history-item__summary">
+            <a-link @click="toggleExpanded(record.rowKey)">{{ record.batchId }}</a-link>
+            <span>总场景 {{ record.sceneTotal || 1 }} · 完成 {{ record.sceneCompleted || 0 }}</span>
+            <a-tag :color="executionDisplayResultColor(record.executeResult, record.executeStatus)">{{ executionDisplayResultLabel(record.executeResult, record.executeStatus) }}</a-tag>
+            <span>{{ record.executeName }} · {{ formatExecutionDateTime(record.startedAt) }} · {{ formatExecutionDuration(record.duration) }}</span>
+            <a-link v-if="isBatchCancellable(record)" status="danger" @click="requestBatchCancel(record)">取消</a-link>
+            <a-link @click="toggleExpanded(record.rowKey)">{{ expandedKeys.includes(record.rowKey) ? '收起' : '详情' }}</a-link>
+          </div>
+          <template v-if="expandedKeys.includes(record.rowKey)">
+            <AutomationExecutionRunDetail v-if="record.runId" :batch="record" :load-scenes="loadExecutionRunScenes" :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
+            <AutomationExecutionBatchDetail v-else :batch="record" force-scene-groups :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
+          </template>
+        </section>
+      </div>
+      <div v-if="pagedBatchRows.length" class="history-pagination"><a-pagination v-bind="pagination" /></div>
+    </a-spin>
     <a-spin v-else :loading="loading" class="history-alternative-view">
       <a-empty v-if="pagedRows.length === 0" description="暂无符合条件的执行记录" />
 
@@ -341,7 +384,7 @@
       </div>
     </a-spin>
 
-    <AutomationExecutionResultDrawer ref="executionResultDrawerRef" />
+    <AutomationExecutionResultDrawer v-if="!embedded" ref="executionResultDrawerRef" />
   </div>
 </template>
 
@@ -372,10 +415,12 @@ import {
   getExecutionHistoryRows,
 } from '../execution'
 import AutomationExecutionBatchDetail from './AutomationExecutionBatchDetail.vue'
+import AutomationExecutionRunDetail from './AutomationExecutionRunDetail.vue'
 import AutomationExecutionHistoryDetail from './AutomationExecutionHistoryDetail.vue'
 import AutomationExecutionProgress from './AutomationExecutionProgress.vue'
 import AutomationExecutionResultDrawer from './AutomationExecutionResultDrawer.vue'
 import type { ColumnItem } from '@/components/GiForm'
+import type { AutomationUiExecutionHistorySummary } from '@/apis/automation/automationUiQuery'
 
 type HistoryViewMode = 'table' | 'compact' | 'timeline' | 'cards'
 
@@ -411,11 +456,15 @@ const props = withDefaults(defineProps<{
   aggregatePlanBatches?: boolean
   /** 非测试计划历史也可按执行批次聚合展示。 */
   aggregateBatches?: boolean
+  /** 场景已由外层展示时只渲染用例明细，不嵌套完整历史页面。 */
+  embedded?: boolean
+  /** 编辑页右侧由 detail-panel 滚动，避免表格和批次详情再次限高。 */
+  scrollWithParent?: boolean
   sceneFilterValue?: string
   sceneFilterOptions?: Array<{ label: string, value: string }>
   loading?: boolean
   selectedCaseId?: string
-  /** 从报告跳转时自动展开的用例；为空时由批次明细展开首个用例。 */
+  /** 从报告跳转时明确定位的用例；为空时只自动展开执行中的用例。 */
   autoExpandCaseId?: string
   autoExpandSceneId?: string
   liveExecutions?: LiveExecutionCase[]
@@ -424,7 +473,11 @@ const props = withDefaults(defineProps<{
   executionPage?: number
   executionPageSize?: number
   executionTotal?: number
+  /** 普通历史由后台跨场景分页，汇总不依赖当前记录页。 */
+  serverPagedScope?: boolean
+  scopeSummary?: AutomationUiExecutionHistorySummary
   loadExecutionPage?: (page: number, size: number) => Promise<void>
+  loadExecutionRunScenes?: (batch: ExecutionHistoryBatchRow, page: number, size: number) => Promise<{ list: ExecutionHistoryBatchRow[], total: number }>
   loadExecutionCaseHistory?: (caseId: string, page?: number, size?: number) => Promise<{ list: ExecutionHistoryCaseRow[], total: number }>
   loadExecutionCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
   loadExecutionSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
@@ -445,9 +498,10 @@ const emit = defineEmits<{
 }>()
 
 const VIEW_MODE_STORAGE_KEY = 'automation-execution-history-view-mode'
+const useParentScroll = computed(() => props.serverPagedScope || props.scrollWithParent)
 const viewMode = ref<HistoryViewMode>('table')
 const remoteBatchPagination = computed(() => Boolean(
-  props.loadExecutionPage && viewMode.value === 'table' && !props.selectedCaseId,
+  props.loadExecutionPage && (props.serverPagedScope || viewMode.value === 'table') && !props.selectedCaseId,
 ))
 const remoteCasePagination = computed(() => Boolean(
   props.loadExecutionCaseHistory && viewMode.value === 'table' && props.selectedCaseId,
@@ -514,16 +568,17 @@ const sceneFilterWidth = computed(() => {
   }, 0)
   return Math.min(640, Math.max(150, maxTextWidth + 56))
 })
-// 全部场景按计划报告聚合；筛选单个场景时恢复用例批次口径。
+// 全部场景按任务聚合；指定场景由外层关闭聚合，恢复与测试计划一致的用例统计列。
 const aggregatePlanBatches = computed(() => (
-  isMultiScene.value
-  && (props.aggregateBatches || (props.aggregatePlanBatches && props.recordSource === 'test'))
+  props.aggregateBatches
+  || (isMultiScene.value && props.aggregatePlanBatches && props.recordSource === 'test')
 ))
 const historySceneKeys = computed(() => new Set(historyScenes.value.map(item => String(item?.id || '')).filter(Boolean)))
 const effectiveLiveExecutions = computed(() => props.liveExecutions.filter((item) => (
   (item.sceneKey ? historySceneKeys.value.has(item.sceneKey) : historyScenes.value.length === 1)
   && (item.recordSource || 'debug') === props.recordSource
   && (props.recordSource !== 'test' || String(item.testPlanId || '') === String(props.testPlanId || ''))
+  && (!props.serverPagedScope || props.executionBatches?.some((batch) => batch.batchId === item.batchId && batch.sceneKey === item.sceneKey))
 )))
 const allHistoryRows = computed(() => historyScenes.value.flatMap(scene => (
   props.executionBatches
@@ -663,6 +718,19 @@ const executionSummary = computed(() => {
   }, { total, completed: 0, passed: 0, failed: 0, blocked: 0, cancelled: 0, skipped: 0 })
 })
 const summaryCards = computed(() => {
+  if (props.scopeSummary) {
+    const summary = props.scopeSummary
+    return [
+      { label: summary.dimension === 'case' ? '总用例' : '总场景', value: summary.total, tone: '' },
+      { label: '已完成', value: summary.completed, tone: 'primary' },
+      { label: '通过', value: summary.passed, tone: 'success' },
+      { label: '失败', value: summary.failed, tone: 'danger' },
+      { label: '阻塞', value: summary.blocked, tone: 'warning' },
+      { label: '取消', value: summary.cancelled, tone: '' },
+      { label: '跳过', value: summary.skipped, tone: '' },
+      ...(summary.dimension === 'case' ? [] : [{ label: '未执行', value: summary.notExecuted, tone: '' }]),
+    ]
+  }
   // 计划/报告的跨场景聚合口径是“场景”，与视图模式无关；否则切换视图会让同一份数据换算成另一种维度。
   if (aggregatePlanBatches.value && !props.selectedCaseId) {
     const latestByScene = new Map<string, any>()
@@ -733,13 +801,19 @@ const allBatchRows = computed(() => {
     getExecutionBatchRows(scene, props.recordSource, props.testPlanId)
   ))
   const merged = aggregatePlanBatches.value ? aggregateExecutionBatchRows(rows) : rows
-  return merged.sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
+  return props.serverPagedScope ? merged : merged.sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
 })
 const liveBatchRows = computed(() => {
   const rows = normalizeLiveBatches(effectiveLiveExecutions.value, persistedLiveRows.value)
   return aggregatePlanBatches.value ? aggregateExecutionBatchRows(rows) : rows
 })
 const filteredBatchRows = computed(() => {
+  if (props.serverPagedScope) {
+    // 实时消息只更新本页已经存在的记录，不能把第一页正在执行的批次插到其他页。
+    const live = new Map(liveBatchRows.value.map((batch) => [batchIdentity(batch), batch]))
+    return allBatchRows.value.map((batch) => applyPendingBatchState(live.get(batchIdentity(batch)) || batch))
+      .filter((batch) => matchesBatchQuery(batch, appliedQuery.value))
+  }
   const liveIds = new Set(liveBatchRows.value.map(batchIdentity))
   return [
     ...liveBatchRows.value,
@@ -748,6 +822,7 @@ const filteredBatchRows = computed(() => {
 })
 const pagedRows = computed(() => {
   if (remoteCasePagination.value) return selectedCaseRows.value
+  if (props.serverPagedScope && remoteBatchPagination.value) return filteredRows.value
   const start = (pagination.current - 1) * pagination.pageSize
   return filteredRows.value.slice(start, start + pagination.pageSize)
 })
@@ -757,8 +832,8 @@ const pagedBatchRows = computed(() => {
   return filteredBatchRows.value.slice(start, start + pagination.pageSize)
 })
 const tableBatchMode = computed(() => viewMode.value === 'table' && !props.selectedCaseId)
-const displayTotal = computed(() => tableBatchMode.value
-  ? (remoteBatchPagination.value ? (props.executionTotal || 0) : filteredBatchRows.value.length)
+const displayTotal = computed(() => remoteBatchPagination.value ? (props.executionTotal || 0) : tableBatchMode.value
+  ? filteredBatchRows.value.length
   : (remoteCasePagination.value ? selectedCaseTotal.value : filteredRows.value.length))
 const activeViewLabel = computed(() => ({
   table: '表格视图',
@@ -766,7 +841,9 @@ const activeViewLabel = computed(() => ({
   timeline: '时间轴视图',
   cards: '卡片视图',
 })[viewMode.value])
-const historyScopeDescription = computed(() => props.selectedCaseId
+const historyScopeDescription = computed(() => props.serverPagedScope
+  ? viewMode.value === 'table' ? '展示当前场景范围的执行历史' : '展示当前页执行批次的用例（按批次翻页）'
+  : props.selectedCaseId
   ? `当前用例 ${props.selectedCaseId} 的全部执行历史`
   : isMultiScene.value
     ? props.recordSource === 'test'
@@ -791,18 +868,19 @@ watch(displayTotal, (total) => {
 }, { immediate: true })
 
 watch(
-  () => `${props.autoExpandCaseId || props.autoExpandSceneId || ''}:${filteredBatchRows.value.map(item => item.rowKey).join('|')}`,
+  () => `${viewMode.value}:${props.sceneFilterValue}:${pagination.current}:${props.autoExpandCaseId || props.autoExpandSceneId || ''}:${pagedBatchRows.value.map(item => item.rowKey).join('|')}`,
   () => {
     const targetId = props.autoExpandCaseId || props.autoExpandSceneId
-    if (!tableBatchMode.value || !targetId || !filteredBatchRows.value.length) return
-    const target = `${targetId}:${filteredBatchRows.value.map(item => item.rowKey).join('|')}`
+    if (props.embedded || props.selectedCaseId || (!tableBatchMode.value && !props.loadExecutionRunScenes) || !pagedBatchRows.value.length) return
+    // 每个历史页只初始化一次；普通轮询及手动收起不能反复抢回展开态。
+    const target = `${viewMode.value}:${props.sceneFilterValue}:${pagination.current}:${targetId || ''}:${pagedBatchRows.value[0].rowKey}`
     if (autoExpandedTarget.value === target) return
     autoExpandedTarget.value = target
-    const row = filteredBatchRows.value.find((item) => {
+    const row = pagedBatchRows.value.find((item) => {
       const target = String(targetId)
       return String(item.sceneKey || item.sceneId || '') === target
         || item.sceneSummaries?.some(scene => String(scene.key) === target || String(scene.sceneId) === target)
-    }) || filteredBatchRows.value[0]
+    }) || pagedBatchRows.value[0]
     expandedKeys.value = [row.rowKey]
     scrollExpandedIntoView(row.rowKey)
   },
@@ -822,7 +900,7 @@ watch(
 // 某条用例进入终态后主动拉取场景详情，确保实时行能尽快补齐后端保存的步骤明细。
 watch(
   () => props.liveExecutions
-    .filter((item) => ['passed', 'failed', 'cancelled'].includes(item.status))
+    .filter((item) => ['passed', 'failed', 'skipped', 'cancelled'].includes(item.status))
     .map((item) => `${item.sceneKey || ''}:${item.batchId}:${item.caseId}:${item.status}`)
     .join('|'),
   (value) => {
@@ -845,9 +923,10 @@ watch(() => props.selectedCaseId, () => {
 watch(
   () => `${viewMode.value}:${props.selectedCaseId || ''}:${props.executionBatches?.map(item => `${item.executionDbId}:${item.casesLoaded}`).join('|') || ''}`,
   () => {
-    if (!props.executionBatches || !props.loadExecutionCases) return
-    // 顶部统计要按用例维度汇总当前范围内每个用例的最新执行，四个视图都必须先补齐批次子项；
-    // 批次已按服务端分页有界，这里只补当前页未加载的批次。
+    if (props.embedded || !props.executionBatches || !props.loadExecutionCases) return
+    // 普通历史汇总已由服务端返回，表格中的用例仅在展开批次后加载。
+    if (props.serverPagedScope && (tableBatchMode.value || props.loadExecutionRunScenes)) return
+    // 其他视图仍需补齐当前有界批次的用例，保留计划、报告与用例历史的原有统计口径。
     if (remoteCasePagination.value) return
     const pending = props.executionBatches.filter(item => !item.casesLoaded)
     const casePageSize = props.selectedCaseId ? 50 : 20
@@ -941,12 +1020,12 @@ const sceneColumn = {
 
 const batchColumns = computed<TableInstance['columns']>(() => [
   ...(isMultiScene.value && !aggregatePlanBatches.value ? [sceneColumn] : []),
-  { title: '批次 ID', dataIndex: 'batchId', width: 150, fixed: 'left', ellipsis: true, tooltip: true, show: true, render: ({ record }: any) => (
+  { title: '批次 ID1', dataIndex: 'batchId', width: 170, fixed: 'left', ellipsis: true, tooltip: true, show: true, render: ({ record }: any) => (
     <span>{record.batchId}</span>
   ) },
   ...(aggregatePlanBatches.value
     ? [
-        { title: '总场景', dataIndex: 'sceneTotal', width: 80, align: 'center', show: true },
+        { title: '总场景', dataIndex: 'sceneTotal', width: 70, align: 'center', show: true },
         { title: '完成', dataIndex: 'sceneCompleted', width: 60, align: 'center', show: true },
         { title: '通过', dataIndex: 'scenePass', width: 60, align: 'center', show: true },
         { title: '失败', dataIndex: 'sceneFail', width: 60, align: 'center', show: true },
@@ -955,7 +1034,7 @@ const batchColumns = computed<TableInstance['columns']>(() => [
         { title: '跳过', dataIndex: 'sceneSkip', width: 60, align: 'center', show: true },
       ]
     : [
-        { title: '总用例', dataIndex: 'caseTotal', width: 80, align: 'center', show: true },
+        { title: '总用例', dataIndex: 'caseTotal', width: 70, align: 'center', show: true },
         { title: '完成', dataIndex: 'caseCompleted', width: 60, align: 'center', show: true },
         { title: '通过', dataIndex: 'casePass', width: 60, align: 'center', show: true },
         { title: '失败', dataIndex: 'caseFail', width: 60, align: 'center', show: true },
@@ -963,7 +1042,7 @@ const batchColumns = computed<TableInstance['columns']>(() => [
         { title: '阻塞', dataIndex: 'caseBlocked', width: 60, align: 'center', show: true },
         { title: '跳过', dataIndex: 'caseSkip', width: 60, align: 'center', show: true },
       ]),
-  { title: '执行进度', dataIndex: 'progress', width: 200, render: ({ record }: any) => <AutomationExecutionProgress progress={record.progress} indeterminate={record.progressIndeterminate} completed={record.caseCompleted} total={record.caseTotal} /> },
+  { title: '执行进度', dataIndex: 'progress', width: 180, render: ({ record }: any) => <AutomationExecutionProgress progress={record.progress} indeterminate={record.progressIndeterminate} completed={record.runId ? record.sceneCompleted : record.caseCompleted} total={record.runId ? record.sceneTotal : record.caseTotal} /> },
   { title: '状态', dataIndex: 'executeStatus', width: 70, align: 'center', render: ({ record }: any) => <a-tag color={executionStatusColor(record.executeStatus)}>{executionStatusLabel(record.executeStatus)}</a-tag> },
   { title: '结果', dataIndex: 'executeResult', width: 90, align: 'center', render: ({ record }: any) => <a-tag color={executionDisplayResultColor(record.executeResult, record.executeStatus)}>{executionDisplayResultLabel(record.executeResult, record.executeStatus)}</a-tag> },
   {
@@ -977,8 +1056,8 @@ const batchColumns = computed<TableInstance['columns']>(() => [
       </div>
     ),
   },
-  { title: '执行人', dataIndex: 'executeName', width: 110, ellipsis: true, tooltip: true },
-  { title: '执行方式', dataIndex: 'executionType', width: 180, render: ({ record }: any) => <a-tag color="arcoblue">{executionTypeLabel(record.executionType)}</a-tag> },
+  { title: '执行人', dataIndex: 'executeName', width: 100, align: 'center',ellipsis: true, tooltip: true },
+  { title: '执行方式', dataIndex: 'executionType', width: 180, align: 'center',render: ({ record }: any) => <a-tag color="arcoblue">{executionTypeLabel(record.executionType)}</a-tag> },
   { title: '开始时间', dataIndex: 'startedAt', width: 180, render: ({ record }: any) => formatExecutionDateTime(record.startedAt) },
   { title: '结束时间', dataIndex: 'finishedAt', width: 180, show: true, render: ({ record }: any) => formatExecutionDateTime(record.finishedAt) },
   // { title: '产品环境 ID', dataIndex: 'projectEnvironmentId', width: 140, show: false, ellipsis: true, tooltip: true },
@@ -1273,7 +1352,7 @@ function openResult(record: ExecutionHistoryCaseRow, view: Exclude<ExecutionView
 }
 
 function normalizeLiveExecution(item: LiveExecutionCase): ExecutionHistoryCaseRow {
-  const terminal = ['passed', 'failed', 'cancelled'].includes(item.status)
+  const terminal = ['passed', 'failed', 'skipped', 'cancelled'].includes(item.status)
   const stepTotal = Math.max(0, Number(item.stepTotal) || 0)
   const stepCompleted = Math.min(stepTotal, Math.max(0, Number(item.stepCompleted) || 0))
   const progress = terminal
@@ -1355,7 +1434,7 @@ function hydrateCompletedLiveRow(
   liveRow: ExecutionHistoryCaseRow,
   persistedRow?: ExecutionHistoryCaseRow,
 ) {
-  const terminal = ['passed', 'failed', 'cancelled'].includes(String(liveRow.executeStatus || '').toLowerCase())
+  const terminal = ['passed', 'failed', 'skipped', 'cancelled'].includes(String(liveRow.executeStatus || '').toLowerCase())
   if (!terminal || !persistedRow?.steps?.length) return liveRow
   // 保留实时行标识避免折叠状态跳变，但用已落库记录补齐步骤、定位信息和报告产物。
   return {
@@ -1388,14 +1467,15 @@ function normalizeLiveBatches(
       const liveRow = normalizeLiveExecution(item)
       return hydrateCompletedLiveRow(liveRow, persistedRows.get(executionHistoryMergeKey(liveRow)))
     })
-    const terminalCases = batchItems.filter((item) => ['passed', 'failed', 'cancelled'].includes(item.status))
+    const terminalCases = batchItems.filter((item) => ['passed', 'failed', 'skipped', 'cancelled'].includes(item.status))
     const failed = batchItems.filter((item) => item.status === 'failed').length
     const cancelled = batchItems.filter((item) => item.status === 'cancelled').length
     const passed = batchItems.filter((item) => item.status === 'passed').length
+    const skipped = batchItems.filter((item) => item.status === 'skipped').length
     const totalSteps = batchItems.reduce((total, item) => total + Math.max(0, Number(item.stepTotal) || 0), 0)
     const completedSteps = batchItems.reduce((total, item) => {
       const stepTotal = Math.max(0, Number(item.stepTotal) || 0)
-      const terminal = ['passed', 'failed', 'cancelled'].includes(item.status)
+      const terminal = ['passed', 'failed', 'skipped', 'cancelled'].includes(item.status)
       const completed = terminal ? stepTotal : Math.min(stepTotal, Math.max(0, Number(item.stepCompleted) || 0))
       return total + completed
     }, 0)
@@ -1421,7 +1501,7 @@ function normalizeLiveBatches(
       caseFail: failed,
       caseCancelled: cancelled,
       caseBlocked: 0,
-      caseSkip: 0,
+      caseSkip: skipped,
       progress: totalSteps > 0
         ? Math.round(completedSteps * 10000 / totalSteps) / 100
         : batchItems.length ? Math.round(terminalCases.length * 10000 / batchItems.length) / 100 : 0,
@@ -1431,7 +1511,7 @@ function normalizeLiveBatches(
         : cancelled ? 'cancelling' : 'running',
       executeResult: terminalCases.length !== batchItems.length
         ? batchItems.every(item => ['waiting', 'queued'].includes(item.status)) ? 'not_executed' : 'pending'
-        : cancelled ? 'cancelled' : failed ? 'failed' : 'passed',
+        : cancelled ? 'cancelled' : failed ? 'failed' : skipped ? 'skipped' : 'passed',
       executeName: batchItems[0]?.executeName || '-',
       startedAt,
       finishedAt,
@@ -1576,6 +1656,11 @@ function cssEscape(value: string) {
 </script>
 
 <style scoped lang="scss">
+.run-history-list { display: grid; gap: 10px; }
+.run-history-list--cards { grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+.run-history-list--timeline { padding-left: 18px; border-left: 2px solid var(--color-border-2); }
+.run-history-item { min-width: 0; border: 1px solid var(--color-border-2); border-radius: 10px; }
+.run-history-item__summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; }
 :deep(.arco-table-size-small .arco-table-cell) {
   padding: 5px 5px;
 }
@@ -1603,9 +1688,36 @@ function cssEscape(value: string) {
 .history-summary {
   margin: 8px 0;
   padding: 8px;
-  border: 1px solid var(--color-border-2);
-  border-radius: 10px;
-  background: var(--color-bg-2);
+  // border: 1px solid var(--color-border-2);
+  // border-radius: 10px;
+  // background: var(--color-bg-2);
+}
+
+.execution-history-panel--embedded {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+// UI 自动化历史与“本次执行”统一由工作区滚动，避免内层限高再次压缩画面。
+// 服务端分页历史和编辑页右侧共用该布局；其他页面及表格全屏仍保留原有布局。
+.execution-history-panel--page-scroll {
+  :deep(.gi-table:not(.gi-table--fullscreen)),
+  :deep(.gi-table:not(.gi-table--fullscreen) .gi-table__body),
+  :deep(.gi-table:not(.gi-table--fullscreen) .gi-table__container) {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  :deep(.batch-detail),
+  :deep(.execution-run-detail) {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  :deep(.batch-detail) {
+    padding-right: 0;
+  }
 }
 
 .history-summary__header {

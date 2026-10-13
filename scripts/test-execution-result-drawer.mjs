@@ -47,6 +47,8 @@ function mount(recordSource = 'test', status = 'passed', engine = 'playwright-ru
     '../execution': execution,
     './AutomationExecutionLiveView.vue': {},
     './AutomationExecutionLogViewer.vue': {},
+    './AutomationExecutionWorkspace.vue': {},
+    './AutomationExecutionReportAssets.vue': {},
     '@/utils/auth': { getToken: () => '' },
     '@/apis/automation/automationUiScene': { getAutomationUiScene: () => { throw new Error('不应回退读取场景大字段') } },
     '@/apis/automation/automationUiQuery': {
