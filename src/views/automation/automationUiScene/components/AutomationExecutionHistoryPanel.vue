@@ -129,9 +129,29 @@
         ? 'automation-execution-plan-batch-history'
         : 'automation-execution-scene-batch-history'"
       :disabled-column-keys="['batchId', 'action']"
+      :disabled-tools="showAutoRefresh ? [''] : []"
       @expanded-change="handleExpandedChange"
       @refresh="emit('refresh')"
     >
+      <template v-if="showAutoRefresh" #toolbar-right>
+        <a-button-group class="history-refresh-control" aria-label="报告刷新和轮询间隔">
+          <a-button type="primary" size="small" aria-label="立即刷新" @click="emit('refresh')">
+            <!-- <template #icon><icon-refresh /></template> -->
+            自动刷新
+          </a-button>
+          <a-dropdown trigger="click" @select="(value) => emit('select-poll-interval', Number(value))">
+            <a-button type="dashed" size="small" class="history-refresh-interval" aria-label="选择轮询间隔">
+              {{ autoRefresh ? formatPollInterval(pollIntervalSeconds) : 'Off' }}
+              <icon-down />
+            </a-button>
+            <template #content>
+              <a-doption v-for="option in pollIntervalOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </a-doption>
+            </template>
+          </a-dropdown>
+        </a-button-group>
+      </template>
       <template #expand-row="{ record }">
         <AutomationExecutionRunDetail
           v-if="record.runId && loadExecutionRunScenes"
@@ -463,6 +483,9 @@ const props = withDefaults(defineProps<{
   sceneFilterValue?: string
   sceneFilterOptions?: Array<{ label: string, value: string }>
   loading?: boolean
+  showAutoRefresh?: boolean
+  autoRefresh?: boolean
+  pollIntervalSeconds?: number
   selectedCaseId?: string
   /** 从报告跳转时明确定位的用例；为空时只自动展开执行中的用例。 */
   autoExpandCaseId?: string
@@ -488,9 +511,14 @@ const props = withDefaults(defineProps<{
   liveExecutions: () => [],
   sceneFilterValue: '',
   sceneFilterOptions: () => [],
+  autoRefresh: true,
+  pollIntervalSeconds: 3,
+  showAutoRefresh: false,
 })
 const emit = defineEmits<{
   (e: 'refresh'): void
+  (e: 'update:auto-refresh', value: boolean): void
+  (e: 'select-poll-interval', value: number): void
   (e: 'show-all'): void
   (e: 'scene-change', value: string): void
   (e: 'cancel-batch', row: ExecutionHistoryBatchRow, markCancelling: () => void): void
@@ -498,6 +526,23 @@ const emit = defineEmits<{
 }>()
 
 const VIEW_MODE_STORAGE_KEY = 'automation-execution-history-view-mode'
+const pollIntervalOptions = [
+  { label: 'Off', value: 0 },
+  { label: '5s', value: 5 },
+  { label: '10s', value: 10 },
+  { label: '30s', value: 30 },
+  //{ label: '1m', value: 60 },
+  //{ label: '5m', value: 300 },
+  //{ label: '15m', value: 900 },
+  //{ label: '30m', value: 1800 },
+  //{ label: '1h', value: 3600 },
+  //{ label: '2h', value: 7200 },
+  //{ label: '1d', value: 86400 },
+]
+const formatPollInterval = (seconds: number) => {
+  const option = pollIntervalOptions.find(item => item.value === seconds)
+  return option?.label || String(seconds) + 's'
+}
 const useParentScroll = computed(() => props.serverPagedScope || props.scrollWithParent)
 const viewMode = ref<HistoryViewMode>('table')
 const remoteBatchPagination = computed(() => Boolean(

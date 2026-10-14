@@ -43,6 +43,9 @@
       :auto-expand-scene-id="autoExpandSceneId || (historySceneKey !== ALL_HISTORY_SCENES ? historySceneKey : undefined)"
       :scene-filter-options="historySceneOptions"
       :loading="loading"
+      show-auto-refresh
+      :auto-refresh="autoRefreshEnabled"
+      :poll-interval-seconds="pollIntervalSeconds"
       :execution-batches="executionBatches"
       :execution-page="executionPage"
       :execution-page-size="executionPageSize"
@@ -53,6 +56,7 @@
       :load-execution-step-detail="loadExecutionStepDetail"
       @scene-change="onSceneChange"
       @refresh="loadScenes"
+      @select-poll-interval="selectPollInterval"
       @cancel-batch="cancelReportExecution"
       @cancel-case="cancelReportCase"
     />
@@ -103,6 +107,8 @@ const executionPageSize = ref(20)
 const executionTotal = ref(0)
 const loading = ref(false)
 const reportExecutionTerminal = ref(false)
+const autoRefreshEnabled = ref(true)
+const pollIntervalSeconds = ref(5)
 let historyPollTimer: number | undefined
 let historyRevision = ''
 let historyRefreshing = false
@@ -347,10 +353,21 @@ const historyTime = (value: unknown) => {
 
 const startHistoryPolling = () => {
   stopHistoryPolling()
-  if (props.detailData?.status !== 'RUNNING' || reportExecutionTerminal.value) return
+  if (!autoRefreshEnabled.value || props.detailData?.status !== 'RUNNING' || reportExecutionTerminal.value) return
   historyPollTimer = window.setInterval(() => {
     void refreshScenesWhenChanged()
-  }, 3000)
+  }, pollIntervalSeconds.value * 1000)
+}
+
+const selectPollInterval = (seconds: number) => {
+  if (seconds === 0) {
+    autoRefreshEnabled.value = false
+    stopHistoryPolling()
+    return
+  }
+  pollIntervalSeconds.value = seconds
+  autoRefreshEnabled.value = true
+  startHistoryPolling()
 }
 
 const cancelReportExecution = (batch: ExecutionHistoryBatchRow, markCancelling?: () => void) => {

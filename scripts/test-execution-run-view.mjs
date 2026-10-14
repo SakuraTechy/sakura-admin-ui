@@ -67,7 +67,7 @@ export const getAutomationUiDefinitionCase=async()=>({});export const getAutomat
 const reportApi = `
 window.__qaCaseStates={1:['running','queued','queued'],2:['queued','queued','queued']};
 const summary=id=>({sceneDbId:String(id),sceneKey:'SCENE_00'+id,name:'报告场景 '+id,latestExecution:{executionDbId:id,executionKey:'report-scene-'+id,batchId:'report-batch-'+id,testReportId:'report-1',recordSource:'test',executionEngine:'playwright-runner',caseTotal:3,casePass:window.__qaCaseStates[id].filter(s=>s==='completed').length,status:window.__qaCaseStates[id].every(s=>s==='completed')?'completed':'running',startedAt:'2026-10-09 10:00:0'+id}});
-export const getAutomationUiSceneSummaryPage=async()=>({data:{list:[summary(2),summary(1)],total:2}});
+export const getAutomationUiSceneSummaryPage=async()=>{window.__qaReportSummaryRequests=(window.__qaReportSummaryRequests||0)+1;return {data:{list:[summary(2),summary(1)],total:2}}};
 export const getAutomationUiExecutionRevisionsBatched=async()=>({data:[{sceneDbId:'1',globalExecutionRevision:Date.now()}]});
 export const getAutomationUiDefinitionCase=async()=>({});export const getAutomationUiSceneDefinition=async()=>({});export const listAutomationUiDefinitionCases=async()=>({});export const listAutomationUiDefinitionSteps=async()=>({});`
 const virtual = {
@@ -374,6 +374,20 @@ try {
     assert.deepEqual(errors, [])
     console.log(JSON.stringify({ result: 'passed', viewport: true, historyMode, groupedMode, reportMode, editorMode, liveHeights, output }))
   } else if (reportMode) {
+    const pollIntervalButton = page.getByRole('button', { name: '选择轮询间隔' })
+    await pollIntervalButton.waitFor()
+    assert.match(await pollIntervalButton.textContent(), /5s/)
+    const beforePause = await page.evaluate(() => window.__qaReportSummaryRequests)
+    await pollIntervalButton.click()
+    await page.getByText('Off', { exact: true }).last().click()
+    assert.match(await pollIntervalButton.textContent(), /Off/)
+    await page.waitForTimeout(5500)
+    assert.equal(await page.evaluate(() => window.__qaReportSummaryRequests), beforePause, '关闭自动刷新后不再轮询报告场景')
+    assert.equal(await page.getByRole('button', { name: '立即刷新' }).count(), 1, '关闭自动刷新后保留手动刷新按钮')
+    await pollIntervalButton.click()
+    await page.getByText('5s', { exact: true }).last().click()
+    assert.match(await pollIntervalButton.textContent(), /5s/)
+    await page.waitForFunction((count) => window.__qaReportSummaryRequests > count, beforePause, { timeout: 7000 })
     await page.locator('.batch-case-content').waitFor()
     assert.equal(await page.locator('.batch-case-card--expanded').getAttribute('data-batch-case'), 'case-execution-10')
     await page.locator('.batch-case-card--expanded').getByRole('button', { name: '报告', exact: true }).click()

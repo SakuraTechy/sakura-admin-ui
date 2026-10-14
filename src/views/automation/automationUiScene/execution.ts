@@ -1638,7 +1638,7 @@ export function executionLogTimeRange(logs: LiveExecutionLog[] | undefined) {
 }
 
 function formatDurationSeconds(milliseconds: number) {
-  return (milliseconds / 1000).toFixed(3).replace(/\.0+$|(\.\d*?)0+$/, '$1')
+  return (milliseconds / 1000).toFixed(0).replace(/\.0+$|(\.\d*?)0+$/, '$1')
 }
 
 function sessionModeLabel(value: string) {
