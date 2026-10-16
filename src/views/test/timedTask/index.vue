@@ -160,8 +160,8 @@ const scheduleLabel = (cron: string) => ({
   '0 */30 * * * ?': '每 30 分钟',
   '0 0 * * * ?': '每小时',
 }[cron] || (cron?.includes('MON-FRI') ? '工作日定时执行' : `Cron：${cron}`))
-const resultLabel = (status: string) => ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', SKIPPED: '已跳过' } as Record<string, string>)[status] || status
-const resultColor = (status: string) => ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', SKIPPED: 'orange' } as Record<string, string>)[status] || 'gray'
+const resultLabel = (status: string) => ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', CANCELLED: '已取消', SKIPPED: '已跳过' } as Record<string, string>)[status] || status
+const resultColor = (status: string) => ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', CANCELLED: 'orange', SKIPPED: 'orange' } as Record<string, string>)[status] || 'gray'
 
 const onUpdateStatus = async (record: TestTimedTaskResp, status: string) => {
   try {

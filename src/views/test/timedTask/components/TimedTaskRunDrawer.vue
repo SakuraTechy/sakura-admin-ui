@@ -75,7 +75,7 @@ const logs = ref<TestTimedTaskLogResp[]>([])
 const total = ref(0)
 const timeRange = ref<string[]>([])
 const query = reactive({ page: 1, size: 10, status: undefined as string | undefined, triggerMode: undefined as string | undefined })
-const statusOptions = ['RUNNING', 'PASSED', 'FAILED', 'SKIPPED'].map((value) => ({ label: statusLabel(value), value }))
+const statusOptions = ['RUNNING', 'PASSED', 'FAILED', 'CANCELLED', 'SKIPPED'].map((value) => ({ label: statusLabel(value), value }))
 const triggerOptions = [{ label: '定时', value: 'SCHEDULE' }, { label: '手动', value: 'MANUAL' }]
 
 const runColumns: TableInstance['columns'] = [
@@ -97,10 +97,10 @@ const logColumns: TableInstance['columns'] = [
 ]
 
 function statusLabel(status?: string) {
-  return ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', SKIPPED: '已跳过' } as Record<string, string>)[status || ''] || status || '-'
+  return ({ RUNNING: '执行中', PASSED: '通过', FAILED: '失败', CANCELLED: '已取消', SKIPPED: '已跳过' } as Record<string, string>)[status || ''] || status || '-'
 }
 function statusColor(status?: string) {
-  return ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', SKIPPED: 'orange' } as Record<string, string>)[status || ''] || 'gray'
+  return ({ RUNNING: 'blue', PASSED: 'green', FAILED: 'red', CANCELLED: 'orange', SKIPPED: 'orange' } as Record<string, string>)[status || ''] || 'gray'
 }
 function notificationLabel(status?: string) {
   return ({ PENDING: '待发送', SENT: '已发送', FAILED: '发送失败' } as Record<string, string>)[status || ''] || '-'

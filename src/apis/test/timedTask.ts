@@ -7,7 +7,7 @@ const BASE_URL = '/test/timedTask'
 export interface TimedTaskRunSummary {
   id: string
   triggerMode: 'SCHEDULE' | 'MANUAL'
-  status: 'RUNNING' | 'PASSED' | 'FAILED' | 'SKIPPED'
+  status: 'RUNNING' | 'PASSED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
   startTime: string
   endTime?: string
   runTime?: number
