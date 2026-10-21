@@ -176,6 +176,8 @@ export interface ExecutionHistoryBatchRow {
   historyRevision?: string
   executionDbId?: number
   casesLoaded?: boolean
+  /** 报告聚合批次已经加载当前场景页，其他场景按页继续加载。 */
+  scenePageLoaded?: boolean
   casePage?: number
   casePageSize?: number
   casePageTotal?: number
@@ -206,6 +208,8 @@ export interface ExecutionHistoryBatchRow {
   cases: ExecutionHistoryCaseRow[]
   live?: boolean
   testReportId?: string
+  /** 测试报告中的计划执行顺序；普通历史仍按开始时间聚合。 */
+  sceneOrder?: number
   sceneCount?: number
   sceneTotal?: number
   sceneCompleted?: number
@@ -472,6 +476,14 @@ export function buildLayeredExecutionCaseRow(
   batch: ExecutionHistoryBatchRow,
 ): ExecutionHistoryCaseRow {
   const caseId = record.definitionCaseId || record.caseKey || String(record.caseExecutionDbId)
+  const executeStatus = record.executeStatus || record.status || 'not_started'
+  const executeResult = record.executeResult || record.result || 'not_executed'
+  const activeStatuses = ['starting', 'running', 'cancelling', '11', '启动中', '执行中', '取消中']
+  const notStarted = executionDisplayResultLabel(executeResult, executeStatus) === '未执行'
+  const duration = notStarted
+    ? 0
+    : executionDurationMs(record.startedAt || (activeStatuses.includes(String(executeStatus).toLowerCase()) ? record.createTime : undefined),
+      record.finishedAt, record.wallClockDurationMs ?? record.durationMs)
   const stepTotal = numericValue(record.stepTotal)
   const stepPass = numericValue(record.stepPass)
   const stepFail = numericValue(record.stepFail)
@@ -486,14 +498,15 @@ export function buildLayeredExecutionCaseRow(
     executionType: batch.executionType,
     executionId: record.caseExecutionKey || batch.recordTarget.executionId || String(batch.executionDbId || ''),
     jobId: record.jobId || '',
-    startedAt: record.startedAt || record.createTime,
+    startedAt: notStarted
+      ? undefined
+      : record.startedAt || (activeStatuses.includes(String(executeStatus).toLowerCase()) ? record.createTime : undefined),
     finishedAt: record.finishedAt,
     caseId,
     caseName: record.caseName || caseId,
-    executeStatus: record.executeStatus || record.status || 'not_started',
-    executeResult: record.executeResult || record.result || 'not_executed',
-    duration: executionDurationMs(record.startedAt || record.createTime, record.finishedAt,
-      record.wallClockDurationMs ?? record.durationMs),
+    executeStatus,
+    executeResult,
+    duration,
     executeName: batch.executeName,
     buildNumber: String(batch.recordTarget.buildNumber ?? '-'),
     stepPassRate: stepTotal > 0 ? `${Math.round(stepPass * 10000 / stepTotal) / 100}%` : '0%',
@@ -768,12 +781,17 @@ function attachSceneIdentity<T extends ExecutionHistoryCaseRow | ExecutionHistor
 }
 
 function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRow[]): ExecutionHistoryBatchRow {
-  // 历史批次列表为倒序；批次内部按实际启动先后跟随，不能把后启动的场景插到首条。
-  rows = [...rows].sort((left, right) => historyTimestamp(left.startedAt) - historyTimestamp(right.startedAt))
+  // 报告场景跟随计划执行清单；其他历史批次仍按实际启动先后排列。
+  rows = [...rows].sort((left, right) => left.sceneOrder != null && right.sceneOrder != null
+    ? left.sceneOrder - right.sceneOrder
+    : historyTimestamp(left.startedAt) - historyTimestamp(right.startedAt))
   const first = rows[0]
   const reportId = String(first.testReportId || '').trim()
   const cases = rows.flatMap(row => row.cases)
   const sceneSummaries = mergeSceneSummaries(rows)
+  const casePageTotal = rows.every(row => row.casePageTotal != null)
+    ? rows.reduce((total, row) => total + numericValue(row.casePageTotal), 0)
+    : undefined
   const sceneList = sceneSummaries.map(item => ({ id: item.sceneId, name: item.sceneName }))
   const caseTotal = rows.reduce((total, row) => total + numericValue(row.caseTotal), 0)
   const caseCompleted = rows.reduce((total, row) => total + numericValue(row.caseCompleted), 0)
@@ -814,6 +832,7 @@ function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRo
     caseCancelled,
     caseBlocked,
     caseSkip,
+    casePageTotal,
     progress,
     progressIndeterminate: progress == null,
     executeStatus: aggregateExecutionStatus(rows),
@@ -823,7 +842,7 @@ function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRo
     duration,
     caseDurationTotal,
     cases,
-    casesLoaded: rows.every(row => row.casesLoaded !== false),
+    casesLoaded: rows.some(row => row.scenePageLoaded) || rows.every(row => row.casesLoaded !== false),
     sceneCount: sceneSummaries.length,
     sceneTotal: sceneSummaries.length,
     sceneCompleted,
@@ -851,23 +870,49 @@ function mergeSceneSummaries(rows: ExecutionHistoryBatchRow[]): ExecutionHistory
       groups.set(summary.key, [...(groups.get(summary.key) || []), summary])
     })
   })
-  return [...groups.entries()].map(([key, items]) => ({
-    key,
-    sceneId: items[0].sceneId,
-    sceneName: items[0].sceneName,
-    caseTotal: items.reduce((total, item) => total + item.caseTotal, 0),
-    caseCompleted: items.reduce((total, item) => total + item.caseCompleted, 0),
-    casePass: items.reduce((total, item) => total + item.casePass, 0),
-    caseFail: items.reduce((total, item) => total + item.caseFail, 0),
-    caseCancelled: items.reduce((total, item) => total + item.caseCancelled, 0),
-    caseBlocked: items.reduce((total, item) => total + item.caseBlocked, 0),
-    caseSkip: items.reduce((total, item) => total + item.caseSkip, 0),
-    executeStatus: aggregateExecutionStatus(items as unknown as ExecutionHistoryBatchRow[]),
-    executeResult: aggregateExecutionResult(items as unknown as ExecutionHistoryBatchRow[]),
-    duration: items.reduce((max, item) => Math.max(max, numericValue(item.duration)), 0),
-    progress: calculateSummaryProgress(items),
-    progressIndeterminate: false,
-  }))
+  return [...groups.entries()].map(([key, items]) => {
+    const caseTotal = items.reduce((total, item) => total + item.caseTotal, 0)
+    const caseCompleted = items.reduce((total, item) => total + item.caseCompleted, 0)
+    const casePass = items.reduce((total, item) => total + item.casePass, 0)
+    const caseFail = items.reduce((total, item) => total + item.caseFail, 0)
+    const caseCancelled = items.reduce((total, item) => total + item.caseCancelled, 0)
+    const caseBlocked = items.reduce((total, item) => total + item.caseBlocked, 0)
+    const caseSkip = items.reduce((total, item) => total + item.caseSkip, 0)
+    const allCasesCompleted = caseTotal > 0 && caseCompleted >= caseTotal
+    const aggregatedResult = aggregateExecutionResult(items as unknown as ExecutionHistoryBatchRow[])
+    // 批次取消后仍以已结束用例的统计确定场景结果，避免覆盖此前的通过或失败。
+    const executeResult = allCasesCompleted && !caseCancelled
+      ? caseBlocked > 0
+        ? 'blocked'
+        : caseFail > 0
+          ? 'failed'
+          : caseSkip > 0
+            ? 'skipped'
+            : casePass >= caseTotal
+              ? 'passed'
+              : aggregatedResult
+      : aggregatedResult
+    const executeStatus = allCasesCompleted && !caseCancelled && executeResult !== 'cancelled'
+      ? 'completed'
+      : aggregateExecutionStatus(items as unknown as ExecutionHistoryBatchRow[])
+    return {
+      key,
+      sceneId: items[0].sceneId,
+      sceneName: items[0].sceneName,
+      caseTotal,
+      caseCompleted,
+      casePass,
+      caseFail,
+      caseCancelled,
+      caseBlocked,
+      caseSkip,
+      executeStatus,
+      executeResult,
+      duration: items.reduce((max, item) => Math.max(max, numericValue(item.duration)), 0),
+      progress: calculateSummaryProgress(items),
+      progressIndeterminate: false,
+    }
+  })
 }
 
 function calculateSummaryProgress(summaries: ExecutionHistorySceneSummary[]) {
@@ -1187,10 +1232,31 @@ function buildExecutionHistoryRow(
   const resolvedStepFail = numericValue(stepFail)
   const resolvedStepSkip = numericValue(stepSkip)
   // 新记录优先读取分离后的生命周期状态；status 仅兼容旧 Runner 的混合状态字段。
-  const executeStatus = caseResult.executeStatus || caseResult.status || record.executeStatus
+  const caseOwnStatus = caseResult.executeStatus || caseResult.status
+  const caseOwnResult = caseResult.executeResult || caseResult.result
+  const batchCancelled = executionResultLabel(record.executeStatus) === '已取消'
+    || executionResultLabel(record.executeResult) === '已取消'
+  const caseHasCompletedSteps = resolvedStepTotal > 0
+    && resolvedStepPass + resolvedStepFail + resolvedStepSkip >= resolvedStepTotal
+  const caseHasOwnTerminalResult = Boolean(caseOwnResult)
+    && executionResultLabel(caseOwnResult) !== '未执行'
+    && executionResultLabel(caseOwnResult) !== '生成中'
+    && executionResultLabel(caseOwnResult) !== '已取消'
+  const completedBeforeBatchCancellation = batchCancelled
+    && ((isTerminalExecutionStatus(caseOwnStatus) && executionResultLabel(caseOwnStatus) !== '已取消')
+      || caseHasOwnTerminalResult
+      || caseHasCompletedSteps)
+  const executeStatus = completedBeforeBatchCancellation
+    ? (
+        isTerminalExecutionStatus(caseOwnStatus) && executionResultLabel(caseOwnStatus) !== '已取消'
+          ? caseOwnStatus
+          : 'completed'
+      )
+    : (caseOwnStatus || record.executeStatus)
   const rawExecuteResult = caseResult.executeResult
     || (isTerminalExecutionStatus(executeStatus) ? caseResult.status : undefined)
-    || (isTerminalExecutionStatus(record.executeStatus) ? record.executeResult : undefined)
+    || caseResult.result
+    || (!completedBeforeBatchCancellation && isTerminalExecutionStatus(record.executeStatus) ? record.executeResult : undefined)
   const normalizedSteps = rawSteps.map((step: any, index: number) => normalizeHistoryStep(step, rowKey, index))
   const persistedLogs = normalizeExecutionLogs(
     playwrightResult.execution_logs
@@ -1475,13 +1541,15 @@ function deriveSceneExecutionResult(
 ) {
   const statusResult = executionResultLabel(executeStatus)
   const explicitResult = executionResultLabel(rawResult)
-  const terminal = caseTotal > 0 && caseCompleted >= caseTotal || isTerminalExecutionStatus(executeStatus)
+  const terminal = (caseTotal > 0 && caseCompleted >= caseTotal) || isTerminalExecutionStatus(executeStatus)
   if (!terminal) {
     return ['waiting', 'not_started', 'queued', '10'].includes(String(executeStatus ?? '').toLowerCase())
       ? 'not_executed'
       : 'pending'
   }
-  if (explicitResult === '已取消' || statusResult === '已取消') return 'cancelled'
+  const casesCompleted = caseTotal > 0 && caseCompleted >= caseTotal
+  // 批次取消會同步標記場景狀態，但不能覆蓋此前已完成用例的場景結果。
+  if (!casesCompleted && (explicitResult === '已取消' || statusResult === '已取消')) return 'cancelled'
   if (caseCancelled > 0) return 'cancelled'
   if (caseBlocked > 0 || explicitResult === '阻塞' || statusResult === '阻塞') return 'blocked'
   if (caseFail > 0 || explicitResult === '失败' || statusResult === '失败') return 'failed'

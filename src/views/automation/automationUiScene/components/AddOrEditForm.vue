@@ -410,6 +410,7 @@ const emit = defineEmits<{
 
 const props = withDefaults(defineProps<{
   sceneDbId?: string | number
+  sceneKey?: string
   paneActive?: boolean
   readonly?: boolean
   copy?: boolean
@@ -1192,7 +1193,7 @@ const getSceneInfo = async (data1?: any) => {
     const normalizedData = {
       ...data,
       id: String(data.sceneDbId),
-      sceneId: data.sceneKey,
+      sceneId: props.sceneKey || data.sceneKey,
       projectId: String(data.projectDbId || ''),
       versionId: data.versionDbId == null ? '' : String(data.versionDbId),
       moduleId: data.moduleDbId == null ? '' : String(data.moduleDbId),
@@ -1389,7 +1390,7 @@ const handleProjectedTreeAction = (data: { mode: string, node: any }) => {
 }
 
 watch(
-  () => `${props.paneActive}:${activeSceneId.value}:${props.refreshVersion}`,
+  () => `${props.paneActive}:${activeSceneId.value}:${props.sceneKey || ''}:${props.refreshVersion}`,
   () => {
     if (props.paneActive && activeSceneId.value) void getSceneInfo()
     else sceneInfoController?.abort()

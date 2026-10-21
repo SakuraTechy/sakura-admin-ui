@@ -170,6 +170,7 @@
 <script setup lang="ts">
 import type { ExecutionHistoryCaseRow, ExecutionHistoryStepRow, ExecutionViewType } from '../execution'
 import { executionAggregateResultLabel, executionResultColor, executionResultLabel, formatExecutionDuration } from '../execution'
+import { isExecutionFollowTerminal } from '../useExecutionAutoFollow'
 import AutomationExecutionStepDiagnostic from './AutomationExecutionStepDiagnostic.vue'
 import AutomationExecutionReportAssets from './AutomationExecutionReportAssets.vue'
 
@@ -222,10 +223,15 @@ watch(() => [props.record.rowKey, props.variant, props.record.steps.map(step => 
 }, { immediate: true })
 
 watch(
-  () => `${props.record.caseExecutionDbId || ''}:${props.record.stepsLoaded === true}`,
-  async () => {
-    if (!props.loadSteps || props.record.stepsLoaded) return
-    await fetchSteps()
+  () => [props.record.rowKey, props.record.caseExecutionDbId, props.record.executeStatus, props.record.executeResult] as const,
+  async (current, previous) => {
+    if (!props.loadSteps) return
+    const terminal = isExecutionFollowTerminal({ executeStatus: current[2], executeResult: current[3] })
+    const wasTerminal = previous && isExecutionFollowTerminal({ executeStatus: previous[2], executeResult: previous[3] })
+    const recordChanged = !previous || current[0] !== previous[0] || current[1] !== previous[1]
+    if ((terminal && (!wasTerminal || recordChanged)) || (!previous && !props.record.stepsLoaded)) {
+      await fetchSteps()
+    }
   },
   { immediate: true },
 )

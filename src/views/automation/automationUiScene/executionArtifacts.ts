@@ -4,7 +4,7 @@ import { getAutomationUiExecutionArtifactContentUrl } from '@/apis/automation/au
 
 export type ExecutionArtifactKind = 'report' | 'trace' | 'screenshot' | 'video'
 export type ExecutionArtifactContext = Pick<ExecutionHistoryCaseRow, 'rowKey' | 'caseId' | 'executionId' | 'executionType' | 'recordTarget' | 'caseExecutionDbId'
-  | 'artifactReportUrl' | 'artifactTraceUrl' | 'artifactScreenshotUrl' | 'artifactVideoUrl' | 'artifactUploadError' | 'executeStatus'>
+  | 'artifactReportUrl' | 'artifactTraceUrl' | 'artifactScreenshotUrl' | 'artifactVideoUrl' | 'artifactUploadError' | 'executeStatus' | 'executeResult'>
 export interface ExecutionArtifactItem {
   kind: ExecutionArtifactKind
   title: string

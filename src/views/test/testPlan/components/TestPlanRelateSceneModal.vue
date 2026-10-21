@@ -391,7 +391,7 @@ const columns: TableInstance['columns'] = [
   },
   {
     title: '运行耗时',
-    width: 90,
+    width: 100,
     align: 'center',
     render: ({ record }) =>
       formatDuration(Array.isArray(record.debugRecord) && record.debugRecord.length > 0 ? record.debugRecord[0].duration : '-'),

@@ -33,11 +33,13 @@
 
     <AutomationExecutionHistoryPanel
       class="report-history"
+      scroll-with-parent
       :scenes="displayScenes"
       record-source="test"
       :test-plan-id="String(detailData?.testPlanId || '')"
       :multi-scene="historySceneKey === ALL_HISTORY_SCENES"
       aggregate-plan-batches
+      :auto-follow-aggregate-cases="historySceneKey === ALL_HISTORY_SCENES"
       :scene-filter-value="historySceneKey"
       :auto-expand-case-id="autoExpandCaseId"
       :auto-expand-scene-id="autoExpandSceneId || (historySceneKey !== ALL_HISTORY_SCENES ? historySceneKey : undefined)"
@@ -55,7 +57,7 @@
       :load-execution-steps="loadExecutionSteps"
       :load-execution-step-detail="loadExecutionStepDetail"
       @scene-change="onSceneChange"
-      @refresh="loadScenes"
+      @refresh="refreshHistory"
       @select-poll-interval="selectPollInterval"
       @cancel-batch="cancelReportExecution"
       @cancel-case="cancelReportCase"
@@ -84,11 +86,12 @@ import {
   buildLayeredExecutionCaseRow,
   buildLayeredExecutionStepRow,
   applyLayeredExecutionStepDetail,
+  aggregateExecutionBatchRows,
   type ExecutionHistoryBatchRow,
   type ExecutionHistoryCaseRow,
   type ExecutionHistoryStepRow,
 } from '@/views/automation/automationUiScene/execution'
-import { requestOnce } from '@/views/automation/automationUiScene/queryCache'
+import { mapWithConcurrency, requestOnce } from '@/views/automation/automationUiScene/queryCache'
 import { mapScopedSceneSummary } from '@/views/automation/automationUiScene/sceneSummary'
 import { formatDuration } from '@/utils/sakura'
 
@@ -108,12 +111,14 @@ const executionTotal = ref(0)
 const loading = ref(false)
 const reportExecutionTerminal = ref(false)
 const autoRefreshEnabled = ref(true)
-const pollIntervalSeconds = ref(5)
+const pollIntervalSeconds = ref(3)
 let historyPollTimer: number | undefined
 let historyRevision = ''
 let historyRefreshing = false
 let loadController: AbortController | undefined
 let loadGeneration = 0
+let caseLoadGeneration = 0
+const latestCaseLoad = new Map<string, number>()
 
 const statistic = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.ui || {})
 const playwrightArtifacts = computed<Record<string, any>>(() => props.detailData?.statisticAnalysis?.playwrightArtifacts || {})
@@ -166,6 +171,10 @@ const isReportExecutionTerminal = (summaries: AutomationUiSceneSummary[]) => {
     && summaries.every((scene) => TERMINAL_EXECUTION_STATUSES.has(String(scene.latestExecution?.status || '').toLowerCase()))
 }
 
+function batchIdentity(batch: ExecutionHistoryBatchRow) {
+  return batch.runId ? `run:${batch.runId}` : String(batch.executionDbId || batch.rowKey)
+}
+
 const loadScenes = async (resetFilter = true, silent = false) => {
   if (!props.detailData?.id || !props.detailData.testPlanId) {
     scenes.value = []
@@ -203,6 +212,18 @@ const loadScenes = async (resetFilter = true, silent = false) => {
       if (summaries.length >= 10_000) throw new Error('当前报告场景超过 10000 条，无法继续深分页')
       page += 1
     } while (summaries.length < total)
+    const executionSceneIds = props.detailData.runtimeEnvironment?.executionSceneIds
+    const executionOrder = new Map((Array.isArray(executionSceneIds) ? executionSceneIds : [])
+      .map((sceneId, index) => [String(sceneId), index] as const))
+    summaries.sort((left, right) => {
+      const leftOrder = executionOrder.get(String(left.sceneDbId))
+      const rightOrder = executionOrder.get(String(right.sceneDbId))
+      if (leftOrder != null && rightOrder != null) return leftOrder - rightOrder
+      if (leftOrder != null) return -1
+      if (rightOrder != null) return 1
+      return String(left.sceneKey).localeCompare(String(right.sceneKey), 'zh-CN', { numeric: true })
+        || left.sceneDbId - right.sceneDbId
+    })
     sceneSummaries.value = summaries
     scenes.value = summaries.map(summary => mapScopedSceneSummary(summary, 'test'))
     if (props.autoExpandSceneId) {
@@ -225,8 +246,8 @@ const loadScenes = async (resetFilter = true, silent = false) => {
     let batches: ExecutionHistoryBatchRow[]
     if (historySceneKey.value === ALL_HISTORY_SCENES) {
       // 精确报告 scope 的 latest 已随 Summary 返回，全部视图不再逐场景追加 execution 请求。
-      batches = activeSummaries.flatMap(scene => scene.latestExecution
-        ? [buildLayeredExecutionBatchRow(scene.latestExecution, scene)]
+      batches = activeSummaries.flatMap((scene, sceneOrder) => scene.latestExecution
+        ? [{ ...buildLayeredExecutionBatchRow(scene.latestExecution, scene), sceneOrder }]
         : [])
       executionTotal.value = batches.length
     } else {
@@ -252,13 +273,48 @@ const loadScenes = async (resetFilter = true, silent = false) => {
       }
     }
     if (generation !== loadGeneration || controller.signal.aborted) return
-    executionBatches.value = batches.sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
+    const previousBatches = new Map(executionBatches.value.map(batch => [batchIdentity(batch), batch]))
+    executionBatches.value = batches
+      .map((batch) => {
+        const previous = previousBatches.get(batchIdentity(batch))
+        if (!previous) return batch
+
+        // 批次身份未变时原地更新汇总字段，保留已加载用例、步骤和展开视图，避免轮询触发 loading 抖动。
+        const cases = previous.cases
+        const casesLoaded = previous.casesLoaded
+        const scenePageLoaded = previous.scenePageLoaded
+        const casePage = previous.casePage
+        const casePageSize = previous.casePageSize
+        const casePageTotal = previous.casePageTotal
+        Object.assign(previous, batch)
+        previous.cases = cases
+        previous.casesLoaded = casesLoaded
+        previous.scenePageLoaded = scenePageLoaded
+        previous.casePage = casePage
+        previous.casePageSize = casePageSize
+        previous.casePageTotal = casePageTotal
+        return previous
+      })
+      .sort((left, right) => historySceneKey.value === ALL_HISTORY_SCENES
+        ? (left.sceneOrder ?? 0) - (right.sceneOrder ?? 0)
+        : historyTime(right.startedAt) - historyTime(left.startedAt))
+    if (silent) {
+      const visibleBatches = historySceneKey.value === ALL_HISTORY_SCENES
+        ? aggregateExecutionBatchRows(executionBatches.value)
+        : executionBatches.value
+      await Promise.all(visibleBatches
+        .filter(batch => batch.casesLoaded)
+        .map(batch => loadExecutionCases(batch, batch.casePage || 1, batch.casePageSize || 10)))
+      if (generation !== loadGeneration || controller.signal.aborted) return
+    }
     // 完整数据与轮询必须使用同一个 revision 来源，否则场景更新时间和执行更新时间会始终比较为已变化。
     const { data: revisions } = await getAutomationUiExecutionRevisionsBatched(summaries.map((scene) => scene.sceneDbId))
     if (generation !== loadGeneration || controller.signal.aborted) return
     historyRevision = sceneRevisionFingerprint(Array.isArray(revisions) ? revisions : [])
-    reportExecutionTerminal.value = isReportExecutionTerminal(summaries)
-    if (reportExecutionTerminal.value && props.detailData?.status === 'RUNNING') {
+    const terminal = isReportExecutionTerminal(summaries)
+    if (terminal && !reportExecutionTerminal.value) {
+      reportExecutionTerminal.value = true
+      autoRefreshEnabled.value = false
       stopHistoryPolling()
       emit('refresh-detail')
     }
@@ -271,32 +327,24 @@ const loadScenes = async (resetFilter = true, silent = false) => {
   }
 }
 
+const refreshHistory = () => loadScenes(false, true)
+
 const refreshScenesWhenChanged = async () => {
   if (historyRefreshing) return
   historyRefreshing = true
   try {
-  // 报告执行中即使 revision 尚未递增，进行中的用例进度、步骤数和墙钟耗时也会变化。
-  // 参照 UI 自动化执行历史页的轮询节拍，持续刷新当前报告 scope 的分层数据。
-  if (props.detailData?.status === 'RUNNING' && !reportExecutionTerminal.value) {
+    // UI 自动化历史终态后仍持续轮询，保证报告视图能同步后续的执行记录变化。
     await loadScenes(false, true)
-    return
-  }
-  const sceneIds = sceneSummaries.value.map(scene => scene.sceneDbId)
-  if (!sceneIds.length) {
-    await loadScenes(false, true)
-    return
-  }
-  const { data: revisions } = await getAutomationUiExecutionRevisionsBatched(sceneIds)
-  const nextRevision = sceneRevisionFingerprint(revisions)
-  if (nextRevision !== historyRevision) await loadScenes(false, true)
   } finally {
     historyRefreshing = false
   }
 }
 
 const onSceneChange = async (sceneId: string) => {
+  latestCaseLoad.clear()
   historySceneKey.value = sceneId || ALL_HISTORY_SCENES
   executionPage.value = 1
+  executionBatches.value = []
   await loadScenes(false, true)
 }
 
@@ -307,19 +355,93 @@ const loadExecutionPage = async (page: number, size: number) => {
   await loadScenes(false, true)
 }
 
-const loadExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 50) => {
+const loadExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 10) => {
   if (!batch.executionDbId) return
+  const reportId = String(batch.testReportId || '').trim()
+  const aggregateScenes = historySceneKey.value === ALL_HISTORY_SCENES
+  const loadKey = aggregateScenes && reportId ? `report:${reportId}` : `execution:${batch.executionDbId}`
+  const generation = ++caseLoadGeneration
+  latestCaseLoad.set(loadKey, generation)
+  const sceneKeys = new Set((batch.sceneSummaries || []).flatMap(scene => [scene.key, scene.sceneId].map(String)))
+  const sourceBatches = executionBatches.value
+    .filter(item => (!reportId || String(item.testReportId || '').trim() === reportId)
+      && [item.sceneKey, item.sceneId].some(key => key && sceneKeys.has(String(key))))
+  if (aggregateScenes && sourceBatches.length > 0) {
+    sourceBatches.forEach((source) => {
+      source.casePage = page
+      source.casePageSize = size
+    })
+    const pageSceneKeys = new Set((batch.sceneSummaries || [])
+      .slice((page - 1) * size, page * size).map(scene => String(scene.key)))
+    const pageBatches = sourceBatches.filter(source => pageSceneKeys.has(String(source.sceneKey || source.sceneId)))
+    // 页码按场景切分；每个场景的用例接口独立分页，需取完后再显示该场景。
+    const requestedCases = await mapWithConcurrency(pageBatches, 6, async (source) => {
+      const records: ExecutionHistoryCaseRow[] = []
+      let sourcePage = 1
+      let total = 0
+      do {
+        const response = await requestOnce(
+          `execution-cases:${source.executionDbId}:${sourcePage}:50`,
+          () => getAutomationUiExecutionCases(source.executionDbId!, sourcePage, 50),
+        )
+        if (!response.data) throw new Error(`场景 ${source.sceneName || source.sceneId} 的执行用例加载失败`)
+        total = response.data.total
+        records.push(...response.data.list.map(record => buildLayeredExecutionCaseRow(record, source)))
+        if (records.length < total && !response.data.list.length) {
+          throw new Error(`场景 ${source.sceneName || source.sceneId} 的执行用例分页数据不完整`)
+        }
+        sourcePage += 1
+      } while (records.length < total)
+      return { source, rows: records, total }
+    })
+    const rowsByExecution = new Map(requestedCases.map(item => [item.source.executionDbId, item]))
+    if (latestCaseLoad.get(loadKey) !== generation) return
+    sourceBatches.forEach((source) => {
+      const current = executionBatches.value.find(item => item.executionDbId === source.executionDbId)
+      if (!current) return
+      const loaded = rowsByExecution.get(current.executionDbId)
+      current.cases = loaded ? mergeExecutionCaseRows(current.cases, loaded.rows) : []
+      current.casesLoaded = Boolean(loaded)
+      current.scenePageLoaded = true
+      current.casePage = page
+      current.casePageSize = size
+      current.casePageTotal = loaded?.total
+    })
+    return
+  }
   const response = await requestOnce(
     `execution-cases:${batch.executionDbId}:${page}:${size}`,
     () => getAutomationUiExecutionCases(batch.executionDbId!, page, size),
   )
+  if (latestCaseLoad.get(loadKey) !== generation) return
   const current = executionBatches.value.find(item => item.executionDbId === batch.executionDbId)
   if (!current || !response.data) return
-  current.cases = response.data.list.map(record => buildLayeredExecutionCaseRow(record, current))
+  current.cases = mergeExecutionCaseRows(current.cases, response.data.list.map(record => buildLayeredExecutionCaseRow(record, current)))
   current.casesLoaded = true
   current.casePage = page
   current.casePageSize = size
   current.casePageTotal = response.data.total
+}
+
+function mergeExecutionCaseRows(previousRows: ExecutionHistoryCaseRow[], nextRows: ExecutionHistoryCaseRow[]) {
+  const previousCases = new Map(previousRows.map(record => [record.rowKey, record]))
+  return nextRows.map((next) => {
+    const previous = previousCases.get(next.rowKey)
+    if (!previous) return next
+
+    const steps = previous.steps
+    const stepsLoaded = previous.stepsLoaded
+    const stepPage = previous.stepPage
+    const stepPageSize = previous.stepPageSize
+    const stepPageTotal = previous.stepPageTotal
+    Object.assign(previous, next)
+    previous.steps = steps
+    previous.stepsLoaded = stepsLoaded
+    previous.stepPage = stepPage
+    previous.stepPageSize = stepPageSize
+    previous.stepPageTotal = stepPageTotal
+    return previous
+  })
 }
 
 const loadExecutionSteps = async (record: ExecutionHistoryCaseRow, page = 1, size = 50) => {
@@ -353,7 +475,7 @@ const historyTime = (value: unknown) => {
 
 const startHistoryPolling = () => {
   stopHistoryPolling()
-  if (!autoRefreshEnabled.value || props.detailData?.status !== 'RUNNING' || reportExecutionTerminal.value) return
+  if (!autoRefreshEnabled.value) return
   historyPollTimer = window.setInterval(() => {
     void refreshScenesWhenChanged()
   }, pollIntervalSeconds.value * 1000)
@@ -422,8 +544,11 @@ onUnmounted(() => {
 <style scoped lang="scss">
 .playwright-report-detail {
   display: flex;
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   flex-direction: column;
   gap: 12px;
   overflow: auto;
@@ -431,20 +556,12 @@ onUnmounted(() => {
 
 .report-history {
   flex: 0 0 auto;
+  // width: calc(100% + 14px);
+  width: 100%;
+  margin-inline: -7px;
+  min-width: 0;
   min-height: 0;
+  box-sizing: border-box;
   overflow: visible;
-}
-
-// 报告页使用外层单一滚动，展开批次和用例日志后不再被固定高度截断。
-.report-history :deep(.batch-detail) {
-  max-height: none;
-  overflow-y: visible;
-}
-
-.report-history :deep(.arco-table-body),
-.report-history :deep(.arco-table-body table),
-.report-history :deep(.gi-table__body) {
-  max-height: none !important;
-  overflow: visible !important;
 }
 </style>

@@ -409,7 +409,7 @@ const columns: TableInstance['columns'] = [
   {
     title: '运行耗时',
     dataIndex: 'duration',
-    width: 90,
+    width: 100,
     align: 'center',
     render: ({ record }) => formatDuration(record.planRecord?.duration ?? '-'),
   },

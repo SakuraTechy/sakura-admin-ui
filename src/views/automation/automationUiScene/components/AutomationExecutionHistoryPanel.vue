@@ -106,6 +106,9 @@
         embedded
         :auto-expand-case-id="autoExpandCaseId"
         :auto-expand-scene-id="autoExpandSceneId"
+        :auto-follow-aggregate-cases="autoFollowAggregateCases"
+        :scene-group-expansion-controlled="showAutoRefresh"
+        :expand-all-scene-groups="expandAllSceneGroups"
         :load-cases="loadExecutionCases"
         :load-steps="loadExecutionSteps"
         :load-step-detail="loadExecutionStepDetail"
@@ -119,7 +122,7 @@
       :columns="batchColumns"
       :loading="loading"
       :pagination="pagination"
-      :scroll="useParentScroll ? { x: '100%' } : { y: 560 }"
+      :scroll="useParentScroll ? { x: batchTableScrollWidth } : { x: batchTableScrollWidth, y: 560 }"
       :expanded-keys="expandedKeys"
       :expandable="{ width: 48 }"
       :row-class="batchRowClass"
@@ -135,9 +138,12 @@
     >
       <template v-if="showAutoRefresh" #toolbar-right>
         <a-button-group class="history-refresh-control" aria-label="报告刷新和轮询间隔">
+          <a-button size="small" :aria-label="expandAllSceneGroups ? '收起全部场景用例' : '展开全部场景用例'" @click="toggleAllSceneGroups">
+            {{ expandAllSceneGroups ? '收起全部' : '展开全部' }}
+          </a-button>
           <a-button type="primary" size="small" aria-label="立即刷新" @click="emit('refresh')">
             <!-- <template #icon><icon-refresh /></template> -->
-            自动刷新
+            立即刷新
           </a-button>
           <a-dropdown trigger="click" @select="(value) => emit('select-poll-interval', Number(value))">
             <a-button type="dashed" size="small" class="history-refresh-interval" aria-label="选择轮询间隔">
@@ -157,6 +163,8 @@
           v-if="record.runId && loadExecutionRunScenes"
           :batch="record"
           :load-scenes="loadExecutionRunScenes"
+          :scene-group-expansion-controlled="showAutoRefresh"
+          :expand-all-scene-groups="expandAllSceneGroups"
           :load-cases="loadExecutionCases"
           :load-steps="loadExecutionSteps"
           :load-step-detail="loadExecutionStepDetail"
@@ -165,6 +173,9 @@
           v-else
           :batch="record"
           :force-scene-groups="aggregatePlanBatches || serverPagedScope"
+          :auto-follow-aggregate-cases="autoFollowAggregateCases"
+          :scene-group-expansion-controlled="showAutoRefresh"
+          :expand-all-scene-groups="expandAllSceneGroups"
           :load-cases="loadExecutionCases"
           :load-steps="loadExecutionSteps"
           :load-step-detail="loadExecutionStepDetail"
@@ -215,8 +226,8 @@
             <a-link @click="toggleExpanded(record.rowKey)">{{ expandedKeys.includes(record.rowKey) ? '收起' : '详情' }}</a-link>
           </div>
           <template v-if="expandedKeys.includes(record.rowKey)">
-            <AutomationExecutionRunDetail v-if="record.runId" :batch="record" :load-scenes="loadExecutionRunScenes" :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
-            <AutomationExecutionBatchDetail v-else :batch="record" force-scene-groups :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
+            <AutomationExecutionRunDetail v-if="record.runId" :batch="record" :load-scenes="loadExecutionRunScenes" :scene-group-expansion-controlled="showAutoRefresh" :expand-all-scene-groups="expandAllSceneGroups" :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
+            <AutomationExecutionBatchDetail v-else :batch="record" force-scene-groups :auto-follow-aggregate-cases="autoFollowAggregateCases" :scene-group-expansion-controlled="showAutoRefresh" :expand-all-scene-groups="expandAllSceneGroups" :load-cases="loadExecutionCases" :load-steps="loadExecutionSteps" :load-step-detail="loadExecutionStepDetail" />
           </template>
         </section>
       </div>
@@ -474,6 +485,8 @@ const props = withDefaults(defineProps<{
   testPlanId?: string
   multiScene?: boolean
   aggregatePlanBatches?: boolean
+  /** 报告聚合批次跨场景分页时，允许自动跟随进入下一页。 */
+  autoFollowAggregateCases?: boolean
   /** 非测试计划历史也可按执行批次聚合展示。 */
   aggregateBatches?: boolean
   /** 场景已由外层展示时只渲染用例明细，不嵌套完整历史页面。 */
@@ -526,11 +539,12 @@ const emit = defineEmits<{
 }>()
 
 const VIEW_MODE_STORAGE_KEY = 'automation-execution-history-view-mode'
+const expandAllSceneGroups = ref(false)
 const pollIntervalOptions = [
   { label: 'Off', value: 0 },
+  { label: '3s', value: 3 },
   { label: '5s', value: 5 },
   { label: '10s', value: 10 },
-  { label: '30s', value: 30 },
   //{ label: '1m', value: 60 },
   //{ label: '5m', value: 300 },
   //{ label: '15m', value: 900 },
@@ -543,6 +557,11 @@ const formatPollInterval = (seconds: number) => {
   const option = pollIntervalOptions.find(item => item.value === seconds)
   return option?.label || String(seconds) + 's'
 }
+
+function toggleAllSceneGroups() {
+  expandAllSceneGroups.value = !expandAllSceneGroups.value
+}
+
 const useParentScroll = computed(() => props.serverPagedScope || props.scrollWithParent)
 const viewMode = ref<HistoryViewMode>('table')
 const remoteBatchPagination = computed(() => Boolean(
@@ -877,6 +896,7 @@ const pagedBatchRows = computed(() => {
   return filteredBatchRows.value.slice(start, start + pagination.pageSize)
 })
 const tableBatchMode = computed(() => viewMode.value === 'table' && !props.selectedCaseId)
+const batchTableScrollWidth = computed(() => isMultiScene.value && !aggregatePlanBatches.value ? 2100 : 1900)
 const displayTotal = computed(() => remoteBatchPagination.value ? (props.executionTotal || 0) : tableBatchMode.value
   ? filteredBatchRows.value.length
   : (remoteCasePagination.value ? selectedCaseTotal.value : filteredRows.value.length))
@@ -971,6 +991,12 @@ watch(
     if (props.embedded || !props.executionBatches || !props.loadExecutionCases) return
     // 普通历史汇总已由服务端返回，表格中的用例仅在展开批次后加载。
     if (props.serverPagedScope && (tableBatchMode.value || props.loadExecutionRunScenes)) return
+    if (props.autoFollowAggregateCases && aggregatePlanBatches.value && !props.selectedCaseId) {
+      const pendingAggregates = aggregateExecutionBatchRows(props.executionBatches)
+        .filter(item => !item.casesLoaded)
+      void Promise.all(pendingAggregates.map(item => props.loadExecutionCases?.(item, 1, 10)))
+      return
+    }
     // 其他视图仍需补齐当前有界批次的用例，保留计划、报告与用例历史的原有统计口径。
     if (remoteCasePagination.value) return
     const pending = props.executionBatches.filter(item => !item.casesLoaded)
@@ -1721,6 +1747,8 @@ function cssEscape(value: string) {
   :deep(.gi-table__container),
   :deep(.arco-table),
   :deep(.arco-table-container) {
+    height: auto;
+    padding: 3px;
     min-width: 0;
     max-width: 100%;
   }
@@ -1749,9 +1777,19 @@ function cssEscape(value: string) {
   :deep(.gi-table:not(.gi-table--fullscreen)),
   :deep(.gi-table:not(.gi-table--fullscreen) .gi-table__body),
   :deep(.gi-table:not(.gi-table--fullscreen) .gi-table__container) {
-    height: auto;
-    max-height: none;
-    overflow: visible;
+    overflow: visible !important;
+  }
+
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-container),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-content),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-body),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-element),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-body table),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-tr-expand),
+  :deep(.gi-table:not(.gi-table--fullscreen) .arco-table-tr-expand .arco-table-td) {
+    height: auto !important;
+    max-height: none !important;
   }
 
   :deep(.batch-detail),

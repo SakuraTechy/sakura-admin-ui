@@ -90,6 +90,7 @@
 import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { type ExecutionArtifactContext, type ExecutionArtifactItem, type ExecutionArtifactKind, buildExecutionArtifacts } from '../executionArtifacts'
+import { isExecutionFollowTerminal } from '../useExecutionAutoFollow'
 import type { AutomationUiExecutionArtifact } from '@/apis/automation/automationUiQuery'
 import { getExecutionArtifactBlob, getExecutionCaseArtifacts } from '@/apis/automation/automationExecutionArtifact'
 
@@ -113,6 +114,8 @@ const requests = new Map<ExecutionArtifactKind, Promise<Blob>>()
 const controllers = new Set<AbortController>()
 let generation = 0
 let indexController: AbortController | undefined
+let artifactRefreshTimer: number | undefined
+let artifactRefreshAttempts = 0
 const items = computed(() => buildExecutionArtifacts(props.record, index.value))
 const reportItems = computed(() => items.value.filter((item) => item.kind !== 'video'))
 const availableReportCount = computed(() => reportItems.value.filter((item) => item.url).length)
@@ -132,6 +135,9 @@ function release(kind: ExecutionArtifactKind) {
 
 function reset() {
   generation += 1
+  if (artifactRefreshTimer) window.clearTimeout(artifactRefreshTimer)
+  artifactRefreshTimer = undefined
+  artifactRefreshAttempts = 0
   indexController?.abort()
   controllers.forEach((controller) => controller.abort())
   controllers.clear()
@@ -148,6 +154,8 @@ function reset() {
 }
 
 async function refreshIndex() {
+  if (artifactRefreshTimer) window.clearTimeout(artifactRefreshTimer)
+  artifactRefreshTimer = undefined
   indexController?.abort()
   const controller = new AbortController()
   indexController = controller
@@ -161,6 +169,14 @@ async function refreshIndex() {
     if (controller.signal.aborted) return
     index.value = result
     autoLoadVideo()
+    if (isExecutionFollowTerminal({ executeStatus: props.record.executeStatus, executeResult: props.record.executeResult })
+      && props.active && artifactRefreshAttempts < 5) {
+      artifactRefreshAttempts += 1
+      artifactRefreshTimer = window.setTimeout(() => {
+        artifactRefreshTimer = undefined
+        if (props.active) void refreshIndex()
+      }, 3000)
+    }
   } catch (error) {
     if (!controller.signal.aborted) indexError.value = error instanceof Error ? error.message : '读取产物目录失败'
   } finally {
@@ -256,7 +272,7 @@ function mediaError(kind: ExecutionArtifactKind) {
 }
 
 watch(() => [props.record.rowKey, props.record.caseExecutionDbId, props.record.recordTarget.executionDbId], reset, { flush: 'sync' })
-watch(() => [props.active, props.record.rowKey, props.record.caseExecutionDbId, props.record.recordTarget.executionDbId, props.record.executeStatus], () => {
+watch(() => [props.active, props.record.rowKey, props.record.caseExecutionDbId, props.record.recordTarget.executionDbId, props.record.executeStatus, props.record.executeResult], () => {
   if (props.active) void refreshIndex()
 }, { immediate: true })
 watch(() => items.value.map((item) => item.url).join('|'), () => {

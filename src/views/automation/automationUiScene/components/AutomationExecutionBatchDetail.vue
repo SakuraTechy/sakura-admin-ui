@@ -196,13 +196,13 @@
       </section>
     </div>
     <a-pagination
-      v-if="!loadingCases && !loadError && caseTotal > casePageSize"
+      v-if="!loadingCases && !loadError && (caseTotal > casePageSize || (autoFollowAggregateCases && caseTotal > 0))"
       v-model:current="casePage"
       v-model:page-size="casePageSize"
       class="batch-case-pagination"
       size="small"
       :total="caseTotal"
-      :page-size-options="[20, 50, 100]"
+      :page-size-options="autoFollowAggregateCases ? [10, 20, 50] : [20, 50]"
       show-page-size
       show-total
       @change="changeCasePage"
@@ -237,6 +237,12 @@ const props = withDefaults(defineProps<{
   embedded?: boolean
   /** 多场景任务仅对当前跟随场景自动展开用例。 */
   autoPreview?: boolean
+  /** 报告聚合批次跨场景分页时，允许自动跟随继续翻页。 */
+  autoFollowAggregateCases?: boolean
+  /** 外层提供场景分组展开控制时，关闭默认展开首组行为。 */
+  sceneGroupExpansionControlled?: boolean
+  /** 报告页工具栏的一键场景分组展开状态。 */
+  expandAllSceneGroups?: boolean
   loadCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
   loadSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
   loadStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>
@@ -246,6 +252,8 @@ const props = withDefaults(defineProps<{
 }>(), {
   forceSceneGroups: false,
   autoPreview: true,
+  autoFollowAggregateCases: false,
+  expandAllSceneGroups: false,
 })
 const emit = defineEmits<{ (e: 'cancel-case', row: ExecutionHistoryCaseRow): void }>()
 const detailRef = ref<HTMLElement>()
@@ -260,8 +268,10 @@ let durationTimer: number | undefined
 let viewportObserver: ResizeObserver | undefined
 const viewportTimers = new Set<number>()
 const casePage = ref(props.batch.casePage || 1)
-const casePageSize = ref(props.batch.casePageSize || 20)
-const caseTotal = computed(() => props.batch.casePageTotal ?? props.batch.caseTotal)
+const casePageSize = ref(props.batch.casePageSize || (props.autoFollowAggregateCases ? 10 : 20))
+const caseTotal = computed(() => props.autoFollowAggregateCases
+  ? props.batch.sceneCount || props.batch.sceneSummaries?.length || 0
+  : props.batch.casePageTotal ?? props.batch.caseTotal)
 
 onMounted(() => {
   durationTimer = window.setInterval(() => {
@@ -326,8 +336,21 @@ const sceneGroups = computed(() => {
     cases: ExecutionHistoryCaseRow[]
     summary?: ExecutionHistorySceneSummary
   }>()
+  if (props.autoFollowAggregateCases) {
+    const start = (casePage.value - 1) * casePageSize.value
+    props.batch.sceneSummaries?.slice(start, start + casePageSize.value).forEach((summary) => {
+      groups.set(summary.key, {
+        key: summary.key,
+        sceneId: summary.sceneId,
+        sceneName: summary.sceneName,
+        cases: [],
+        summary,
+      })
+    })
+  }
   props.batch.cases.forEach((record) => {
     const key = record.sceneKey || record.sceneId || record.sceneName || 'scene-unknown'
+    if (props.autoFollowAggregateCases && !groups.has(key)) return
     const current = groups.get(key)
     if (current) {
       current.cases.push(record)
@@ -369,7 +392,10 @@ function displaySceneDuration(group: {
 function displayCaseDuration(record: ExecutionHistoryCaseRow) {
   durationTick.value
   const stored = Math.max(0, Number(record.duration) || 0)
+  if (executionDisplayResultLabel(record.executeResult, record.executeStatus) === '未执行') return 0
   if (record.finishedAt || isTerminalCase(record)) return stored
+  const status = String(record.executeStatus || '').toLowerCase()
+  if (!['starting', 'running', 'cancelling', '11', '启动中', '执行中', '取消中'].includes(status)) return stored
   const started = new Date(record.startedAt as string | number).getTime()
   return Number.isFinite(started) ? Math.max(stored, Date.now() - started) : stored
 }
@@ -385,11 +411,22 @@ watch(() => props.batch.rowKey, () => {
   activeTab.value = 'split'
 }, { immediate: true })
 
-watch(() => sceneGroups.value.map(group => group.key).join('|'), () => {
+watch(() => sceneGroups.value
+  .map(group => `${group.key}:${group.cases.map(record => record.rowKey).join(',')}`)
+  .join('|'), () => {
   const keys = sceneGroups.value.map(group => group.key)
   expandedSceneKeys.value = expandedSceneKeys.value.filter(key => keys.includes(key))
-  if (!expandedSceneKeys.value.length && keys.length) expandedSceneKeys.value = [keys[0]]
+  if (!keys.length) return
+  if (props.expandAllSceneGroups) {
+    expandedSceneKeys.value = keys
+  } else if (!props.sceneGroupExpansionControlled && !props.autoFollowAggregateCases && !expandedSceneKeys.value.length) {
+    expandedSceneKeys.value = [keys[0]]
+  }
 }, { immediate: true })
+
+watch(() => props.expandAllSceneGroups, (expanded) => {
+  expandedSceneKeys.value = expanded ? sceneGroups.value.map(group => group.key) : []
+})
 
 useExecutionAutoFollow({
   scope: () => `${props.batch.rowKey}:${props.batch.casePage || 1}:${props.autoExpandCaseId || props.autoExpandSceneId || ''}`,
@@ -406,9 +443,19 @@ useExecutionAutoFollow({
     if (record) selectContent(record, activeTab.value)
   },
   nextPage: () => {
-    // 聚合批次的分页属于各子场景，不能拿首场景的 executionDbId 翻整个计划的页。
-    if ((props.batch.sceneCount || 1) === 1 && !loadingCases.value && props.loadCases && casePage.value * casePageSize.value < caseTotal.value) {
-      changeCasePage(casePage.value + 1)
+    // 普通聚合批次不能拿首场景的 executionDbId 翻页；报告场景页由外层加载器处理。
+    if ((props.batch.sceneCount || 1) === 1 || props.autoFollowAggregateCases) {
+      if (props.autoFollowAggregateCases) {
+        const start = (casePage.value - 1) * casePageSize.value
+        const currentPageScenes = props.batch.sceneSummaries?.slice(start, start + casePageSize.value) || []
+        if (!currentPageScenes.length || !currentPageScenes.every(scene => isExecutionFollowTerminal({
+          executeStatus: scene.executeStatus,
+          executeResult: scene.executeResult,
+        }))) return
+      }
+      if (!loadingCases.value && props.loadCases && casePage.value * casePageSize.value < caseTotal.value) {
+        changeCasePage(casePage.value + 1)
+      }
     }
   },
 })

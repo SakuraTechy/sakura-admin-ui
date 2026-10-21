@@ -75,6 +75,7 @@
       <template #content="{ content }">
         <AddOrEditForm
           :scene-db-id="content.id"
+          :scene-key="content.sceneId"
           :pane-active="content.key === uiStore.activeKey"
           :readonly="content.readonly"
           :copy="content.copy"

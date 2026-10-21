@@ -16,6 +16,8 @@
         <AutomationExecutionBatchDetail
           v-if="scene.executionDbId && activeSceneKey === scene.rowKey"
           :batch="scene"
+          :scene-group-expansion-controlled="sceneGroupExpansionControlled"
+          :expand-all-scene-groups="expandAllSceneGroups"
           :load-cases="loadCases"
           :load-steps="loadSteps"
           :load-step-detail="loadStepDetail"
@@ -38,6 +40,8 @@ import AutomationExecutionProgress from './AutomationExecutionProgress.vue'
 const props = defineProps<{
   batch: ExecutionHistoryBatchRow
   loadScenes: (batch: ExecutionHistoryBatchRow, page: number, size: number) => Promise<{ list: ExecutionHistoryBatchRow[], total: number }>
+  sceneGroupExpansionControlled?: boolean
+  expandAllSceneGroups?: boolean
   loadCases?: (batch: ExecutionHistoryBatchRow, page?: number, size?: number) => Promise<void>
   loadSteps?: (record: ExecutionHistoryCaseRow, page?: number, size?: number) => Promise<void>
   loadStepDetail?: (step: ExecutionHistoryStepRow) => Promise<void>

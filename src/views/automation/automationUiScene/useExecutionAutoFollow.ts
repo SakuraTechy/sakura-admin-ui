@@ -7,13 +7,13 @@ interface ExecutionFollowRow {
 }
 
 function isExecutionFollowActive(row: ExecutionFollowRow) {
-  return ['waiting', 'queued', 'starting', 'running', 'cancelling', '11', '执行中'].includes(String(row.executeStatus || '').toLowerCase())
+  return ['waiting', 'not_started', 'queued', 'starting', 'running', 'cancelling', '10', '11', '排队中', '启动中', '执行中', '取消中'].includes(String(row.executeStatus || '').toLowerCase())
 }
 
 export function isExecutionFollowTerminal(row: Pick<ExecutionFollowRow, 'executeStatus' | 'executeResult'>) {
   const status = String(row.executeStatus || '').toLowerCase()
   // 取消中仍有执行事件，不能因为结果提前写入而跳到下一项。
-  if (['waiting', 'queued', 'starting', 'running', 'cancelling', '11', '执行中'].includes(status)) return false
+  if (['waiting', 'not_started', 'queued', 'starting', 'running', 'cancelling', '10', '11', '排队中', '启动中', '执行中', '取消中'].includes(status)) return false
   const terminal = ['12', '14', '15', '16', '17', 'completed', 'passed', 'failed', 'startup-failed', 'cancelled', 'blocked', 'skipped', '已完成', '已取消', '通过', '不通过', '阻塞', '跳过']
   return terminal.includes(status) || terminal.includes(String(row.executeResult || '').toLowerCase())
 }
