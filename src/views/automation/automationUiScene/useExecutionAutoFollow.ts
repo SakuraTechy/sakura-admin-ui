@@ -7,15 +7,18 @@ interface ExecutionFollowRow {
 }
 
 function isExecutionFollowActive(row: ExecutionFollowRow) {
+  if (isExecutionFollowTerminal(row)) return false
   return ['waiting', 'not_started', 'queued', 'starting', 'running', 'cancelling', '10', '11', '排队中', '启动中', '执行中', '取消中'].includes(String(row.executeStatus || '').toLowerCase())
 }
 
 export function isExecutionFollowTerminal(row: Pick<ExecutionFollowRow, 'executeStatus' | 'executeResult'>) {
   const status = String(row.executeStatus || '').toLowerCase()
   // 取消中仍有执行事件，不能因为结果提前写入而跳到下一项。
-  if (['waiting', 'not_started', 'queued', 'starting', 'running', 'cancelling', '10', '11', '排队中', '启动中', '执行中', '取消中'].includes(status)) return false
-  const terminal = ['12', '14', '15', '16', '17', 'completed', 'passed', 'failed', 'startup-failed', 'cancelled', 'blocked', 'skipped', '已完成', '已取消', '通过', '不通过', '阻塞', '跳过']
-  return terminal.includes(status) || terminal.includes(String(row.executeResult || '').toLowerCase())
+  if (['cancelling', '取消中'].includes(status)) return false
+  const terminal = ['12', '14', '15', '16', '17', 'completed', 'passed', 'success', 'failed', 'startup-failed', 'interrupted', 'cancelled', 'blocked', 'skipped', '已完成', '已取消', '通过', '全部通过', '不通过', '失败', '阻塞', '跳过']
+  if (terminal.includes(String(row.executeResult || '').toLowerCase())) return true
+  if (['waiting', 'not_started', 'queued', 'starting', 'running', '10', '11', '排队中', '启动中', '执行中'].includes(status)) return false
+  return terminal.includes(status)
 }
 
 /** 场景和用例共用状态驱动的跟随规则，不依赖是否有实时日志。 */

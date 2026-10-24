@@ -419,14 +419,29 @@ export function buildLayeredExecutionBatchRow(
 ): ExecutionHistoryBatchRow {
   const sceneKey = String(scene.sceneDbId)
   const caseTotal = numericValue(record.caseTotal)
+  const caseBlocked = numericValue(record.caseBlocked)
   const casePass = numericValue(record.casePass)
   const caseFail = numericValue(record.caseFail)
   const caseSkip = numericValue(record.caseSkip)
   const caseCancelled = numericValue(record.caseCancelled)
-  const caseCompleted = Math.min(caseTotal, casePass + caseFail + caseSkip + caseCancelled)
+  const caseCompleted = Math.min(
+    caseTotal,
+    valueWithFallback(record.caseCompleted, casePass + caseFail + caseBlocked + caseSkip + caseCancelled),
+  )
   const batchId = String(record.batchId || record.executionKey || record.executionDbId)
-  const progress = caseTotal > 0 ? Math.round(caseCompleted * 10000 / caseTotal) / 100 : null
+  const rawExecuteResult = record.result || 'not_executed'
+  const rawExecuteStatus = normalizeExecutionLifecycleStatus(record.status || 'not_started', rawExecuteResult)
+  const terminal = isTerminalExecutionStatus(rawExecuteStatus)
+  const cancelled = executionStatusLabel(rawExecuteStatus) === '已取消'
+    || executionResultLabel(rawExecuteResult) === '已取消'
+  const incompleteTerminalBatch = terminal && !cancelled && caseTotal > caseCompleted
+  const executeStatus = incompleteTerminalBatch ? 'failed' : rawExecuteStatus
+  const executeResult = incompleteTerminalBatch ? 'failed' : rawExecuteResult
   const executionType = layeredExecutionType(record.executionEngine)
+  const queued = ['waiting', 'queued', 'not_started', '10'].includes(String(rawExecuteStatus).toLowerCase())
+  const progress = queued
+    ? 0
+    : caseTotal > 0 ? Math.round(caseCompleted * 10000 / caseTotal) / 100 : terminal ? 100 : null
   const row: ExecutionHistoryBatchRow = {
     executionDbId: record.executionDbId,
     casesLoaded: false,
@@ -445,16 +460,16 @@ export function buildLayeredExecutionBatchRow(
     casePass,
     caseFail,
     caseCancelled,
-    caseBlocked: 0,
+    caseBlocked,
     caseSkip,
     progress,
-    progressIndeterminate: progress == null,
-    executeStatus: record.status || 'not_started',
-    executeResult: record.result || 'not_executed',
+    progressIndeterminate: !terminal && !queued && progress == null,
+    executeStatus,
+    executeResult,
     executeName: record.executeName || record.executeUsername || '-',
-    startedAt: record.startedAt || record.createTime,
+    startedAt: queued ? undefined : record.startedAt || record.createTime,
     finishedAt: record.finishedAt,
-    duration: executionDurationMs(record.startedAt || record.createTime, record.finishedAt, record.durationMs),
+    duration: queued ? 0 : executionDurationMs(record.startedAt || record.createTime, record.finishedAt, record.durationMs),
     projectEnvironmentId: record.projectEnvironmentId == null ? '-' : String(record.projectEnvironmentId),
     projectEnvironmentName: record.projectEnvironmentName || '-',
     cases: [],
@@ -476,8 +491,8 @@ export function buildLayeredExecutionCaseRow(
   batch: ExecutionHistoryBatchRow,
 ): ExecutionHistoryCaseRow {
   const caseId = record.definitionCaseId || record.caseKey || String(record.caseExecutionDbId)
-  const executeStatus = record.executeStatus || record.status || 'not_started'
-  const executeResult = record.executeResult || record.result || 'not_executed'
+  const executeResult = resolveExecutionCaseResult(record)
+  const executeStatus = resolveExecutionCaseStatus(record, executeResult)
   const activeStatuses = ['starting', 'running', 'cancelling', '11', '启动中', '执行中', '取消中']
   const notStarted = executionDisplayResultLabel(executeResult, executeStatus) === '未执行'
   const duration = notStarted
@@ -546,8 +561,14 @@ export function buildLayeredExecutionCaseRow(
     steps: [],
     summaryOnly: false,
     batchId: batch.batchId,
-    progress: stepTotal > 0 ? Math.min(100, Math.round(completed * 10000 / stepTotal) / 100) : null,
-    progressIndeterminate: stepTotal <= 0,
+    progress: isTerminalExecutionStatus(executeStatus)
+      ? 100
+      : ['waiting', 'queued', 'not_started', '10'].includes(String(executeStatus).toLowerCase())
+        ? 0
+        : stepTotal > 0 ? Math.min(100, Math.round(completed * 10000 / stepTotal) / 100) : null,
+    progressIndeterminate: !isTerminalExecutionStatus(executeStatus)
+      && !['waiting', 'queued', 'not_started', '10'].includes(String(executeStatus).toLowerCase())
+      && stepTotal <= 0,
     testReportId: batch.testReportId,
     sceneKey: batch.sceneKey,
     sceneId: batch.sceneId,
@@ -724,7 +745,9 @@ export function buildExecutionRunHistoryRow(record: AutomationUiExecutionRunSumm
     sceneCancelled: record.sceneCancelled || 0,
     sceneBlocked: record.sceneBlocked || 0,
     sceneSkip: record.sceneSkip || 0,
-    progress: record.sceneTotal ? (record.sceneCompleted || 0) * 100 / record.sceneTotal : 0,
+    progress: isTerminalExecutionStatus(row.executeStatus) || isTerminalExecutionResult(row.executeResult)
+      ? 100
+      : record.sceneTotal ? (record.sceneCompleted || 0) * 100 / record.sceneTotal : 0,
     progressIndeterminate: false,
     sceneSummaries: [],
   }
@@ -817,7 +840,16 @@ function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRo
   const sceneCancelled = sceneSummaries.filter(item => executionResultLabel(item.executeResult) === '已取消').length
   const sceneBlocked = sceneSummaries.filter(item => executionResultLabel(item.executeResult) === '阻塞').length
   const sceneSkip = sceneSummaries.filter(item => executionResultLabel(item.executeResult) === '跳过').length
-  const progress = calculateBatchProgress(cases, caseTotal, caseCompleted)
+  const progress = caseTotal > 0
+    ? Math.min(100, Math.round(caseCompleted * 10000 / caseTotal) / 100)
+    : calculateBatchProgress(cases, caseTotal, caseCompleted)
+  const normalizedRows = rows.map(row => ({
+    ...row,
+    executeStatus: normalizeExecutionLifecycleStatus(row.executeStatus, row.executeResult),
+  }))
+  const executeStatus = aggregateExecutionStatus(normalizedRows)
+  const executeResult = aggregateExecutionResult(normalizedRows)
+  const terminal = isTerminalExecutionStatus(executeStatus) || isTerminalExecutionResult(executeResult)
   return {
     ...first,
     rowKey: `plan-batch-${groupKey}`,
@@ -833,10 +865,10 @@ function mergeExecutionBatchRows(groupKey: string, rows: ExecutionHistoryBatchRo
     caseBlocked,
     caseSkip,
     casePageTotal,
-    progress,
-    progressIndeterminate: progress == null,
-    executeStatus: aggregateExecutionStatus(rows),
-    executeResult: aggregateExecutionResult(rows),
+    progress: caseTotal > 0 ? progress : terminal ? 100 : progress,
+    progressIndeterminate: !terminal && progress == null,
+    executeStatus,
+    executeResult,
     startedAt,
     finishedAt,
     duration,
@@ -871,6 +903,10 @@ function mergeSceneSummaries(rows: ExecutionHistoryBatchRow[]): ExecutionHistory
     })
   })
   return [...groups.entries()].map(([key, items]) => {
+    const normalizedItems = items.map(item => ({
+      ...item,
+      executeStatus: normalizeExecutionLifecycleStatus(item.executeStatus, item.executeResult),
+    }))
     const caseTotal = items.reduce((total, item) => total + item.caseTotal, 0)
     const caseCompleted = items.reduce((total, item) => total + item.caseCompleted, 0)
     const casePass = items.reduce((total, item) => total + item.casePass, 0)
@@ -879,7 +915,7 @@ function mergeSceneSummaries(rows: ExecutionHistoryBatchRow[]): ExecutionHistory
     const caseBlocked = items.reduce((total, item) => total + item.caseBlocked, 0)
     const caseSkip = items.reduce((total, item) => total + item.caseSkip, 0)
     const allCasesCompleted = caseTotal > 0 && caseCompleted >= caseTotal
-    const aggregatedResult = aggregateExecutionResult(items as unknown as ExecutionHistoryBatchRow[])
+    const aggregatedResult = aggregateExecutionResult(normalizedItems as unknown as ExecutionHistoryBatchRow[])
     // 批次取消后仍以已结束用例的统计确定场景结果，避免覆盖此前的通过或失败。
     const executeResult = allCasesCompleted && !caseCancelled
       ? caseBlocked > 0
@@ -894,7 +930,8 @@ function mergeSceneSummaries(rows: ExecutionHistoryBatchRow[]): ExecutionHistory
       : aggregatedResult
     const executeStatus = allCasesCompleted && !caseCancelled && executeResult !== 'cancelled'
       ? 'completed'
-      : aggregateExecutionStatus(items as unknown as ExecutionHistoryBatchRow[])
+      : aggregateExecutionStatus(normalizedItems as unknown as ExecutionHistoryBatchRow[])
+    const terminal = isTerminalExecutionStatus(executeStatus) || isTerminalExecutionResult(executeResult)
     return {
       key,
       sceneId: items[0].sceneId,
@@ -909,7 +946,7 @@ function mergeSceneSummaries(rows: ExecutionHistoryBatchRow[]): ExecutionHistory
       executeStatus,
       executeResult,
       duration: items.reduce((max, item) => Math.max(max, numericValue(item.duration)), 0),
-      progress: calculateSummaryProgress(items),
+      progress: calculateSummaryProgress(normalizedItems),
       progressIndeterminate: false,
     }
   })
@@ -919,7 +956,7 @@ function calculateSummaryProgress(summaries: ExecutionHistorySceneSummary[]) {
   const totalCases = summaries.reduce((total, item) => total + numericValue(item.caseTotal), 0)
   if (totalCases > 0) {
     const completedCases = summaries.reduce((total, item) => (
-      total + numericValue(item.caseTotal) * Math.min(100, Math.max(0, Number(item.progress) || 0)) / 100
+      total + Math.min(numericValue(item.caseTotal), numericValue(item.caseCompleted))
     ), 0)
     return Math.min(100, Math.round(completedCases * 10000 / totalCases) / 100)
   }
@@ -955,11 +992,10 @@ function aggregateExecutionStatus(rows: ExecutionHistoryBatchRow[]) {
   const hasCancellation = rows.some(row => ['cancelled', 'cancelling'].includes(String(row.executeStatus || '').toLowerCase())
     || executionResultLabel(row.executeResult) === '已取消')
   if (hasCancellation && rows.some(row => !isTerminalExecutionStatus(row.executeStatus))) return 'cancelling'
-  if (rows.some(row => ['running', 'starting', 'queued'].includes(String(row.executeStatus || '').toLowerCase()))) {
-    return 'running'
-  }
+  if (rows.some(row => String(row.executeStatus || '').toLowerCase() === 'running')) return 'running'
+  if (rows.some(row => String(row.executeStatus || '').toLowerCase() === 'starting')) return 'starting'
+  if (rows.some(row => ['waiting', 'not_started', 'queued', '10'].includes(String(row.executeStatus || '').toLowerCase()))) return 'queued'
   if (rows.every(row => isTerminalExecutionStatus(row.executeStatus))) return hasCancellation ? 'cancelled' : 'completed'
-  if (rows.some(row => ['waiting', 'not_started'].includes(String(row.executeStatus || '').toLowerCase()))) return 'queued'
   return rows[0]?.executeStatus || 'queued'
 }
 
@@ -1054,10 +1090,11 @@ function buildExecutionHistoryBatchRow(record: any): ExecutionHistoryBatchRow {
   const caseTotal = numericValue(record.caseTotal) || cases.length
   const caseCompleted = valueWithFallback(record.caseCompleted, statusCounts.completed)
   const progress = calculateBatchProgress(cases, caseTotal, caseCompleted)
-  const executeStatus = record.executeStatus || (caseCompleted >= caseTotal ? 'completed' : 'running')
+  const rawExecuteStatus = record.executeStatus || (caseCompleted >= caseTotal ? 'completed' : 'running')
   const hasDetailedCases = cases.some(item => !item.summaryOnly && item.caseId !== '-')
   const resolvedCasePass = hasDetailedCases ? statusCounts.passed : valueWithFallback(record.casePass, statusCounts.passed)
   const resolvedCaseFail = hasDetailedCases ? statusCounts.failed : valueWithFallback(record.caseFail, statusCounts.failed)
+  const lifecycleStatus = normalizeExecutionLifecycleStatus(rawExecuteStatus, record.executeResult)
   const executeResult = deriveSceneExecutionResult(
     caseTotal,
     caseCompleted,
@@ -1066,13 +1103,14 @@ function buildExecutionHistoryBatchRow(record: any): ExecutionHistoryBatchRow {
     valueWithFallback(record.caseCancelled, statusCounts.cancelled),
     valueWithFallback(record.caseBlocked, statusCounts.blocked),
     valueWithFallback(record.caseSkip, statusCounts.skipped),
-    executeStatus,
+    lifecycleStatus,
     record.executeResult,
   )
   const normalizedExecuteStatus = executionResultLabel(executeResult) === '已取消'
-    && (caseCompleted >= caseTotal || isTerminalExecutionStatus(executeStatus))
+    && (caseCompleted >= caseTotal || isTerminalExecutionStatus(lifecycleStatus))
     ? 'cancelled'
-    : executeStatus
+    : normalizeExecutionLifecycleStatus(lifecycleStatus, executeResult)
+  const terminal = isTerminalExecutionStatus(normalizedExecuteStatus) || isTerminalExecutionResult(executeResult)
   const batchId = stringValue(record.batchId || record.executionId || record.buildNumber || record.__key)
   const executionLogRange = executionLogTimeRange(cases.flatMap((item) => item.liveLogs || []))
   const caseDurationTotal = cases.reduce((total, item) => total + numericValue(item.duration), 0)
@@ -1093,8 +1131,8 @@ function buildExecutionHistoryBatchRow(record: any): ExecutionHistoryBatchRow {
     caseCancelled: valueWithFallback(record.caseCancelled, statusCounts.cancelled),
     caseBlocked: valueWithFallback(record.caseBlocked, statusCounts.blocked),
     caseSkip: valueWithFallback(record.caseSkip, statusCounts.skipped),
-    progress,
-    progressIndeterminate: progress == null,
+    progress: caseTotal > 0 ? progress : terminal ? 100 : progress,
+    progressIndeterminate: !terminal && progress == null,
     testReportId: stringValue(record.testReportId || record.reportId) || undefined,
     executeStatus: normalizedExecuteStatus,
     executeResult,
@@ -1621,8 +1659,40 @@ function valueWithFallback(value: unknown, fallback: number) {
   return value === undefined || value === null || value === '' ? fallback : numericValue(value)
 }
 
+function resolveExecutionCaseStatus(record: AutomationUiExecutionCase, result: unknown) {
+  const executeStatus = record.executeStatus
+  const status = record.status
+  const resolvedStatus = !isTerminalExecutionStatus(executeStatus) && isTerminalExecutionStatus(status)
+    ? status
+    : executeStatus || status || 'not_started'
+  return normalizeExecutionLifecycleStatus(resolvedStatus, result)
+}
+
+function resolveExecutionCaseResult(record: AutomationUiExecutionCase) {
+  const candidates = [record.status, record.executeResult, record.result]
+  return candidates.find(isTerminalExecutionResult)
+    || record.executeResult
+    || record.result
+    || record.status
+    || 'not_executed'
+}
+
 function isTerminalExecutionStatus(value: unknown) {
-  return ['passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed'].includes(String(value || '').toLowerCase())
+  return ['passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', 'interrupted', 'startup-failed', '12', '17']
+    .includes(String(value || '').toLowerCase())
+}
+
+function isTerminalExecutionResult(value: unknown) {
+  return ['通过', '失败', '已取消', '阻塞', '跳过'].includes(executionResultLabel(value))
+}
+
+function normalizeExecutionLifecycleStatus(status: unknown, result: unknown) {
+  const normalizedStatus = String(status || '').toLowerCase()
+  if (['cancelling', '取消中'].includes(normalizedStatus)) return status
+  if (!isTerminalExecutionStatus(normalizedStatus) && isTerminalExecutionResult(result)) {
+    return executionResultLabel(result) === '已取消' ? 'cancelled' : 'completed'
+  }
+  return status
 }
 
 function caseExecutionProgress(
@@ -1633,12 +1703,12 @@ function caseExecutionProgress(
   skipped: number,
 ): number | null {
   const normalized = String(status || '').toLowerCase()
-  if (['waiting', 'not_started', 'idle', '10', ''].includes(normalized)) return 0
+  if (['waiting', 'queued', 'not_started', 'idle', '10', ''].includes(normalized)) return 0
+  if (isTerminalExecutionStatus(normalized)) return 100
   const completedSteps = passed + failed + skipped
   if (total > 0 && completedSteps > 0) {
     return Math.min(100, Math.round(completedSteps * 10000 / total) / 100)
   }
-  if (isTerminalExecutionStatus(normalized)) return 100
   return null
 }
 
@@ -1773,7 +1843,7 @@ export function executionStatusLabel(value: unknown) {
   if (['running', '11'].includes(normalized)) return '执行中'
   if (['cancelled', '17'].includes(normalized)) return '已取消'
   if (['passed', 'failed', 'blocked', 'skipped'].includes(normalized)) return '已完成'
-  if (['completed', '12'].includes(normalized)) return '已完成'
+  if (['completed', 'interrupted', 'startup-failed', '12'].includes(normalized)) return '已完成'
   return normalized || '-'
 }
 

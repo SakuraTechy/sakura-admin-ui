@@ -100,7 +100,8 @@ const emit = defineEmits<{
   (e: 'refresh-detail'): void
 }>()
 const ALL_HISTORY_SCENES = 'all'
-const TERMINAL_EXECUTION_STATUSES = new Set(['12', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed'])
+const TERMINAL_EXECUTION_STATUSES = new Set(['12', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', 'interrupted', 'startup-failed'])
+const TERMINAL_EXECUTION_RESULTS = new Set(['passed', 'success', '14', 'failed', '15', 'cancelled', '17', 'blocked', 'skipped', '16', '通过', '全部通过', '失败', '不通过', '已取消', '阻塞', '跳过'])
 const scenes = ref<AutomationUiSceneResp[]>([])
 const sceneSummaries = ref<AutomationUiSceneSummary[]>([])
 const executionBatches = ref<ExecutionHistoryBatchRow[]>([])
@@ -168,7 +169,12 @@ const isReportExecutionTerminal = (summaries: AutomationUiSceneSummary[]) => {
   const expectedSceneTotal = Number(statistic.value.sceneTotal || 0)
   return expectedSceneTotal > 0
     && summaries.length >= expectedSceneTotal
-    && summaries.every((scene) => TERMINAL_EXECUTION_STATUSES.has(String(scene.latestExecution?.status || '').toLowerCase()))
+    && summaries.every((scene) => {
+      const status = String(scene.latestExecution?.status || '').toLowerCase()
+      if (['cancelling', '取消中'].includes(status)) return false
+      return TERMINAL_EXECUTION_STATUSES.has(status)
+        || TERMINAL_EXECUTION_RESULTS.has(String(scene.latestExecution?.result || '').toLowerCase())
+    })
 }
 
 function batchIdentity(batch: ExecutionHistoryBatchRow) {

@@ -991,13 +991,9 @@ watch(
     if (props.embedded || !props.executionBatches || !props.loadExecutionCases) return
     // 普通历史汇总已由服务端返回，表格中的用例仅在展开批次后加载。
     if (props.serverPagedScope && (tableBatchMode.value || props.loadExecutionRunScenes)) return
-    if (props.autoFollowAggregateCases && aggregatePlanBatches.value && !props.selectedCaseId) {
-      const pendingAggregates = aggregateExecutionBatchRows(props.executionBatches)
-        .filter(item => !item.casesLoaded)
-      void Promise.all(pendingAggregates.map(item => props.loadExecutionCases?.(item, 1, 10)))
-      return
-    }
-    // 其他视图仍需补齐当前有界批次的用例，保留计划、报告与用例历史的原有统计口径。
+    // 聚合计划和报告只在批次展开后加载当前场景页，不能初始化时遍历所有子批次。
+    if (props.autoFollowAggregateCases && aggregatePlanBatches.value && !props.selectedCaseId) return
+    // 所有批次的用例都在用户展开批次后按需加载，避免聚合视图初始化时逐场景请求。
     if (remoteCasePagination.value) return
     const pending = props.executionBatches.filter(item => !item.casesLoaded)
     const casePageSize = props.selectedCaseId ? 50 : 20
@@ -1430,7 +1426,7 @@ function normalizeLiveExecution(item: LiveExecutionCase): ExecutionHistoryCaseRo
     ? 100
     : stepTotal > 0
       ? Math.round(stepCompleted * 10000 / stepTotal) / 100
-      : item.status === 'waiting' ? 0 : null
+      : ['waiting', 'queued'].includes(item.status) ? 0 : null
   const duration = item.startedAt
     ? item.durationMs ?? Math.max(0, (item.finishedAt || Date.now()) - item.startedAt)
     : 0

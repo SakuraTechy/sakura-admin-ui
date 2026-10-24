@@ -45,8 +45,10 @@ export interface AutomationUiExecutionSummary {
   projectEnvironmentId?: number
   projectEnvironmentName?: string
   caseTotal?: number
+  caseCompleted?: number
   casePass?: number
   caseFail?: number
+  caseBlocked?: number
   caseSkip?: number
   caseCancelled?: number
   stepTotal?: number

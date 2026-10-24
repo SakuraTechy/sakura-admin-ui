@@ -217,6 +217,7 @@
           :test-plan-id="toIdString(plan.id)"
           :multi-scene="historySceneKey === ALL_HISTORY_SCENES"
           aggregate-plan-batches
+          :auto-follow-aggregate-cases="historySceneKey === ALL_HISTORY_SCENES"
           :scene-filter-value="historySceneKey"
           :scene-filter-options="historySceneOptions"
           :live-executions="liveExecutions"
@@ -709,7 +710,10 @@ const fetchHistoryScenes = async (refreshIds = false, silent = false) => {
       )
     ))
     const summaryResponses = await mapWithConcurrency(chunks, 3, chunk => (
-      getAutomationUiSceneSummaries(chunk, 'test', controller.signal)
+      getAutomationUiSceneSummaries(chunk, {
+        recordSource: 'test',
+        testPlanId: toIdString(props.plan.id),
+      }, controller.signal)
     ))
     if (generation !== historyGeneration || controller.signal.aborted) return
     const summaries = summaryResponses.flatMap(response => response.data || [])
@@ -719,20 +723,22 @@ const fetchHistoryScenes = async (refreshIds = false, silent = false) => {
       ? historySceneSummaries.value
       : historySceneSummaries.value.filter(scene => toIdString(scene.sceneDbId) === historySceneKey.value)
     historyExecutionTotal.value = 0
-    const rows = await mapWithConcurrency(activeSummaries, 6, async (scene) => {
-      const response = await getAutomationUiExecutions({
-        sceneDbId: scene.sceneDbId,
-        recordSource: 'test',
-        testPlanId: props.plan.id,
-        page: historySceneKey.value === ALL_HISTORY_SCENES ? 1 : historyExecutionPage.value,
-        size: historySceneKey.value === ALL_HISTORY_SCENES ? 20 : historyExecutionPageSize.value,
-        sort: ['createTime,desc'],
-      }, controller.signal)
-      if (historySceneKey.value !== ALL_HISTORY_SCENES) {
-        historyExecutionTotal.value = response.data?.mode === 'page' ? response.data.total : response.data?.list.length || 0
-      }
-      return (response.data?.list || []).map(record => buildLayeredExecutionBatchRow(record, scene))
-    })
+    const rows = historySceneKey.value === ALL_HISTORY_SCENES
+      ? activeSummaries.flatMap(scene => scene.latestExecution
+        ? [buildLayeredExecutionBatchRow(scene.latestExecution, scene)]
+        : [])
+      : await mapWithConcurrency(activeSummaries, 6, async (scene) => {
+          const response = await getAutomationUiExecutions({
+            sceneDbId: scene.sceneDbId,
+            recordSource: 'test',
+            testPlanId: props.plan.id,
+            page: historyExecutionPage.value,
+            size: historyExecutionPageSize.value,
+            sort: ['createTime,desc'],
+          }, controller.signal)
+          historyExecutionTotal.value = response.data?.mode === 'page' ? response.data.total : response.data?.list.length || 0
+          return (response.data?.list || []).map(record => buildLayeredExecutionBatchRow(record, scene))
+        })
     if (generation !== historyGeneration || controller.signal.aborted) return
     historyBatches.value = rows.flat().sort((left, right) => historyTimestamp(right.startedAt) - historyTimestamp(left.startedAt))
     const { data: revisionData } = await getAutomationUiExecutionRevisionsBatched(sceneIds)
@@ -762,6 +768,53 @@ const refreshHistoryWhenChanged = async () => {
 
 const loadHistoryExecutionCases = async (batch: ExecutionHistoryBatchRow, page = 1, size = 20) => {
   if (!batch.executionDbId) return
+  const reportId = String(batch.testReportId || '').trim()
+  const aggregateScenes = historySceneKey.value === ALL_HISTORY_SCENES && Boolean(reportId)
+  const sceneKeys = new Set((batch.sceneSummaries || []).map(scene => String(scene.key || scene.sceneId)))
+  const sourceBatches = aggregateScenes
+    ? historyBatches.value.filter(item => String(item.testReportId || '').trim() === reportId
+      && [item.sceneKey, item.sceneId].some(key => key && sceneKeys.has(String(key))))
+    : [batch]
+  if (aggregateScenes && sourceBatches.length > 0) {
+    const pageSceneKeys = new Set((batch.sceneSummaries || [])
+      .slice((page - 1) * size, page * size)
+      .map(scene => String(scene.key || scene.sceneId)))
+    const pageBatches = sourceBatches.filter(source => pageSceneKeys.has(String(source.sceneKey || source.sceneId)))
+    const loaded = await mapWithConcurrency(pageBatches, 6, async (source) => {
+      const records: ExecutionHistoryCaseRow[] = []
+      let sourcePage = 1
+      let total = 0
+      do {
+        const response = await requestOnce(
+          `execution-cases:${source.executionDbId}:${sourcePage}:50`,
+          () => getAutomationUiExecutionCases(source.executionDbId!, sourcePage, 50),
+        )
+        if (!response.data) throw new Error(`场景 ${source.sceneName || source.sceneId} 的执行用例加载失败`)
+        total = response.data.total
+        records.push(...response.data.list.map(record => buildLayeredExecutionCaseRow(record, source)))
+        if (records.length < total && !response.data.list.length) {
+          throw new Error(`场景 ${source.sceneName || source.sceneId} 的执行用例分页数据不完整`)
+        }
+        sourcePage += 1
+      } while (records.length < total)
+      return { source, records, total }
+    })
+    const cases = loaded.flatMap(item => item.records)
+    loaded.forEach(({ source, records, total }) => {
+      source.cases = records
+      source.casesLoaded = true
+      source.scenePageLoaded = true
+      source.casePage = 1
+      source.casePageSize = 50
+      source.casePageTotal = total
+    })
+    batch.cases = cases
+    batch.casesLoaded = true
+    batch.casePage = page
+    batch.casePageSize = size
+    batch.casePageTotal = cases.length
+    return
+  }
   const response = await requestOnce(
     `execution-cases:${batch.executionDbId}:${page}:${size}`,
     () => getAutomationUiExecutionCases(batch.executionDbId!, page, size),

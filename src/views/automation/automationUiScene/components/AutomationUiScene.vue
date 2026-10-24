@@ -236,7 +236,9 @@ import {
   exportAutomationUiSceneXml,
 } from '@/apis/automation/automationUiScene'
 import {
+  AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT,
   type AutomationUiSceneSummaryQuery,
+  getAutomationUiSceneSummaries,
   getAutomationUiSceneSummaryPage,
 } from '@/apis/automation/automationUiQuery'
 import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
@@ -578,17 +580,47 @@ const resolveExecutionType = (value: string | number | Record<string, any> | und
   return executionTypeOptions.some(item => item.value === executionType) ? executionType : undefined
 }
 
+const isEnabledScene = (scene: Pick<AutomationUiSceneResp, 'status'>) => Number(scene.status) === 1
+
+const filterEnabledScenes = (records: AutomationUiSceneResp[]) => {
+  const enabledRecords = records.filter(isEnabledScene)
+  if (enabledRecords.length !== records.length) {
+    Message.warning(`已跳过 ${records.length - enabledRecords.length} 个禁用场景`)
+  }
+  return enabledRecords
+}
+
 const onBatchExecute = async (executionType: ExecutionType) => {
   const selected = new Set(selectedKeys.value.map(String))
   const records = tableData.value.filter(record => selected.has(String(record.id)))
-  if (executionType === 'jenkins') {
-    emit('execute-scenes', records, executionType)
+  // 跨页勾选时补查场景状态，避免表格当前页之外的禁用场景进入执行请求。
+  const missingIds = [...selected].filter(id => !records.some(record => String(record.id) === id))
+  if (missingIds.length) {
+    try {
+      const chunks = Array.from(
+        { length: Math.ceil(missingIds.length / AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT) },
+        (_, index) => missingIds.slice(
+          index * AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT,
+          (index + 1) * AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT,
+        ),
+      )
+      const responses = await Promise.all(chunks.map(ids => getAutomationUiSceneSummaries(ids)))
+      records.push(...responses.flatMap(({ data }) => (data || []).map(mapDebugSceneSummary)))
+    } catch (error: any) {
+      Message.error(error?.message || '读取所选场景状态失败，请刷新后重试')
+      return
+    }
+  }
+  const enabledRecords = filterEnabledScenes(records)
+  if (!enabledRecords.length) {
+    Message.warning('所选场景均已禁用，无法执行')
     return
   }
-  // 表格支持跨页勾选，不能仅从当前页取场景；缺失行按数据库 ID 读取定义后再确认范围。
-  const recordsById = new Map(records.map((record) => [String(record.id), record]))
-  const selectedRecords = [...selected].map((id) => recordsById.get(id) || { id } as AutomationUiSceneResp)
-  await beginQueuedCaseExecution(selectedRecords, executionType, true)
+  if (executionType === 'jenkins') {
+    emit('execute-scenes', enabledRecords, executionType)
+    return
+  }
+  await beginQueuedCaseExecution(enabledRecords, executionType, true)
 }
 
 const loadSummaryRows = async (query: AutomationUiSceneSummaryQuery, loadAll: boolean) => {
@@ -620,10 +652,11 @@ const onExecuteAll = async (executionType: ExecutionType) => {
     ...queryForm,
     projectId: uiStore.projectId,
     versionId: queryForm.versionId || uiStore.versionId,
+    status: 1,
   }
   try {
     // Jenkins 全部执行由服务端按查询条件选场景，前端只读取首条摘要用于环境配置展示。
-    const records = await loadSummaryRows(targetQuery, executionType !== 'jenkins')
+    const records = filterEnabledScenes(await loadSummaryRows(targetQuery, executionType !== 'jenkins'))
     if (!records.length) {
       Message.warning('当前范围内没有可执行场景')
       return
@@ -786,6 +819,7 @@ const beginQueuedCaseExecution = async (
         projectedPageSize: 20,
       }) as Promise<AutomationUiSceneResp>
     ))
+    executionScenes = filterEnabledScenes(executionScenes)
     if (sortScenes) executionScenes.sort((left, right) => left.sceneId.localeCompare(right.sceneId))
     if (!executionScenes.length) throw new Error('未读取到可执行场景')
   } catch (error: any) {

@@ -13,6 +13,14 @@
       @row-click="handleRowClick"
     >
       <template #columns>
+        <a-table-column title="ID" data-index="id" :width="220">
+          <template #cell="{ record }">
+            <a-typography-paragraph copyable :copy-text="record.id">
+              <template #copy-tooltip>复制ID</template>
+              {{ record.id }}
+            </a-typography-paragraph>
+          </template>
+        </a-table-column>
         <a-table-column title="名称">
           <template #cell="{ record }">
             <a-trigger
