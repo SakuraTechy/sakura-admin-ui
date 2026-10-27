@@ -508,6 +508,8 @@ import {
   type AutomationCdpPlaybackOptions,
   type AutomationPlaywrightRunnerOptions,
 } from '@/apis/automation/automationPlaywrightRunner'
+import { mapScopedSceneSummary } from '@/views/automation/automationUiScene/sceneSummary'
+import { AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT, getAutomationUiSceneSummaries } from '@/apis/automation/automationUiQuery'
 import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '@/views/automation/automationUiScene/queryCache'
 import { getExtensionCdpCapabilities } from '@/views/automation/automationUiScene/extensionPlayback'
 import { getUser, listAllUser, listSystemUser, type UserResp } from '@/apis/system/user'
@@ -1488,18 +1490,52 @@ const loadExecutionSelectionScenes = async (
   sceneIds: Array<string | number>,
   fallbackRows: any[] = [],
   caseIdsByScene?: Map<string, string[]>,
+  testPlanId?: string | number,
+  includeDefinitions = false,
 ) => {
+  if (includeDefinitions) {
+    const fallbackMap = new Map(fallbackRows.map(row => [toIdString(row.id), row]))
+    const scenes = await mapWithConcurrency(sceneIds.map(toIdString), 6, (sceneId) => (
+      loadAutomationUiExecutionSelectionScene(
+        sceneId,
+        fallbackMap.get(sceneId) || {},
+        undefined,
+        { projectedPage: 1, projectedPageSize: 20 },
+      )
+    ))
+    return scenes.sort((left, right) => String(left.sceneId || '').localeCompare(String(right.sceneId || '')))
+  }
   const fallbackMap = new Map(fallbackRows.map(row => [toIdString(row.id), row]))
-  const scenes = await mapWithConcurrency(sceneIds.map(toIdString), 6, sceneId => (
-    loadAutomationUiExecutionSelectionScene(
-      sceneId,
-      fallbackMap.get(sceneId) || {},
-      undefined,
-      caseIdsByScene?.has(sceneId)
-        ? { projectedCaseIds: caseIdsByScene.get(sceneId) }
-        : { projectedPage: 1, projectedPageSize: 20 },
+  const missingIds = sceneIds.map(toIdString).filter(sceneId => !fallbackMap.has(sceneId))
+  if (missingIds.length) {
+    const chunks = Array.from(
+      { length: Math.ceil(missingIds.length / AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT) },
+      (_, index) => missingIds.slice(
+        index * AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT,
+        (index + 1) * AUTOMATION_UI_SUMMARY_BATCH_SIZE_LIMIT,
+      ),
     )
-  ))
+    const responses = await mapWithConcurrency(chunks, 3, chunk => (
+      getAutomationUiSceneSummaries(chunk, { recordSource: 'test', testPlanId })
+    ))
+    responses.flatMap(response => response.data || []).forEach((summary) => {
+      fallbackMap.set(toIdString(summary.sceneDbId), mapScopedSceneSummary(summary, 'test'))
+    })
+  }
+  const scenes = sceneIds.map(toIdString)
+    .map(sceneId => {
+      const row = fallbackMap.get(sceneId)
+      if (!row) return undefined
+      return {
+        ...row,
+        // 选择场景只展示摘要；definition 在真正启动该场景时按需加载。
+        __projectedDefinition: true,
+        __caseTotal: Number(row.caseTotal || 0),
+        caseList: [],
+        ...(caseIdsByScene?.has(sceneId) ? { __selectedCaseIds: caseIdsByScene.get(sceneId) } : {}),
+      }
+    })
+    .filter((scene): scene is any => Boolean(scene))
   // 测试计划的关联顺序可能不是场景 ID 顺序，选择弹窗和串行执行都统一按场景 ID 展示。
   return scenes.sort((left, right) => {
     const leftSceneId = String(left.sceneId || '')
@@ -1519,7 +1555,7 @@ const onBatchExecuteScene = async (tab: SceneTab, rows: any[], executionType: Ex
   if (executionType !== 'jenkins') {
     const testPlanId = toIdString(tab.record.id)
     const sceneIds = rows.map((scene) => toIdString(scene.id))
-    const scenes = await loadExecutionSelectionScenes(sceneIds, rows)
+    const scenes = await loadExecutionSelectionScenes(sceneIds, rows, undefined, testPlanId)
     const aggregateScene = buildPlanExecutionScene(scenes)
     if (!aggregateScene) {
       Message.warning('当前测试计划关联场景不存在，请刷新后重试')
@@ -1549,7 +1585,7 @@ const onExecuteAllScene = async (tab: SceneTab, executionType: ExecutionType) =>
       Message.warning('当前测试计划未关联 UI 自动化场景')
       return
     }
-    const scenes = await loadExecutionSelectionScenes(sceneIds)
+    const scenes = await loadExecutionSelectionScenes(sceneIds, [], undefined, toIdString(plan.id))
     if (!scenes.length) {
       Message.warning('当前测试计划关联场景不存在，请刷新后重试')
       return
@@ -1573,7 +1609,7 @@ const onExecuteAllScene = async (tab: SceneTab, executionType: ExecutionType) =>
     Message.warning('当前测试计划未关联 UI 自动化场景')
     return
   }
-  const scenes = await loadExecutionSelectionScenes(sceneIds)
+  const scenes = await loadExecutionSelectionScenes(sceneIds, [], undefined, toIdString(plan.id), true)
   if (!scenes.length) {
     Message.warning('当前测试计划关联场景不存在，请刷新后重试')
     return
@@ -1959,7 +1995,7 @@ const submitExecute = async (): Promise<boolean> => {
     let scenes: any[] = []
     try {
       const caseIdsByScene = new Map(executable.map(item => [String(item.sceneKey), item.caseIds.map(String)]))
-      scenes = await loadExecutionSelectionScenes(executable.map(item => item.sceneKey), [], caseIdsByScene)
+      scenes = await loadExecutionSelectionScenes(executable.map(item => item.sceneKey), [], caseIdsByScene, toIdString(nextRecord.id))
     } catch {
       await cancelTestPlanExecution(nextRecord.id, String(executeResp.testReportId))
       Message.error('加载 CDP 执行场景失败，本次执行已终止')

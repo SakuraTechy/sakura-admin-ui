@@ -16,9 +16,9 @@
         <a-tag v-else color="red">失败</a-tag>
       </a-descriptions-item>
       <a-descriptions-item label="耗时">
-        <a-tag v-if="dataDetail?.timeTaken > 500" color="red"> {{ dataDetail?.timeTaken }}ms </a-tag>
-        <a-tag v-else-if="dataDetail?.timeTaken > 200" color="orange"> {{ dataDetail?.timeTaken }}ms </a-tag>
-        <a-tag v-else color="green">{{ dataDetail?.timeTaken }} ms</a-tag>
+        <a-tag v-if="dataDetail?.timeTaken > 500" color="red"> {{ formatDuration(dataDetail?.timeTaken) }} </a-tag>
+        <a-tag v-else-if="dataDetail?.timeTaken > 200" color="orange"> {{ formatDuration(dataDetail?.timeTaken) }} </a-tag>
+        <a-tag v-else color="green">{{ formatDuration(dataDetail?.timeTaken) }}</a-tag>
       </a-descriptions-item>
       <a-descriptions-item label="请求 URI" :span="2">
         <a-typography-paragraph :copyable="!!dataDetail?.requestUrl">{{ dataDetail?.requestUrl }}</a-typography-paragraph>
@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { type LogDetailResp, getLog as getDetail } from '@/apis/monitor'
+import { formatDuration } from '@/utils/sakura'
 
 const dataId = ref('')
 const dataDetail = ref<LogDetailResp>()

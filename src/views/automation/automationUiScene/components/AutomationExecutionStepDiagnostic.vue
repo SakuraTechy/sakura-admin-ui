@@ -180,7 +180,7 @@
         <a-descriptions-item label="结果版本">v{{ infrastructureResult.schemaVersion || 1 }}</a-descriptions-item>
         <a-descriptions-item label="影响行数">{{ totalAffectedRows ?? '-' }}</a-descriptions-item>
         <a-descriptions-item label="返回行数">{{ totalRowCount ?? '-' }}</a-descriptions-item>
-        <a-descriptions-item label="耗时">{{ infrastructureResult.durationMs ?? '-' }} ms</a-descriptions-item>
+        <a-descriptions-item label="耗时">{{ formatStepDuration(infrastructureResult.durationMs) }}</a-descriptions-item>
         <a-descriptions-item label="截断">{{ infrastructureResult.truncated ? '是' : '否' }}</a-descriptions-item>
       </a-descriptions>
       <a-alert v-if="infrastructureWarnings.length" type="warning">
@@ -304,7 +304,7 @@
           <code>{{ locator.value }}</code>
           <a-tag v-if="isActualLocator(locator, index)" color="green" size="small">已命中</a-tag>
           <small v-if="isActualLocator(locator, index)" class="step-diagnostic__hit-meta">
-            耗时 {{ locatorDiagnostics?.wait?.wall_ms ?? 0 }} ms
+            耗时 {{ formatStepDuration(locatorDiagnostics?.wait?.wall_ms ?? 0) }}
             <template v-if="locatorDiagnostics?.selected?.score != null">
               · 评分 {{ locatorDiagnostics.selected.score }}
             </template>
@@ -343,7 +343,7 @@
       </div>
       <div>
         <span>{{ locatorDurationLabel }}</span>
-        <strong>{{ locatorDiagnostics?.wait?.wall_ms ?? 0 }} ms</strong>
+        <strong>{{ formatStepDuration(locatorDiagnostics?.wait?.wall_ms ?? 0) }}</strong>
       </div>
       <div>
         <span>{{ locatorScoreLabel }}</span>
@@ -384,7 +384,7 @@
 
 <script setup lang="ts">
 import type { ExecutionHistoryStepRow } from '../execution'
-import { executionResultColor, executionResultLabel } from '../execution'
+import { executionResultColor, executionResultLabel, formatStepDuration } from '../execution'
 import {
   downloadAutomationInfrastructureTaskArtifact,
   getAutomationInfrastructureTask,

@@ -15,11 +15,11 @@
           class="batch-scene-toggle"
           @click="toggleSceneGroup(group.key)"
         >
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <div class="batch-scene-toggle-heading">
             <icon-down :class="{ active: expandedSceneKeys.includes(group.key) }" />
             <strong>{{ group.sceneId }} · {{ group.sceneName }}</strong>
           </div>
-          <div style="display: flex; align-items: center; gap: 30px;">
+          <div class="batch-scene-toggle-summary">
             <span class="batch-scene-metrics">
               <span>总用例 <strong>{{ group.summary?.caseTotal ?? group.cases.length }}</strong></span>
               <span>完成 <strong>{{ group.summary?.caseCompleted ?? '-' }}</strong></span>
@@ -41,7 +41,7 @@
               </span>
               <span>状态 <a-tag :color="executionStatusColor(group.summary?.executeStatus)">{{ executionStatusLabel(group.summary?.executeStatus) }}</a-tag></span>
               <span>结果 <a-tag :color="executionDisplayResultColor(group.summary?.executeResult, group.summary?.executeStatus)">{{ executionDisplayResultLabel(group.summary?.executeResult, group.summary?.executeStatus) }}</a-tag></span>
-              <span>耗时 <strong>{{ formatExecutionDuration(displaySceneDuration(group)) }}</strong></span>
+              <span class="batch-scene-duration">耗时 <strong>{{ formatExecutionDuration(displaySceneDuration(group)) }}</strong></span>
             </span>
           </div>
         </button>
@@ -701,10 +701,10 @@ function numericValue(value: unknown) {
 }
 
 .batch-scene-toggle {
-  display: flex;
+  display: grid;
   width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
   border: 0;
@@ -715,12 +715,26 @@ function numericValue(value: unknown) {
   cursor: pointer;
 }
 
-.batch-scene-toggle > svg {
+.batch-scene-toggle-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-scene-toggle-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 15px;
+}
+
+.batch-scene-toggle-heading > svg {
   color: var(--color-text-3);
   transition: transform 180ms ease, color 180ms ease;
 }
 
-.batch-scene-toggle > svg.active {
+.batch-scene-toggle-heading > svg.active {
   transform: rotate(180deg);
   color: rgb(var(--primary-6));
 }
@@ -733,6 +747,9 @@ function numericValue(value: unknown) {
 }
 
 .batch-scene-toggle span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--color-text-3);
   font-size: 12px;
 }
@@ -746,6 +763,15 @@ function numericValue(value: unknown) {
 
 .batch-scene-metrics strong {
   color: var(--color-text-1);
+}
+
+.batch-scene-duration {
+  display: inline-block;
+  width: 120px;
+  flex: none;
+  letter-spacing: 1px;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .batch-scene-metrics .success strong {
@@ -874,6 +900,7 @@ function numericValue(value: unknown) {
 
 .batch-case-duration {
   white-space: nowrap;
+  letter-spacing: 1px;
 }
 
 .batch-case-actions {

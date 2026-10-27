@@ -503,7 +503,7 @@ const columns: TableInstance['columns'] = [
     },
   },
   { title: '通过率', dataIndex: 'casePassRate', width: 80, align: 'center' },
-  { title: '运行耗时', dataIndex: 'duration', width: 90, ellipsis: true, align: 'center', render: ({ record }) => {
+  { title: '运行耗时', dataIndex: 'duration', width: 120, ellipsis: true, align: 'center', render: ({ record }) => {
     return formatDuration(getRecordField(record as AutomationUiSceneResp, 'duration'))
   } },
   { title: '用例数', dataIndex: 'caseTotal', width: 80, align: 'center' },

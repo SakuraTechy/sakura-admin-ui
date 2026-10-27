@@ -177,6 +177,8 @@ import { type AutomationUiSceneDetailResp, getAutomationUiScene as getDetail } f
 import { useDict } from '@/hooks/app'
 import { resolveSceneResultValue, resolveSceneStatusValue } from '@/utils/automationUiSceneStatus'
 import http from '@/utils/http'
+import { formatDuration } from '@/utils/sakura'
+import { formatStepDuration } from '../execution'
 
 const { status_type } = useDict('status_type')
 
@@ -416,21 +418,10 @@ const playbackStepColumns = [
     title: '耗时',
     dataIndex: 'duration_ms',
     width: 100,
-    render: ({ record }: any) => formatDuration(record.duration_ms),
+    render: ({ record }: any) => formatStepDuration(record.duration_ms),
   },
   { title: '错误', dataIndex: 'error', ellipsis: true },
 ]
-
-const formatDuration = (value: unknown) => {
-  const total = Number(value)
-  if (!Number.isFinite(total) || total < 0) return '-'
-  if (total < 1000) return `${total} ms`
-  const seconds = Math.floor(total / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const remainSeconds = seconds % 60
-  if (minutes <= 0) return `${seconds} s`
-  return `${minutes} m ${remainSeconds} s`
-}
 
 const resolveVideoUrl = (record?: Record<string, any>) => {
   if (!record) return ''

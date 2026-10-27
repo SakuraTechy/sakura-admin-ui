@@ -182,7 +182,8 @@ const streamEnded = ref(false)
 let controller: AbortController | undefined
 let pollTimer: number | undefined
 let connectionSequence = 0
-let lastFrameSequence = ''
+// 从序号 0 开始长轮询，避免首帧生成前按 80ms 固定频率空请求。
+let lastFrameSequence = '0'
 let rippleDelayTimer: number | undefined
 let rippleHideTimer: number | undefined
 let pointerActivationPending = false
@@ -206,13 +207,8 @@ const qualityLabel = computed(() => {
   const quality = String(props.quality || '').trim().toLowerCase()
   return quality && quality !== '-' ? qualityLabels[quality] || quality : ''
 })
-// 动作帧需要比普通定时截图更快拉取；高分辨率档位适当降频，避免重复下载大图影响流畅度。
-const liveFramePollIntervalMs = computed(() => {
-  const quality = String(props.quality || '').trim().toLowerCase()
-  if (quality === '8k') return 1000
-  if (quality === 'ultra') return 750
-  return 500
-})
+// 服务端会等待新帧或最多 2.5 秒；响应后立即续接，避免固定短轮询制造大量 204。
+const liveFrameRetryDelayMs = 500
 const detailPreviewStyle = computed<Record<string, string> | undefined>(() => {
   const { width, height } = frameNaturalSize
   if (!imageUrl.value || !width || !height) return undefined
@@ -270,7 +266,7 @@ function restart() {
   lastFrameAt.value = ''
   error.value = ''
   streamEnded.value = false
-  lastFrameSequence = ''
+  lastFrameSequence = '0'
   resetLivePresentation()
   if (!props.jobId || terminalStatuses.includes(normalizedStatus.value)) return
   // 已结束的短任务也尝试拉取一次后台暂存的最后画面；无保留帧时接口会返回 410。
@@ -334,7 +330,7 @@ function schedulePoll(sequence: number) {
   pollTimer = window.setTimeout(() => {
     pollTimer = undefined
     pollFrame(sequence)
-  }, liveFramePollIntervalMs.value)
+  }, liveFrameRetryDelayMs)
 }
 
 function showFrame(frame: Blob, frameSequence: string, presentation: LiveFramePresentation | null) {

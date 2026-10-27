@@ -7,6 +7,7 @@ import type {
   AutomationUiExecutionRunSummary,
   AutomationUiSceneSummary,
 } from '@/apis/automation/automationUiQuery'
+import { formatDuration } from '@/utils/sakura'
 
 export type { ExecutionType, ExecutionViewType } from '@/apis/automation/automationUiScene'
 
@@ -651,7 +652,20 @@ export function applyLayeredExecutionStepDetail(
     type: stringValue(item?.type || item?.locator_type || item?.locatorType),
     value: stringValue(item?.value || item?.locator_value || item?.locatorValue),
   })).filter(item => item.type && item.value)
-  step.locatorValue = detail.locatorValue || stringValue(selected.effective_target || selected.value) || step.locatorValue || '-'
+  const selectedSource = stringValue(
+    selected.source || selected.locator_source || selected.locatorSource
+      || diagnostics.actual_locator_source || diagnostics.actualLocatorSource
+      || diagnostics.locator_source || diagnostics.locatorSource,
+  )
+  const selectedType = stringValue(
+    selected.type || selected.locator_type || selected.locatorType
+      || diagnostics.actual_locator_type || diagnostics.actualLocatorType
+      || diagnostics.locator_type || diagnostics.locatorType,
+  )
+  const selectedValue = detail.locatorValue || stringValue(selected.effective_target || selected.value)
+  step.locatorSource = selectedSource || step.locatorSource || '-'
+  step.locatorType = selectedType || step.locatorType || '-'
+  step.locatorValue = selectedValue || step.locatorValue || '-'
   step.matchedCount = valueOrDash(diagnostics.matched_count ?? diagnostics.matchedCount
     ?? selected.matched_count ?? selected.matchedCount ?? attempts[0]?.matched_count)
   step.visibleCount = valueOrDash(diagnostics.visible_count ?? diagnostics.visibleCount
@@ -661,7 +675,10 @@ export function applyLayeredExecutionStepDetail(
     || stringValue(diagnosticEnvelope.infrastructure_task_id || diagnosticEnvelope.infrastructureTaskId)
     || stringValue(diagnosticEnvelope.details?.infrastructure_task_id || diagnosticEnvelope.details?.infrastructureTaskId)
   step.configuredLocators = configuredLocators.length ? configuredLocators : step.configuredLocators
-  step.hasActualLocator = step.hasActualLocator || Boolean(step.locatorValue && step.locatorValue !== '-')
+  step.hasActualLocator = step.hasActualLocator || Boolean(
+    selectedSource
+      || (step.locatorValue !== '-' && (step.locatorSource !== '-' || step.locatorType !== '-')),
+  )
   step.details = diagnostics
   step.detailLoaded = true
 }
@@ -1754,14 +1771,24 @@ function stringValue(value: unknown) {
 export function formatExecutionDuration(value: unknown) {
   const total = Number(value)
   if (!Number.isFinite(total) || total < 0) return '-'
+  return formatDuration(Math.round(total))
+}
+
+export function formatStepDuration(value: unknown) {
+  const total = Number(value)
+  if (!Number.isFinite(total) || total < 0) return '-'
   const totalMilliseconds = Math.round(total)
   if (totalMilliseconds < 1000) return `${totalMilliseconds} ms`
-  if (totalMilliseconds < 60000) return `${formatDurationSeconds(totalMilliseconds)} s`
+  if (totalMilliseconds < 60000) return `${formatStepDurationSeconds(totalMilliseconds)} s`
   const minutes = Math.floor(totalMilliseconds / 60000)
   const remainingMilliseconds = totalMilliseconds % 60000
   return remainingMilliseconds === 0
     ? `${minutes} m`
-    : `${minutes} m ${formatDurationSeconds(remainingMilliseconds)} s`
+    : `${minutes} m ${formatStepDurationSeconds(remainingMilliseconds)} s`
+}
+
+function formatStepDurationSeconds(milliseconds: number) {
+  return (milliseconds / 1000).toFixed(0).replace(/\.0+$|(\.\d*?)0+$/, '$1')
 }
 
 export function executionLogTimeRange(logs: LiveExecutionLog[] | undefined) {
@@ -1773,10 +1800,6 @@ export function executionLogTimeRange(logs: LiveExecutionLog[] | undefined) {
     startedAt: Math.min(...timestamps),
     finishedAt: Math.max(...timestamps),
   }
-}
-
-function formatDurationSeconds(milliseconds: number) {
-  return (milliseconds / 1000).toFixed(0).replace(/\.0+$|(\.\d*?)0+$/, '$1')
 }
 
 function sessionModeLabel(value: string) {

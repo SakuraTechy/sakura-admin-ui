@@ -102,6 +102,7 @@ const emit = defineEmits<{
 const ALL_HISTORY_SCENES = 'all'
 const TERMINAL_EXECUTION_STATUSES = new Set(['12', '17', 'passed', 'failed', 'cancelled', 'blocked', 'skipped', 'completed', 'interrupted', 'startup-failed'])
 const TERMINAL_EXECUTION_RESULTS = new Set(['passed', 'success', '14', 'failed', '15', 'cancelled', '17', 'blocked', 'skipped', '16', '通过', '全部通过', '失败', '不通过', '已取消', '阻塞', '跳过'])
+const RUNNING_REPORT_STATUSES = new Set(['running'])
 const scenes = ref<AutomationUiSceneResp[]>([])
 const sceneSummaries = ref<AutomationUiSceneSummary[]>([])
 const executionBatches = ref<ExecutionHistoryBatchRow[]>([])
@@ -111,7 +112,7 @@ const executionPageSize = ref(20)
 const executionTotal = ref(0)
 const loading = ref(false)
 const reportExecutionTerminal = ref(false)
-const autoRefreshEnabled = ref(true)
+const autoRefreshEnabled = ref(false)
 const pollIntervalSeconds = ref(3)
 let historyPollTimer: number | undefined
 let historyRevision = ''
@@ -154,6 +155,8 @@ const historySceneOptions = computed(() => [
 const displayScenes = computed(() => historySceneKey.value === ALL_HISTORY_SCENES
   ? scenes.value
   : scenes.value.filter((scene) => String(scene.id) === historySceneKey.value))
+
+const isReportRunning = () => RUNNING_REPORT_STATUSES.has(String(props.detailData?.status || '').trim().toLowerCase())
 
 const sceneRevisionFingerprint = (items: Array<{ sceneDbId: string | number, updateTime?: string, globalExecutionRevision?: number }>) => items
   .map((item) => `${String(item.sceneDbId)}:${item.updateTime || ''}:${item.globalExecutionRevision ?? 0}`)
@@ -535,6 +538,7 @@ watch(
   () => `${props.detailData?.id || ''}:${props.detailData?.status || ''}`,
   async () => {
     reportExecutionTerminal.value = false
+    autoRefreshEnabled.value = isReportRunning()
     await loadScenes()
     startHistoryPolling()
   },
@@ -564,7 +568,7 @@ onUnmounted(() => {
   flex: 0 0 auto;
   // width: calc(100% + 14px);
   width: 100%;
-  margin-inline: -7px;
+  padding: 5px;
   min-width: 0;
   min-height: 0;
   box-sizing: border-box;

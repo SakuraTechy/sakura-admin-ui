@@ -241,7 +241,6 @@ import {
   getAutomationUiSceneSummaries,
   getAutomationUiSceneSummaryPage,
 } from '@/apis/automation/automationUiQuery'
-import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
 import { type SceneExecutionProgress, liveSceneProgress, mapDebugSceneSummary, queuedSceneProgress, withSceneExecutionProgress } from '../sceneSummary'
 import { type ExecutionRun, createExecutionRun } from '../executionRun'
 import { useResetReactive, useTable } from '@/hooks'
@@ -414,13 +413,13 @@ const columns: TableInstance['columns'] = [
     align: 'center',
     render: ({ record }) => Array.isArray(record.tags) ? <GiCellTags data={record.tags} /> : '-',
   },
-  {
-    title: '来源',
-    dataIndex: 'recordingSource',
-    width: 110,
-    align: 'center',
-    render: ({ record }) => isPlaywrightRecordingScene(record) ? <a-tag color="arcoblue">Playwright</a-tag> : '-',
-  },
+  // {
+  //   title: '来源',
+  //   dataIndex: 'recordingSource',
+  //   width: 110,
+  //   align: 'center',
+  //   render: ({ record }) => isPlaywrightRecordingScene(record) ? <a-tag color="arcoblue">Playwright</a-tag> : '-',
+  // },
   {
     title: '执行状态',
     dataIndex: 'debugRecord[0].executeStatus',
@@ -467,7 +466,7 @@ const columns: TableInstance['columns'] = [
   },
   {
     title: '耗时',
-    width: 90,
+    width: 120,
     dataIndex: 'debugRecord[0].duration',
     slotName: 'duration',
     align: 'center',
@@ -811,19 +810,18 @@ const beginQueuedCaseExecution = async (
     Message.warning('当前范围内没有可执行场景')
     return
   }
-  let executionScenes: AutomationUiSceneResp[]
-  try {
-    executionScenes = await mapWithConcurrency(records, 6, record => (
-      loadAutomationUiExecutionSelectionScene(record.id, record, undefined, {
-        projectedPage: 1,
-        projectedPageSize: 20,
-      }) as Promise<AutomationUiSceneResp>
-    ))
-    executionScenes = filterEnabledScenes(executionScenes)
-    if (sortScenes) executionScenes.sort((left, right) => left.sceneId.localeCompare(right.sceneId))
-    if (!executionScenes.length) throw new Error('未读取到可执行场景')
-  } catch (error: any) {
-    Message.error(error?.message || '读取场景 Definition 失败，请刷新后重试')
+  // 批量入口已经拿到场景摘要；选择弹窗只需要场景标识和执行状态，
+  // definition 延迟到真正启动某个场景时加载，避免按场景逐条请求 definition。
+  let executionScenes = records.map((record) => ({
+    ...record,
+    __projectedDefinition: true,
+    __caseTotal: Number(record.caseTotal || 0),
+    caseList: [],
+  })) as AutomationUiSceneResp[]
+  executionScenes = filterEnabledScenes(executionScenes)
+  if (sortScenes) executionScenes.sort((left, right) => left.sceneId.localeCompare(right.sceneId))
+  if (!executionScenes.length) {
+    Message.warning('当前范围内没有可执行场景')
     return
   }
   executionCaseSelectModalRef.value?.onOpen(buildSceneSelectionRecord(executionScenes), executionType, {

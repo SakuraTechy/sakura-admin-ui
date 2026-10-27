@@ -12,7 +12,7 @@
           <a-descriptions-item label="执行方式">{{ detailData?.executeMode || '-' }}</a-descriptions-item>
           <a-descriptions-item label="状态">{{ detailData?.status || '-' }}</a-descriptions-item>
           <a-descriptions-item label="构建号">{{ detailData?.buildNumber || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="耗时(ms)">{{ detailData?.runTime ?? '-' }}</a-descriptions-item>
+          <a-descriptions-item label="耗时">{{ formatDuration(detailData?.runTime ?? '-') }}</a-descriptions-item>
           <a-descriptions-item label="控制台日志">
             <a-link v-if="detailData?.consoleUrl" :href="detailData.consoleUrl" target="_blank">打开日志</a-link>
             <span v-else>-</span>
@@ -58,6 +58,7 @@
 
 <script setup lang="ts">
 import type { TestReportDetailResp } from '@/apis/test/testReport'
+import { formatDuration } from '@/utils/sakura'
 
 defineOptions({ name: 'TestReportFuncDetail' })
 

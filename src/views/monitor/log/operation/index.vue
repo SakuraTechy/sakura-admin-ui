@@ -46,9 +46,9 @@
       </a-tooltip>
     </template>
     <template #timeTaken="{ record }">
-      <a-tag v-if="record.timeTaken > 500" color="red">{{ record.timeTaken }}ms</a-tag>
-      <a-tag v-else-if="record.timeTaken > 200" color="orange">{{ record.timeTaken }}ms</a-tag>
-      <a-tag v-else color="green">{{ record.timeTaken }} ms</a-tag>
+      <a-tag v-if="record.timeTaken > 500" color="red">{{ formatDuration(record.timeTaken) }}</a-tag>
+      <a-tag v-else-if="record.timeTaken > 200" color="orange">{{ formatDuration(record.timeTaken) }}</a-tag>
+      <a-tag v-else color="green">{{ formatDuration(record.timeTaken) }}</a-tag>
     </template>
   </GiTable>
 
@@ -63,6 +63,7 @@ import type { TableInstanceColumns } from '@/components/GiTable/type'
 import DateRangePicker from '@/components/DateRangePicker/index.vue'
 import { useDownload, useTable } from '@/hooks'
 import has from '@/utils/has'
+import { formatDuration } from '@/utils/sakura'
 
 defineOptions({ name: 'OperationLog' })
 

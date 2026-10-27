@@ -588,7 +588,8 @@ const baseConfigValid = computed(() => Boolean(
   && !running.value
   && (executionType.value === 'extension-cdp' ? cdpConfigValid.value : runnerConfigValid.value),
 ))
-const canStartSelected = computed(() => baseConfigValid.value && executionCaseCount.value > 0)
+const canStartSelected = computed(() => baseConfigValid.value
+  && (executionScenes.value.length > 0 || executionCaseCount.value > 0))
 
 const resetRunnerConfig = () => {
   Object.assign(runnerConfig, createDefaultPlaywrightRunnerOptions())
@@ -823,6 +824,11 @@ const onOpen = async (
         ? record
         : await loadAutomationUiExecutionSelectionScene(String(record.id), record, undefined, {
             projectedCaseIds: options.caseIds,
+            // 执行全部只需要首个用例用于回放预览；实际范围由 selectAllCases 交给服务端，
+            // 不能为了构造前端列表把整个 projected definition 分页全部下载。
+            ...(selectAllCases.value && record?.__projectedDefinition
+              ? { projectedPage: 1, projectedPageSize: 1 }
+              : {}),
           })
     scene.value = data
     if (expectedDefinitionVersion.value == null) {

@@ -12,27 +12,6 @@ export const systemRoutes: RouteRecordRaw[] = [
     meta: { hidden: true },
   },
   {
-    path: '/',
-    name: 'Dashboard',
-    component: Layout,
-    redirect: '/dashboard/workplace',
-    meta: { title: '仪表盘', icon: 'dashboard', hidden: false },
-    children: [
-      {
-        path: '/dashboard/workplace',
-        name: 'Workplace',
-        component: () => import('@/views/dashboard/workplace/index.vue'),
-        meta: { title: '工作台', icon: 'desktop', hidden: false, affix: true },
-      },
-      {
-        path: '/dashboard/analysis',
-        name: 'Analysis',
-        component: () => import('@/views/dashboard/analysis/index.vue'),
-        meta: { title: '分析页', icon: 'insert-chart', hidden: false },
-      },
-    ],
-  },
-  {
     path: '/social/callback',
     component: () => import('@/views/login/social/index.vue'),
     meta: { hidden: true },
@@ -68,50 +47,50 @@ export const systemRoutes: RouteRecordRaw[] = [
       },
     ],
   },
-  {
-    path: '/about',
-    name: 'About',
-    component: Layout,
-    meta: { title: '关于项目', icon: 'apps', hidden: false, sort: 999 },
-    children: [
-      {
-        path: '/about/document/api',
-        component: () => import('@/views/about/document/api/index.vue'),
-        meta: { title: '接口文档', icon: 'book', hidden: false, keepAlive: true },
-      },
-      {
-        path: 'https://sakura.hk.cn',
-        meta: { title: '官方网站', icon: 'home', hidden: false },
-      },
-      {
-        path: 'https://continew.top',
-        meta: { title: 'ContiNew文档', icon: 'continew', hidden: false },
-      },
-      {
-        path: 'https://arco.design/vue/component/button',
-        meta: { title: 'ArcoDesign文档', icon: 'arco', hidden: false },
-      },
-      {
-        path: '/about/source',
-        name: 'AboutSource',
-        meta: { title: '开源地址', icon: 'github', hidden: false },
-        children: [
-          {
-            path: 'https://gitee.com/SakuraTechy/sakura-admin',
-            meta: { title: 'Gitee', icon: 'gitee', hidden: false },
-          },
-          {
-            path: 'https://github.com/SakuraTechy/sakura-admin',
-            meta: { title: 'GitHub', icon: 'github', hidden: false },
-          },
-          {
-            path: 'https://gitcode.com/SakuraTechy/sakura-admin',
-            meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
-          },
-        ],
-      },
-    ],
-  },
+  // {
+  //   path: '/about',
+  //   name: 'About',
+  //   component: Layout,
+  //   meta: { title: '关于项目', icon: 'apps', hidden: false, sort: 999 },
+  //   children: [
+  //     {
+  //       path: '/about/document/api',
+  //       component: () => import('@/views/about/document/api/index.vue'),
+  //       meta: { title: '接口文档', icon: 'book', hidden: false, keepAlive: true },
+  //     },
+  //     {
+  //       path: 'https://sakura.hk.cn',
+  //       meta: { title: '官方网站', icon: 'home', hidden: false },
+  //     },
+  //     {
+  //       path: 'https://continew.top',
+  //       meta: { title: 'ContiNew文档', icon: 'continew', hidden: false },
+  //     },
+  //     {
+  //       path: 'https://arco.design/vue/component/button',
+  //       meta: { title: 'ArcoDesign文档', icon: 'arco', hidden: false },
+  //     },
+  //     {
+  //       path: '/about/source',
+  //       name: 'AboutSource',
+  //       meta: { title: '开源地址', icon: 'github', hidden: false },
+  //       children: [
+  //         {
+  //           path: 'https://gitee.com/SakuraTechy/sakura-admin',
+  //           meta: { title: 'Gitee', icon: 'gitee', hidden: false },
+  //         },
+  //         {
+  //           path: 'https://github.com/SakuraTechy/sakura-admin',
+  //           meta: { title: 'GitHub', icon: 'github', hidden: false },
+  //         },
+  //         {
+  //           path: 'https://gitcode.com/SakuraTechy/sakura-admin',
+  //           meta: { title: 'GitCode', icon: 'gitcode', hidden: false },
+  //         },
+  //       ],
+  //     },
+  //   ],
+  // },
 ]
 
 // 固定路由（默认路由）

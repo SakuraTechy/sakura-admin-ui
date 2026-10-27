@@ -48,28 +48,22 @@ export function parseTime(time, pattern) {
   return timeStr
 }
 
-// 毫秒转时分秒，例如： 378230毫秒==>1时4分钟33秒
+// 毫秒转时分秒，零值单位不显示，例如：378230毫秒 ==> 1时4分33秒。
 export function formatDuration(milliseconds) {
-  // 将毫秒转换为秒
-  const seconds = Math.floor(Number.parseInt(milliseconds, 10) / 1000)
-
-  // 分离出小时、分钟和秒数
+  if (milliseconds === null || milliseconds === undefined || milliseconds === '') return '-'
+  const numericMilliseconds = Number(milliseconds)
+  if (!Number.isFinite(numericMilliseconds) || numericMilliseconds < 0) return '-'
+  const seconds = Math.floor(numericMilliseconds / 1000)
   const hours = Math.floor(seconds / 3600)
   const remainingSeconds = seconds % 3600
   const minutes = Math.floor(remainingSeconds / 60)
   const remainingSecondsAfterMinutes = remainingSeconds % 60
 
-  // 根据是否超过一小时，选择不同的格式化方式
-  let formattedDuration
-  if (minutes === 0) {
-    formattedDuration = `${remainingSecondsAfterMinutes}秒`
-  } else if (hours === 0) {
-    formattedDuration = `${minutes}分${remainingSecondsAfterMinutes}秒`
-  } else {
-    formattedDuration = `${hours}时${minutes}分${remainingSecondsAfterMinutes}秒`
-  }
-  // console.log(remainingSecondsAfterMinutes);
-  return !Number.isNaN(remainingSecondsAfterMinutes) ? formattedDuration : '-'
+  const parts = []
+  if (hours > 0) parts.push(`${hours}时`)
+  if (minutes > 0) parts.push(`${minutes}分`)
+  if (remainingSecondsAfterMinutes > 0 || parts.length === 0) parts.push(`${remainingSecondsAfterMinutes}秒`)
+  return parts.join('')
 }
 
 export function getWeekStartAndEnd() {

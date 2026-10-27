@@ -178,6 +178,7 @@ import {
   executionResultLabel as resultLabel,
   executionStatusColor as statusColor,
   executionStatusLabel as statusLabel,
+  formatStepDuration,
 } from '../execution'
 import AutomationExecutionLiveView from './AutomationExecutionLiveView.vue'
 import AutomationExecutionLogViewer from './AutomationExecutionLogViewer.vue'
@@ -385,7 +386,7 @@ const stepColumns = [
     width: 90,
     render: ({ record }: any) => <a-tag color={resultColor(record.status)}>{resultLabel(record.status)}</a-tag>,
   },
-  { title: '耗时', dataIndex: 'duration_ms', width: 100, render: ({ record }: any) => formatDuration(record.duration_ms) },
+  { title: '耗时', dataIndex: 'duration_ms', width: 100, render: ({ record }: any) => formatStepDuration(record.duration_ms) },
   { title: '错误', dataIndex: 'error', width: 240, ellipsis: true, tooltip: true },
 ]
 

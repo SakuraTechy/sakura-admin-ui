@@ -23,7 +23,7 @@
         <a-table :data="runs" :columns="runColumns" :loading="loading" :pagination="false" row-key="id" :scroll="{ x: 1400 }">
           <template #triggerMode="{ record }">{{ record.triggerMode === 'SCHEDULE' ? '定时' : '手动' }}</template>
           <template #status="{ record }"><a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag></template>
-          <template #duration="{ record }">{{ durationLabel(record.runTime) }}</template>
+          <template #duration="{ record }">{{ formatDuration(record.runTime) }}</template>
           <template #reason="{ record }"><span :title="record.failureReason">{{ record.failureReason || '-' }}</span></template>
           <template #notification="{ record }">
             <a-tooltip v-if="record.notificationError" :content="record.notificationError">
@@ -64,6 +64,7 @@ import {
   listTimedTaskLogs,
   listTimedTaskRuns,
 } from '@/apis/test/timedTask'
+import { formatDuration } from '@/utils/sakura'
 
 const visible = ref(false)
 const router = useRouter()
@@ -105,13 +106,6 @@ function statusColor(status?: string) {
 function notificationLabel(status?: string) {
   return ({ PENDING: '待发送', SENT: '已发送', FAILED: '发送失败' } as Record<string, string>)[status || ''] || '-'
 }
-function durationLabel(value?: number) {
-  if (value === undefined || value === null) return '-'
-  if (value < 1000) return `${value} ms`
-  if (value < 60000) return `${(value / 1000).toFixed(1)} 秒`
-  return `${(value / 60000).toFixed(1)} 分钟`
-}
-
 const loadRuns = async () => {
   if (!task.value) return
   loading.value = true

@@ -141,9 +141,9 @@
           <a-button size="small" :aria-label="expandAllSceneGroups ? '收起全部场景用例' : '展开全部场景用例'" @click="toggleAllSceneGroups">
             {{ expandAllSceneGroups ? '收起全部' : '展开全部' }}
           </a-button>
-          <a-button type="primary" size="small" aria-label="立即刷新" @click="emit('refresh')">
+          <a-button type="primary" size="small" aria-label="自动刷新" @click="emit('refresh')">
             <!-- <template #icon><icon-refresh /></template> -->
-            立即刷新
+            自动刷新
           </a-button>
           <a-dropdown trigger="click" @select="(value) => emit('select-poll-interval', Number(value))">
             <a-button type="dashed" size="small" class="history-refresh-interval" aria-label="选择轮询间隔">
@@ -361,13 +361,15 @@
                 :disabled="record.live"
                 @click="toggleExpanded(record.rowKey)"
               >
-                <span>{{ isMultiScene ? `${record.sceneName} / ${record.caseName}` : record.caseName }}</span>
+                <span :title="isMultiScene ? `${record.sceneName} / ${record.caseName}` : record.caseName">
+                  {{ isMultiScene ? `${record.sceneName} / ${record.caseName}` : record.caseName }}
+                </span>
                 <div class="history-card-subtitle">
                   <span>{{ record.caseId }} · {{ record.executionId }}</span>
                   <!-- <span><icon-user /> {{ record.executeName }}</span> -->
                 </div>
               </button>
-              <a-space wrap> 
+              <a-space class="history-card-tags" size="mini">
                 <a-tag color="arcoblue">{{ executionTypeLabel(record.executionType) }}</a-tag>
                 <a-tag :color="executionStatusColor(record.executeStatus)">
                   {{ executionStatusLabel(record.executeStatus) }}
@@ -1087,7 +1089,7 @@ const sceneColumn = {
 
 const batchColumns = computed<TableInstance['columns']>(() => [
   ...(isMultiScene.value && !aggregatePlanBatches.value ? [sceneColumn] : []),
-  { title: '批次 ID1', dataIndex: 'batchId', width: 170, fixed: 'left', ellipsis: true, tooltip: true, show: true, render: ({ record }: any) => (
+  { title: '批次 ID', dataIndex: 'batchId', width: 120, fixed: 'left', ellipsis: true, tooltip: true, show: true, render: ({ record }: any) => (
     <span>{record.batchId}</span>
   ) },
   ...(aggregatePlanBatches.value
@@ -1115,11 +1117,12 @@ const batchColumns = computed<TableInstance['columns']>(() => [
   {
     title: '耗时',
     dataIndex: 'duration',
-    width: 100,
+    width: 120,
+    // fixed: 'right',
     align: 'center',
     render: ({ record }: any) => (
-      <div title={`批次墙钟耗时：${formatExecutionDuration(record.duration)}`}>
-        <div>{formatExecutionDuration(record.duration)}</div>
+      <div className="execution-duration-cell" title={`批次墙钟耗时：${formatExecutionDuration(record.duration)}`}>
+        {formatExecutionDuration(record.duration)}
       </div>
     ),
   },
@@ -1218,9 +1221,10 @@ const columns = computed<TableInstance['columns']>(() => [
   {
     title: '耗时',
     dataIndex: 'duration',
-    width: 100,
+    width: 130,
+    fixed: 'right',
     align: 'center',
-    render: ({ record }: any) => formatExecutionDuration(record.duration),
+    render: ({ record }: any) => <span className="execution-duration-cell">{formatExecutionDuration(record.duration)}</span>,
   },
   { title: '执行人', dataIndex: 'executeName', width: 110, ellipsis: true, tooltip: true },
   {
@@ -1732,6 +1736,13 @@ function cssEscape(value: string) {
   padding: 5px 5px;
 }
 
+.execution-duration-cell {
+  display: inline-block;
+  min-width: 110px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
 .execution-history-panel {
   width: 100%;
   min-width: 0;
@@ -2141,6 +2152,7 @@ function cssEscape(value: string) {
 
 .history-card-title {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   flex-direction: column;
   gap: 8px;
@@ -2156,9 +2168,23 @@ function cssEscape(value: string) {
 
 .history-card-title span,
 .history-card-title small {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-card-tags {
+  flex: 0 0 auto;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.history-card-tags :deep(.arco-tag) {
+  flex: 0 0 auto;
 }
 
 .history-card-title small {

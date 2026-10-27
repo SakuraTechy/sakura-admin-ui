@@ -37,6 +37,7 @@ const { chromium } = browserRequire('playwright')
 const output = fs.mkdtempSync(path.join(os.tmpdir(), 'sakura-run-view-'))
 const groupedMode = process.argv.includes('--grouped')
 const reportMode = process.argv.includes('--report')
+const reportCompletedMode = process.argv.includes('--report-completed')
 const editorMode = process.argv.includes('--editor')
 const viewportMode = process.argv.includes('--viewport') || editorMode
 const historyMode = process.argv.includes('--history') || groupedMode
@@ -131,7 +132,7 @@ import Arco from '@arco-design/web-vue';import Icons from '@arco-design/web-vue/
 import {createRouter,createMemoryHistory} from 'vue-router';
 import Report from '/src/views/test/testReport/components/TestReportPlaywrightDetail.vue';
 import GiTable from '/src/components/GiTable/src/GiTable.vue';import ColumnSetting from '/src/components/GiTable/src/components/ColumnSetting.vue';
-createApp({render:()=>h(Report,{detailData:{id:'report-1',testPlanId:'plan-1',status:'RUNNING',reportType:'PLAYWRIGHT',statisticAnalysis:{ui:{sceneTotal:2}}}})}).component('GiTable',GiTable).component('ColumnSetting',ColumnSetting).use(createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{render:()=>null}}]})).use(Arco).use(Icons).mount('#app');`
+createApp({render:()=>h(Report,{detailData:{id:'report-1',testPlanId:'plan-1',status:'${reportCompletedMode ? 'PASSED' : 'RUNNING'}',reportType:'PLAYWRIGHT',statisticAnalysis:{ui:{sceneTotal:2}}}})}).component('GiTable',GiTable).component('ColumnSetting',ColumnSetting).use(createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{render:()=>null}}]})).use(Arco).use(Icons).mount('#app');`
       }
       if (historyMode) {
         return `
@@ -376,14 +377,19 @@ try {
   } else if (reportMode) {
     const pollIntervalButton = page.getByRole('button', { name: '选择轮询间隔' })
     await pollIntervalButton.waitFor()
-    assert.match(await pollIntervalButton.textContent(), /3s/)
+    assert.match(await pollIntervalButton.textContent(), reportCompletedMode ? /Off/ : /3s/)
+    if (reportCompletedMode) {
+      const initialRequests = await page.evaluate(() => window.__qaReportSummaryRequests)
+      await page.waitForTimeout(3500)
+      assert.equal(await page.evaluate(() => window.__qaReportSummaryRequests), initialRequests, '查看已完成报告时不自动轮询')
+    }
     const beforePause = await page.evaluate(() => window.__qaReportSummaryRequests)
     await pollIntervalButton.click()
     await page.getByText('Off', { exact: true }).last().click()
     assert.match(await pollIntervalButton.textContent(), /Off/)
     await page.waitForTimeout(5500)
     assert.equal(await page.evaluate(() => window.__qaReportSummaryRequests), beforePause, '关闭自动刷新后不再轮询报告场景')
-    assert.equal(await page.getByRole('button', { name: '立即刷新' }).count(), 1, '关闭自动刷新后保留手动刷新按钮')
+    assert.equal(await page.getByRole('button', { name: /自动刷新|立即刷新/ }).count(), 1, '关闭自动刷新后保留手动刷新按钮')
     await pollIntervalButton.click()
     await page.getByText('3s', { exact: true }).last().click()
     assert.match(await pollIntervalButton.textContent(), /3s/)

@@ -92,7 +92,7 @@
             <small style="margin-top: 5px;" :title="step.actionType">{{ step.actionType }}</small>
           </span>
           <div style="display: flex; align-items: center; gap: 16px;">
-            <em>{{ formatExecutionDuration(step.duration) }}</em>
+            <em>{{ formatStepDuration(step.duration) }}</em>
             <a-tag :color="executionResultColor(step.status)">{{ executionResultLabel(step.status) }}</a-tag>
           </div>
         </button>
@@ -115,7 +115,7 @@
           <i :class="`state-${stepState(step)}`">{{ step.stepNumber }}</i>
           <strong>{{ step.stepName }}</strong>
           <span>{{ step.actionType }}</span>
-          <small>{{ formatExecutionDuration(step.duration) }}</small>
+          <small>{{ formatStepDuration(step.duration) }}</small>
           <icon-down :class="{ active: activeStepKey === step.rowKey }" />
         </button>
         <Transition name="step-expand"><AutomationExecutionStepDiagnostic v-if="activeStepKey === step.rowKey" :step="step" /></Transition>
@@ -132,7 +132,7 @@
               <small>{{ step.description }}</small>
             </span>
             <a-tag :color="executionResultColor(step.status)">{{ executionResultLabel(step.status) }}</a-tag>
-            <em>{{ formatExecutionDuration(step.duration) }}</em>
+            <em>{{ formatStepDuration(step.duration) }}</em>
           </button>
           <Transition name="step-expand"><AutomationExecutionStepDiagnostic v-if="activeStepKey === step.rowKey" :step="step" /></Transition>
         </div>
@@ -145,7 +145,7 @@
           <span class="step-card-grid__number" :class="`state-${stepState(step)}`">{{ step.stepNumber }}</span>
           <span class="step-card-grid__title"><strong>{{ step.stepName }}</strong><small>{{ step.description }}</small></span>
           <a-tag :color="executionResultColor(step.status)">{{ executionResultLabel(step.status) }}</a-tag>
-          <em>{{ formatExecutionDuration(step.duration) }}</em>
+          <em>{{ formatStepDuration(step.duration) }}</em>
         </button>
         <Transition name="step-expand"><AutomationExecutionStepDiagnostic v-if="activeStepKey === step.rowKey" :step="step" /></Transition>
       </article>
@@ -169,7 +169,7 @@
 
 <script setup lang="ts">
 import type { ExecutionHistoryCaseRow, ExecutionHistoryStepRow, ExecutionViewType } from '../execution'
-import { executionAggregateResultLabel, executionResultColor, executionResultLabel, formatExecutionDuration } from '../execution'
+import { executionAggregateResultLabel, executionResultColor, executionResultLabel, formatExecutionDuration, formatStepDuration } from '../execution'
 import { isExecutionFollowTerminal } from '../useExecutionAutoFollow'
 import AutomationExecutionStepDiagnostic from './AutomationExecutionStepDiagnostic.vue'
 import AutomationExecutionReportAssets from './AutomationExecutionReportAssets.vue'

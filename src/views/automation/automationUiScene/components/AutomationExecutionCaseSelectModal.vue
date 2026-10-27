@@ -146,7 +146,7 @@ import {
   isExecutableCase,
 } from '../execution'
 import { loadAutomationUiExecutionSelectionScene, mapWithConcurrency } from '../queryCache'
-import { getAutomationUiExecutionCaseHistory, getAutomationUiExecutions } from '@/apis/automation/automationUiQuery'
+import { getAutomationUiExecutionCaseHistory } from '@/apis/automation/automationUiQuery'
 
 interface SelectableCase extends SelectionExecutionState {
   sceneDbId: string
@@ -388,20 +388,14 @@ async function loadScenes(record: any, signal: AbortSignal) {
     const selectAllCases = Boolean(sourceScene?.__projectedDefinition)
     const sceneDbId = String(sourceScene?.id || '')
     if (signal.aborted) throw new Error('执行记录请求已取消')
-    const response = sceneDbId
-      ? await getAutomationUiExecutions({
-        sceneDbId,
-        recordSource: executionContext.value.recordSource || 'debug',
-        testPlanId: executionContext.value.testPlanId,
-        testReportId: executionContext.value.testReportId,
-        executionEngine: executionType.value,
-        page: 1,
-        size: 1,
-        sort: ['createTime,desc'],
-      }, signal)
+    // 场景批量选择使用摘要行；摘要已经包含对应作用域的最近执行记录。
+    // 这里不能再按场景逐条查询 executions，否则 53 个场景会额外产生 53 个请求。
+    const recordSource = executionContext.value.recordSource === 'test' ? 'testRecord' : 'debugRecord'
+    const latestExecution = Array.isArray(sourceScene?.[recordSource])
+      ? sourceScene[recordSource][0]
       : undefined
     return {
-      ...sceneSelectionExecution(response?.data.list[0]),
+      ...sceneSelectionExecution(latestExecution),
       sceneDbId,
       rowKey: sceneKey,
       sceneKey,
