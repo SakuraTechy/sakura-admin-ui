@@ -30,7 +30,8 @@ const getHome = () => {
   if (!home) {
     const cloneRoutes = JSON.parse(JSON.stringify(routes)) as RouteLocationMatched[]
     const obj = findTree(cloneRoutes, (i) => i.path === '/dashboard/workplace')
-    home = obj.item
+    // 仪表盘菜单可能被禁用或隐藏，此时不应阻断其他页面的面包屑渲染。
+    home = obj?.item ?? null
   }
 }
 
@@ -41,9 +42,7 @@ function getBreadcrumbList() {
   const obj = findTree(cloneRoutes, (i) => i.path === route.path)
   // 获取当前节点的所有上级节点集合，包含当前节点
   const arr = obj ? obj.nodes.filter((item) => item.meta && item.meta.title && item.meta.breadcrumb !== false) : []
-  if (home) {
-    breadcrumbList.value = [home, ...arr]
-  }
+  breadcrumbList.value = home ? [home, ...arr] : arr
 }
 getBreadcrumbList()
 

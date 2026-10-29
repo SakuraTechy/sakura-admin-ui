@@ -404,7 +404,7 @@ const columns: TableInstance['columns'] = [
   { title: '场景 ID', dataIndex: 'sceneId', slotName: 'sceneId', width: 200, fixed: 'left', ellipsis: true, tooltip: true },
   { title: '场景名称', dataIndex: 'name', slotName: 'name', width: 360, ellipsis: true, tooltip: true },
   { title: '版本', dataIndex: 'versionName', slotName: 'versionName', width: 120, ellipsis: true, tooltip: true, align: 'center' },
-  { title: '等级', dataIndex: 'level', slotName: 'level', width: 100, ellipsis: true, tooltip: true, align: 'center' },
+  { title: '等级', dataIndex: 'level', slotName: 'level', width: 80, ellipsis: true, tooltip: true, align: 'center' },
   {
     title: '标签',
     dataIndex: 'tags',
@@ -490,7 +490,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 250,
+    width: has.hasPermOr(['automation:automationUiScene:get', 'automation:automationUiScene:update', 'automation:automationUiScene:copy', 'automation:automationUiScene:execute', 'automation:automationUiScene:delete', 'automation:automationUiScene:export']) ? 250 : undefined,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['automation:automationUiScene:get', 'automation:automationUiScene:update', 'automation:automationUiScene:delete']),

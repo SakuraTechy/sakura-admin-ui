@@ -173,7 +173,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 210,
+    width: has.hasPermOr(['automation:automationBrowserConfig:get', 'automation:automationBrowserConfig:update', 'automation:automationBrowserConfig:delete']) ? 210 : undefined,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['automation:automationBrowserConfig:get', 'automation:automationBrowserConfig:update', 'automation:automationBrowserConfig:delete']),

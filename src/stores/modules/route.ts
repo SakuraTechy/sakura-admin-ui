@@ -57,6 +57,39 @@ const formatAsyncRoutes = (menus: RouteItem[]) => {
   }) as unknown as RouteRecordRaw[]
 }
 
+/** 获取当前用户可见菜单的默认访问地址。 */
+const findFirstVisibleRoutePath = (routes: RouteRecordRaw[]): string | undefined => {
+  for (const route of routes) {
+    if (route.path === '/' || route.meta?.hidden) continue
+    if (route.redirect && route.redirect !== 'noRedirect') return route.redirect as string
+
+    const childPath = route.children?.length ? findFirstVisibleRoutePath(route.children) : undefined
+    if (childPath) return childPath
+    return route.path
+  }
+  return undefined
+}
+
+/** 隐藏默认菜单时，避免继续使用该菜单遗留的固定重定向地址。 */
+const normalizeDefaultRoute = (routes: RouteRecordRaw[]) => {
+  const rootRoute = routes.find((route) => route.path === '/')
+  if (rootRoute?.meta?.hidden) {
+    rootRoute.redirect = findFirstVisibleRoutePath(routes) || rootRoute.redirect
+  } else if (!rootRoute) {
+    const defaultPath = findFirstVisibleRoutePath(routes)
+    if (defaultPath) {
+      routes.unshift({
+        path: '/',
+        name: 'DefaultHome',
+        component: layoutComponentMap.Layout,
+        redirect: defaultPath,
+        meta: { hidden: true },
+      })
+    }
+  }
+  return routes
+}
+
 /** 判断路由层级是否大于 2 */
 export const isMultipleRoute = (route: RouteRecordRaw) => {
   return route.children?.some((child) => child.children?.length) ?? false
@@ -91,7 +124,7 @@ const storeSetup = () => {
   // 生成路由
   const generateRoutes = async (): Promise<RouteRecordRaw[]> => {
     const { data } = await getUserRoute()
-    const asyncRoutes = formatAsyncRoutes(data)
+    const asyncRoutes = normalizeDefaultRoute(formatAsyncRoutes(data))
     const flatRoutes = flatMultiLevelRoutes(cloneDeep(asyncRoutes))
     setRoutes(asyncRoutes)
     return flatRoutes

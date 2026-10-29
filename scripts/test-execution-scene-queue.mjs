@@ -32,7 +32,8 @@ function load(source, mocks = {}, fileName) {
   return module.exports
 }
 const read = (file) => fs.readFileSync(file, 'utf8')
-const execution = load(read(path.join(dir, 'execution.ts')))
+const sakura = load(read(path.join(root, 'src/utils/sakura.ts')), { './log': {} })
+const execution = load(read(path.join(dir, 'execution.ts')), { '@/utils/sakura': sakura })
 const autoFollow = load(read(path.join(dir, 'useExecutionAutoFollow.ts')))
 const selection = load(read(path.join(dir, 'executionSelectionState.ts')), { './execution': execution })
 const summary = load(read(path.join(dir, 'sceneSummary.ts')), { './execution': execution })
@@ -60,7 +61,7 @@ function mount(name, mocks, props = {}) {
   component.render = () => null
   const app = renderer.createApp(component, props)
   const instance = app.mount({ children: [] })
-  return { state: instance.$.setupState, close: () => app.unmount() }
+  return { state: instance.$.setupState, updateProps: (next) => Object.assign(instance.$.props, next), close: () => app.unmount() }
 }
 const caseDef = (id) => ({ id, name: id, status: 1, stepList: [{ id: 'step-1', status: 1 }] })
 const sceneDef = (index, overrides = {}) => ({
@@ -902,6 +903,72 @@ test('从在途历史查询切到本次再切回历史，新请求不被旧 refr
     pending.resolve({ data: { list: [], total: 0 } })
     workspace.close()
   }
+})
+
+for (const serverPagedScope of [true, false]) {
+  test(`执行结束后实时记录保留分层批次的按需加载入口（serverPagedScope=${serverPagedScope}）`, async () => {
+    const batch = Vue.reactive(execution.buildLayeredExecutionBatchRow({ executionDbId: 91, batchId: 'finished-live', status: 'completed', result: 'passed', caseTotal: 1, casePass: 1 }, { sceneDbId: '1001', sceneKey: 'SCENE_001', name: '场景' }))
+    const live = [{ sceneKey: '1001', batchId: batch.batchId, caseId: 'CASE_1', executionId: 'live-case', executionType: 'playwright-runner', status: 'passed', stepTotal: 1, stepPass: 1 }]
+    const panel = mount('AutomationExecutionHistoryPanel.vue', { '../execution': execution }, { scenes: [{ id: '1001' }], executionBatches: [batch], liveExecutions: live, serverPagedScope })
+    try {
+      const visible = panel.state.filteredBatchRows[0]
+      assert.equal(visible.executionDbId, 91, '实时汇总不能覆盖掉读取用例的数据库 ID')
+      assert.equal(visible.casesLoaded, false)
+      assert.equal(visible.rowKey, batch.rowKey, '步骤加载前后保持批次展开标识')
+      const row = execution.buildLayeredExecutionCaseRow({ caseExecutionDbId: 92, definitionCaseId: 'CASE_1', status: 'completed', result: 'passed', stepTotal: 1, stepPass: 1 }, batch)
+      batch.cases = [row]
+      batch.casesLoaded = true
+      await Vue.nextTick()
+      const displayed = panel.state.filteredBatchRows[0].cases[0]
+      assert.equal(displayed.caseExecutionDbId, 92)
+      assert.equal(displayed, batch.cases[0], '步骤必须写回实际缓存的用例对象')
+      displayed.steps = [{ rowKey: 'step-93' }]
+      displayed.stepsLoaded = true
+      await Vue.nextTick()
+      assert.equal(panel.state.filteredBatchRows[0].cases[0].steps.length, 1)
+    } finally { panel.close() }
+  })
+}
+
+test('实时用例在步骤尚未加载时也补齐持久化 ID，供非表格视图加载步骤', async () => {
+  const batch = execution.buildLayeredExecutionBatchRow({ executionDbId: 91, batchId: 'hydrate', status: 'completed' }, { sceneDbId: '1001' })
+  const row = execution.buildLayeredExecutionCaseRow({ caseExecutionDbId: 92, definitionCaseId: 'CASE_1', status: 'completed', result: 'passed', stepTotal: 1 }, batch)
+  const panel = mount('AutomationExecutionHistoryPanel.vue', { '../execution': execution }, { scene: { id: '1001' } })
+  try {
+    const live = panel.state.normalizeLiveExecution({ sceneKey: '1001', batchId: 'hydrate', caseId: 'CASE_1', executionId: 'live-case', executionType: 'playwright-runner', status: 'passed' })
+    const hydrated = panel.state.hydrateCompletedLiveRow(live, row)
+    assert.equal(hydrated.caseExecutionDbId, 92)
+    assert.equal(hydrated.recordTarget.executionDbId, 91)
+    assert.equal(hydrated.rowKey, live.rowKey)
+    assert.equal(hydrated.stepsLoaded, false)
+  } finally { panel.close() }
+})
+
+test('已完成报告的同 ID 用例被轮询替换后重新加载步骤，保留当前步骤分页', async () => {
+  const batch = execution.buildLayeredExecutionBatchRow({ executionDbId: 91, batchId: 'replace', status: 'completed' }, { sceneDbId: '1001' })
+  const makeRow = () => execution.buildLayeredExecutionCaseRow({ caseExecutionDbId: 92, definitionCaseId: 'CASE_1', status: 'completed', result: 'passed', stepTotal: 60 }, batch)
+  const host = Vue.reactive({ record: makeRow() })
+  const requests = []
+  const loadSteps = async (row, page, size) => {
+    requests.push([row, page, size])
+    row.steps = [{ rowKey: `page-${page}` }]
+    row.stepsLoaded = true
+  }
+  const detail = mount('AutomationExecutionHistoryDetail.vue', { '../execution': execution }, { record: host.record, loadSteps })
+  try {
+    await Vue.nextTick()
+    detail.state.changeStepPage(2)
+    await Vue.nextTick()
+    assert.equal(requests.length, 2)
+    host.record = makeRow()
+    detail.updateProps({ record: host.record })
+    await Vue.nextTick()
+    assert.equal(requests.length, 3)
+    assert.equal(requests[2][0], host.record)
+    assert.deepEqual(requests[2].slice(1), [2, 20])
+    assert.equal(host.record.stepsLoaded, true)
+    assert.equal(host.record.steps[0].rowKey, 'page-2')
+  } finally { detail.close() }
 })
 
 test('已完成批次不自动展开用例，嵌入式和独立历史均保留手动打开和收起', async () => {

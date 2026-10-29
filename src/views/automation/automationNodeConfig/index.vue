@@ -312,7 +312,7 @@ const columns: TableInstance['columns'] = [
     title: '操作',
     dataIndex: 'action',
     slotName: 'action',
-    width: 250,
+    width: has.hasPermOr(['automation:automationNodeConfig:sync', 'automation:automationNodeConfig:get', 'automation:automationNodeConfig:update', 'automation:automationNodeConfig:create', 'automation:automationNodeConfig:delete']) ? 250 : undefined,
     align: 'center',
     fixed: !isMobile() ? 'right' : undefined,
     show: has.hasPermOr(['automation:automationNodeConfig:get', 'automation:automationNodeConfig:update', 'automation:automationNodeConfig:delete']),

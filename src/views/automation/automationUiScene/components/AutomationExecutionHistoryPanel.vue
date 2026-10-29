@@ -870,7 +870,12 @@ const allBatchRows = computed(() => {
   return props.serverPagedScope ? merged : merged.sort((left, right) => historyTime(right.startedAt) - historyTime(left.startedAt))
 })
 const liveBatchRows = computed(() => {
-  const rows = normalizeLiveBatches(effectiveLiveExecutions.value, persistedLiveRows.value)
+  const rows = normalizeLiveBatches(effectiveLiveExecutions.value, persistedLiveRows.value).filter((row) => {
+    // 终态实时汇总没有数据库 ID；已落库的批次必须接管展示，才能按需加载用例和步骤。
+    return !(row.caseCompleted === row.caseTotal && props.executionBatches?.some((batch) => (
+      batch.executionDbId && batch.batchId === row.batchId && batch.sceneKey === row.sceneKey
+    )))
+  })
   return aggregatePlanBatches.value ? aggregateExecutionBatchRows(rows) : rows
 })
 const filteredBatchRows = computed(() => {
@@ -898,7 +903,7 @@ const pagedBatchRows = computed(() => {
   return filteredBatchRows.value.slice(start, start + pagination.pageSize)
 })
 const tableBatchMode = computed(() => viewMode.value === 'table' && !props.selectedCaseId)
-const batchTableScrollWidth = computed(() => isMultiScene.value && !aggregatePlanBatches.value ? 2100 : 1900)
+const batchTableScrollWidth = computed(() => isMultiScene.value && !aggregatePlanBatches.value ? 2100 : 1700)
 const displayTotal = computed(() => remoteBatchPagination.value ? (props.executionTotal || 0) : tableBatchMode.value
   ? filteredBatchRows.value.length
   : (remoteCasePagination.value ? selectedCaseTotal.value : filteredRows.value.length))
@@ -1221,8 +1226,8 @@ const columns = computed<TableInstance['columns']>(() => [
   {
     title: '耗时',
     dataIndex: 'duration',
-    width: 130,
-    fixed: 'right',
+    width: 90,
+    // fixed: 'right',
     align: 'center',
     render: ({ record }: any) => <span className="execution-duration-cell">{formatExecutionDuration(record.duration)}</span>,
   },
@@ -1311,25 +1316,25 @@ const columns = computed<TableInstance['columns']>(() => [
   {
     title: '操作',
     dataIndex: 'action',
-    width: 190,
+    width: 180,
     fixed: 'right',
     align: 'center',
     render: ({ record }: any) => (
       <a-space size="mini">
         {/* {record.live ? <a-tag color="arcoblue">实时执行</a-tag> : null} */}
         <a-link onClick={() => toggleExpanded(record.rowKey)}>{expandedKeys.value.includes(record.rowKey) ? '收起' : '详情'}</a-link>
+        {!record.live ? (
+          <>
+            <a-link onClick={() => openResult(record, 'log')}>日志</a-link>
+            <a-link onClick={() => openResult(record, 'report')}>报告</a-link>
+            {record.executionType === 'extension-cdp'
+              ? <a-tooltip content="Chrome DevTools Protocol 回放不支持录屏"><a-link disabled>录屏</a-link></a-tooltip>
+              : <a-link onClick={() => openResult(record, 'video')}>录屏</a-link>}
+          </>
+        ) : null}
         {isCaseCancellable(record)
           ? <a-link status="danger" onClick={() => requestCaseCancel(record)}>取消</a-link>
           : null}
-        {!record.live ? (
-          <>
-              <a-link onClick={() => openResult(record, 'log')}>日志</a-link>
-              <a-link onClick={() => openResult(record, 'report')}>报告</a-link>
-              {record.executionType === 'extension-cdp'
-                ? <a-tooltip content="Chrome DevTools Protocol 回放不支持录屏"><a-link disabled>录屏</a-link></a-tooltip>
-                : <a-link onClick={() => openResult(record, 'video')}>录屏</a-link>}
-          </>
-        ) : null}
       </a-space>
     ),
   },
@@ -1506,9 +1511,9 @@ function hydrateCompletedLiveRow(
   persistedRow?: ExecutionHistoryCaseRow,
 ) {
   const terminal = ['passed', 'failed', 'skipped', 'cancelled'].includes(String(liveRow.executeStatus || '').toLowerCase())
-  if (!terminal || !persistedRow?.steps?.length) return liveRow
+  if (!terminal || !persistedRow) return liveRow
   // 保留实时行标识避免折叠状态跳变，但用已落库记录补齐步骤、定位信息和报告产物。
-  return {
+  return reactive({
     ...liveRow,
     ...persistedRow,
     rowKey: liveRow.rowKey,
@@ -1519,7 +1524,7 @@ function hydrateCompletedLiveRow(
     duration: persistedRow.duration ?? liveRow.duration,
     live: true,
     liveLogs: liveRow.liveLogs?.length ? liveRow.liveLogs : persistedRow.liveLogs,
-  }
+  })
 }
 
 function normalizeLiveBatches(

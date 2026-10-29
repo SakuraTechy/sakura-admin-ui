@@ -41,6 +41,8 @@ const reportCompletedMode = process.argv.includes('--report-completed')
 const editorMode = process.argv.includes('--editor')
 const viewportMode = process.argv.includes('--viewport') || editorMode
 const historyMode = process.argv.includes('--history') || groupedMode
+const completedLiveMode = process.argv.includes('--completed-live')
+const historyTarget = JSON.stringify(completedLiveMode ? { kind: 'scene', sceneId: '1001' } : { kind: 'all' })
 const api = `
 export const getAutomationUiExecutions = async q => ({data:{list:[{sceneDbId:q.sceneDbId,batchId:q.batchId,executionDbId:91,executionKey:'qa-child',executionEngine:'playwright-runner',caseTotal:3,casePass:2,caseFail:1,status:'completed',result:'failed'}]}});
 export const getAutomationUiExecutionCases=async(id)=>{window.__qaCaseRequests=(window.__qaCaseRequests||0)+1;const failed=[90000,91].includes(Number(id));return {data:{list:Array.from({length:3},(_,i)=>({caseExecutionDbId:101+i,definitionCaseId:'SCENE_CASE_'+String(i+1).padStart(3,'0'),caseExecutionKey:'case-exec-'+i,caseName:['登录并初始化环境','查看系统帮助信息','验证退出后的页面状态'][i],status:'completed',result:i===2&&failed?'failed':'passed',stepTotal:3,stepPass:i===2&&failed?2:3,stepFail:i===2&&failed?1:0,stepSkip:0,durationMs:1250,startedAt:'2026-10-07T21:26:22+08:00',finishedAt:'2026-10-07T21:26:23.250+08:00'})),total:3}}};
@@ -136,13 +138,13 @@ createApp({render:()=>h(Report,{detailData:{id:'report-1',testPlanId:'plan-1',st
       }
       if (historyMode) {
         return `
-import {createApp,h,ref,onMounted} from 'vue';
+import {createApp,h,ref,reactive,onMounted} from 'vue';
 import Arco from '@arco-design/web-vue';import Icons from '@arco-design/web-vue/es/icon';import '@arco-design/web-vue/dist/arco.css';
 import {createRouter,createMemoryHistory} from 'vue-router';
 import Workspace from '/src/views/automation/automationUiScene/components/AutomationUiSceneHistoryWorkspace.vue';
 import {createExecutionRun} from '/src/views/automation/automationUiScene/executionRun.ts';
 import GiTable from '/src/components/GiTable/src/GiTable.vue';import ColumnSetting from '/src/components/GiTable/src/components/ColumnSetting.vue';
-const app=createApp({setup(){const workspace=ref();const run=createExecutionRun([{id:'1001',sceneId:'AAS_DBSG_SMOKE_001',name:'本次任务场景',caseList:[]}],'playwright-runner');onMounted(()=>workspace.value.openHistory({kind:'all'}));return ()=>h(Workspace,{ref:workspace,executionRun:run,liveExecutions:[]})}});
+const app=createApp({setup(){const workspace=ref();const live=reactive([]);window.__qaLive=live;const run=createExecutionRun([{id:'1001',sceneId:'AAS_DBSG_SMOKE_001',name:'本次任务场景',caseList:[]}],'playwright-runner');onMounted(()=>workspace.value.openHistory(${historyTarget}));return ()=>h(Workspace,{ref:workspace,executionRun:run,liveExecutions:live})}});
 app.component('GiTable',GiTable).component('ColumnSetting',ColumnSetting).use(createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{render:()=>null}}]})).use(Arco).use(Icons).mount('#app');`
       }
       return `
@@ -194,7 +196,23 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/*', (route) => route.request().url().startsWith(base) ? route.continue() : route.abort())
   await page.goto(base, { waitUntil: 'networkidle' })
-  if (viewportMode) {
+  if (completedLiveMode) {
+    await page.locator('.batch-case-card').nth(2).waitFor()
+    await page.evaluate((history) => window.__qaLive.push(...[1, 2, 3].map((id) => ({ sceneKey: '1001', sceneId: 'AAS_DBSG_SMOKE_001', batchId: history ? 'BATCH_0001' : '20261007184150', caseId: `SCENE_CASE_00${id}`, executionId: `live-${id}`, executionType: 'playwright-runner', status: id === 3 ? 'failed' : 'passed', stepTotal: 3, stepPass: id === 3 ? 2 : 3, stepFail: id === 3 ? 1 : 0 }))), historyMode)
+    const first = page.locator('.batch-case-card').first()
+    await first.getByRole('button', { name: '报告', exact: true }).click()
+    await first.locator('.step-inspector__nav button').nth(2).waitFor()
+    assert.equal(await first.getByText('该执行记录未回传步骤明细', { exact: true }).count(), 0)
+    const requests = await page.evaluate(() => window.__qaStepRequests)
+    if (historyMode) {
+      await page.evaluate(() => window.__qaUpdateHistory())
+      await page.waitForFunction((previous) => window.__qaStepRequests > previous, requests)
+      await first.locator('.step-inspector__nav button').nth(2).waitFor()
+    }
+    await page.screenshot({ path: path.join(output, 'completed-live-report.png'), fullPage: true })
+    assert.deepEqual(errors, [])
+    console.log(JSON.stringify({ result: 'passed', completedLiveMode, historyMode, output }))
+  } else if (viewportMode) {
     const liveHeights = []
     const expanded = page.locator('.batch-case-card--expanded')
     async function assertHeaderAlignment(label) {

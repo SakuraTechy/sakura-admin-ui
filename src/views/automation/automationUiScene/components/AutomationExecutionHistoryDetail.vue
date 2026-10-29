@@ -223,13 +223,14 @@ watch(() => [props.record.rowKey, props.variant, props.record.steps.map(step => 
 }, { immediate: true })
 
 watch(
-  () => [props.record.rowKey, props.record.caseExecutionDbId, props.record.executeStatus, props.record.executeResult] as const,
+  () => [props.record.rowKey, props.record.caseExecutionDbId, props.record.executeStatus, props.record.executeResult, props.record] as const,
   async (current, previous) => {
     if (!props.loadSteps) return
     const terminal = isExecutionFollowTerminal({ executeStatus: current[2], executeResult: current[3] })
     const wasTerminal = previous && isExecutionFollowTerminal({ executeStatus: previous[2], executeResult: previous[3] })
-    const recordChanged = !previous || current[0] !== previous[0] || current[1] !== previous[1]
-    if ((terminal && (!wasTerminal || recordChanged)) || (!previous && !props.record.stepsLoaded)) {
+    const recordChanged = !previous || current[0] !== previous[0] || current[1] !== previous[1] || current[4] !== previous[4]
+    // 轮询会替换同 ID 的用例摘要，替换后的空步骤仍需加载；已加载记录继续保留分页。
+    if ((terminal && !wasTerminal) || (recordChanged && !props.record.stepsLoaded)) {
       await fetchSteps()
     }
   },
